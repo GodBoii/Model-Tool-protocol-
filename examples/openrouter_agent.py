@@ -15,7 +15,7 @@ def main():
     
     # 2. Setup Tools
     registry = ToolRegistry()
-    registry.register_toolkit_loader("calc", CalculatorToolkit())
+    registry.register_toolkit_loader("calculator", CalculatorToolkit())
     
     # 3. Setup OpenRouter Provider
     # Note: Using a free model for demonstration. 
