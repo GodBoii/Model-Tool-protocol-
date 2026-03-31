@@ -33,6 +33,8 @@
   - execute plan
   - return tool results to provider for final response
 - Includes `run_loop(max_rounds=N)` for multi-round tool chaining.
+- Includes `run_loop_stream(...)` for text streaming.
+- Includes `run_loop_events(...)` for structured runtime event streaming.
 - Optional strict dependency enforcement (`strict_dependency_mode=True`) to reject guessed intermediate values in same-toolkit multi-call batches.
 - Injects internal MTP system instructions automatically; user instructions are layered on top.
 

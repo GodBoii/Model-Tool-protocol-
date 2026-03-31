@@ -58,6 +58,14 @@ agent.print_response(
     max_rounds=4,
     stream=True,
 )
+
+# Stream structured runtime events (JSON lines):
+agent.print_response(
+    "Calculate (25*4)+10 and list current directory files in one short summary.",
+    max_rounds=4,
+    stream=True,
+    stream_events=True,
+)
 ```
 
 ## 4) Understand runtime behavior
@@ -71,6 +79,19 @@ agent.print_response(
 
 Built-in MTP system instructions are appended automatically by the framework.
 Your `instructions=` are added on top of those internal instructions.
+
+Event stream includes:
+- `run_started`
+- `round_started`
+- `plan_received`
+- `batch_started`
+- `tool_started`
+- `tool_finished`
+- `text_chunk`
+- `run_completed`
+
+Full schema:
+- [Events Contract](C:\Users\prajw\Downloads\MTP\docs\EVENTS.md)
 
 ## 5) Next steps
 
