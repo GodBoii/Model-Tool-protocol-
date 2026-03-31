@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Protocol
 
+from .policy import PolicyDecision, RiskPolicy
 from .protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .schema import validate_execution_plan
 
 ToolHandler = Callable[..., Any] | Callable[..., Awaitable[Any]]
 
@@ -32,11 +34,12 @@ class _CacheEntry:
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, policy: RiskPolicy | None = None) -> None:
         self._tools: dict[str, RegisteredTool] = {}
         self._toolkit_loaders: dict[str, ToolkitLoader] = {}
         self._loaded_toolkits: set[str] = set()
         self._cache: dict[tuple[str, str], _CacheEntry] = {}
+        self.policy = policy or RiskPolicy()
 
     def register_tool(self, spec: ToolSpec, handler: ToolHandler) -> None:
         if spec.name in self._tools:
@@ -103,6 +106,19 @@ class ToolRegistry:
             )
 
         resolved_args = self._resolve_refs(call.arguments, prior_results)
+        decision = self.policy.decide(tool.spec, call, resolved_args)
+        if decision != PolicyDecision.ALLOW:
+            suffix = "requires explicit human approval" if decision == PolicyDecision.ASK else "denied by policy"
+            return ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                output=None,
+                success=False,
+                error=f"Tool call {call.name} {suffix}.",
+                approval=decision.value,
+                skipped=True,
+            )
+
         cache_key = self._cache_key(call.name, resolved_args)
         ttl = tool.spec.cache_ttl_seconds
         if ttl > 0:
@@ -113,6 +129,7 @@ class ToolRegistry:
                     tool_name=call.name,
                     output=cached.value,
                     cached=True,
+                    approval=decision.value,
                     expires_at=cached.expires_at,
                 )
 
@@ -127,6 +144,7 @@ class ToolRegistry:
                 tool_name=call.name,
                 output=output,
                 success=True,
+                approval=decision.value,
                 expires_at=expires_at,
             )
         except Exception as exc:  # noqa: BLE001
@@ -136,9 +154,11 @@ class ToolRegistry:
                 output=None,
                 success=False,
                 error=str(exc),
+                approval=decision.value,
             )
 
     async def execute_plan(self, plan: ExecutionPlan) -> list[ToolResult]:
+        validate_execution_plan(plan)
         results: dict[str, ToolResult] = {}
         ordered: list[ToolResult] = []
 
