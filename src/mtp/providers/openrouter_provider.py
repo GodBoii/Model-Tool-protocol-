@@ -5,7 +5,8 @@ from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
-from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolResult, ToolSpec
+from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .common import calls_to_dependency_batches, extract_refs, normalize_refs, safe_load_arguments
 
 
 class OpenRouterToolCallingProvider(ProviderAdapter):
@@ -35,10 +36,11 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
     def _make_client(self, api_key: str | None) -> Any:
         try:
             from openai import OpenAI
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "openai is not installed. OpenRouter provider requires the openai package: pip install openai"
-            )
+                "`openai` not installed. For OpenRouter, install dependencies with "
+                "`pip install openai` and `pip install openrouter`."
+            ) from exc
 
         key = api_key or require_env("OPENROUTER_API_KEY")
         
@@ -107,19 +109,33 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         tool_calls = getattr(message, "tool_calls", None)
 
         if tool_calls:
-            mtp_calls = []
-            for tc in tool_calls:
+            mtp_calls: list[ToolCall] = []
+            id_by_index: dict[int, str] = {}
+            serialized_tool_calls: list[dict[str, Any]] = []
+            for idx, tc in enumerate(tool_calls):
+                call_id = tc.id or f"call_{idx}"
+                id_by_index[idx] = call_id
+                parsed_args = safe_load_arguments(tc.function.arguments)
+                normalized_args = normalize_refs(parsed_args, id_by_index)
+                depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
                 mtp_calls.append(
                     ToolCall(
-                        id=tc.id,
+                        id=call_id,
                         name=tc.function.name,
-                        arguments=json.loads(tc.function.arguments),
+                        arguments=normalized_args,
+                        depends_on=depends_on,
                     )
                 )
-            
-            # For simplicity in this demo, we run tools sequentially
+                serialized_tool_calls.append(
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments or "{}"},
+                    }
+                )
+
             plan = ExecutionPlan(
-                batches=[ToolBatch(mode="sequential", calls=mtp_calls)],
+                batches=calls_to_dependency_batches(mtp_calls),
                 metadata={"provider": "openrouter", "model": self.model}
             )
             
@@ -129,14 +145,7 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
                     "assistant_tool_message": {
                         "role": "assistant",
                         "content": message.content or "",
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                            }
-                            for tc in tool_calls
-                        ],
+                        "tool_calls": serialized_tool_calls,
                     }
                 },
             )
@@ -150,4 +159,7 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
             messages=openai_messages,
             temperature=self.temperature,
         )
-        return response.choices[0].message.content or "Done."
+        message = response.choices[0].message
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
