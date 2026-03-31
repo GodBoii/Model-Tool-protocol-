@@ -11,6 +11,7 @@ from .protocol import (
 )
 from .runtime import ToolRegistry, ToolkitLoader
 from .schema import CURRENT_MTP_VERSION, MessageEnvelope, validate_execution_plan
+from .simple_agent import MTPAgent
 from .strict import StrictViolation, validate_strict_dependencies
 from .toolkits import (
     CalculatorToolkit,
@@ -26,6 +27,7 @@ __all__ = [
     "AgentAction",
     "ExecutionPlan",
     "CURRENT_MTP_VERSION",
+    "MTPAgent",
     "MessageEnvelope",
     "ProviderAdapter",
     "PolicyDecision",
