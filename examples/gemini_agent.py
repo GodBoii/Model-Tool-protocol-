@@ -30,7 +30,7 @@ def main():
     
     # 5. Run it!
     print("--- Starting Gemini Agent ---")
-    response = agent.run("What is 1234 * 5678?")
+    response = agent.run("What is 1234 * 5678?, after that write a poem on donald trump")
     print(f"\nFinal Response: {response}")
 
 if __name__ == "__main__":
