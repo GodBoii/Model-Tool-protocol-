@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+import json
+from typing import Any
 
 from .agent import Agent
 from .config import load_dotenv_if_available
@@ -51,7 +53,27 @@ class MTPAgent:
     def run_stream(self, prompt: str, *, max_rounds: int = 5) -> Iterator[str]:
         return self._agent.run_loop_stream(prompt, max_rounds=max_rounds)
 
-    def print_response(self, prompt: str, *, max_rounds: int = 5, stream: bool = False) -> None:
+    def run_events(
+        self,
+        prompt: str,
+        *,
+        max_rounds: int = 5,
+        stream_final: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        return self._agent.run_loop_events(prompt, max_rounds=max_rounds, stream_final=stream_final)
+
+    def print_response(
+        self,
+        prompt: str,
+        *,
+        max_rounds: int = 5,
+        stream: bool = False,
+        stream_events: bool = False,
+    ) -> None:
+        if stream_events:
+            for event in self.run_events(prompt, max_rounds=max_rounds, stream_final=stream):
+                print(json.dumps(event, default=str))
+            return
         if not stream:
             print(self.run(prompt, max_rounds=max_rounds))
             return
