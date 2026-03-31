@@ -15,12 +15,12 @@ def main() -> None:
         strict_dependency_mode=True,
         base_dir=pathlib.Path.cwd(),
     )
-    agent.print_response(
-        "Calculate (25 * 4) + 10 and then list files in the current directory. "
+    reply = agent.run(
+        "Calculate (25 * 4) + 10 and then list files in the current directory.  "
         "Give a short summary.",
         max_rounds=4,
-        stream=True,
     )
+    print(reply)
 
 
 if __name__ == "__main__":
