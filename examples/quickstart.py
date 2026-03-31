@@ -5,8 +5,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from mtp import Agent, ToolRegistry, ToolRiskLevel, ToolSpec, ToolkitLoader
-from mtp.providers import MockPlannerProvider
+from mtp import Agent, ToolRegistry, ToolRiskLevel, ToolSpec, ToolkitLoader, load_dotenv_if_available
+from mtp.providers import OpenRouterToolCallingProvider
 from mtp.runtime import RegisteredTool
 
 
@@ -55,13 +55,22 @@ class GitHubToolkit(ToolkitLoader):
 
 
 def main() -> None:
+    # 1. Load your API keys from .env
+    load_dotenv_if_available()
+
+    # 2. Setup your tools
     registry = ToolRegistry()
     registry.register_toolkit_loader("github", GitHubToolkit())
 
-    provider = MockPlannerProvider()
-    agent = Agent(provider=provider, registry=registry)
+    # 3. Setup your REAL free provider!
+    provider = OpenRouterToolCallingProvider(model="qwen/qwen3.6-plus-preview:free")
+
+    # 4. Create and run the agent
+    agent = Agent(provider=provider, registry=registry, debug_mode=True)
+    
+    print("🚀 Running Agent...")
     response = agent.run("Please use my profile and open an issue.")
-    print(response)
+    print(f"\nFinal Answer: {response}")
 
     print("\nMessages:")
     for msg in agent.messages:
