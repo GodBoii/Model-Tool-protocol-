@@ -16,11 +16,17 @@ class GroqToolCallingProvider(ProviderAdapter):
         api_key: str | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.0,
+        tool_choice: str | dict[str, Any] = "auto",
+        parallel_tool_calls: bool = True,
+        encourage_batch_tool_calls: bool = True,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.system_prompt = system_prompt
         self.temperature = temperature
+        self.tool_choice = tool_choice
+        self.parallel_tool_calls = parallel_tool_calls
+        self.encourage_batch_tool_calls = encourage_batch_tool_calls
         self._last_response: Any | None = None
         self._client = client or self._make_client(api_key=api_key)
 
@@ -54,6 +60,16 @@ class GroqToolCallingProvider(ProviderAdapter):
         formatted: list[dict[str, Any]] = []
         if self.system_prompt:
             formatted.append({"role": "system", "content": self.system_prompt})
+        if self.encourage_batch_tool_calls:
+            formatted.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "When tools are needed, return all independent tool calls in one response. "
+                        "Only split into later tool rounds when there is a true dependency on prior tool results."
+                    ),
+                }
+            )
 
         for msg in messages:
             role = msg.get("role")
@@ -94,8 +110,15 @@ class GroqToolCallingProvider(ProviderAdapter):
         }
         if groq_tools:
             request_args["tools"] = groq_tools
+            request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
 
-        response = self._client.chat.completions.create(**request_args)
+        try:
+            response = self._client.chat.completions.create(**request_args)
+        except TypeError:
+            # Backward compatibility for clients/models that don't support parallel_tool_calls param.
+            request_args.pop("parallel_tool_calls", None)
+            response = self._client.chat.completions.create(**request_args)
         self._last_response = response
         choice = response.choices[0]
         message = choice.message
