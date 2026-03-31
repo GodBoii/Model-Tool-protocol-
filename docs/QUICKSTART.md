@@ -37,7 +37,7 @@ GROQ_API_KEY=your_groq_api_key_here
 
 ```python
 from mtp import MTPAgent, ToolRegistry, load_dotenv_if_available
-from mtp.providers import GroqToolCallingProvider
+from mtp.providers import Groq
 from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToolkit
 
 load_dotenv_if_available()
@@ -48,7 +48,7 @@ registry.register_toolkit_loader("file", FileToolkit(base_dir="."))
 registry.register_toolkit_loader("python", PythonToolkit(base_dir="."))
 registry.register_toolkit_loader("shell", ShellToolkit(base_dir="."))
 
-provider = GroqToolCallingProvider(model="llama-3.3-70b-versatile", strict_dependency_mode=True)
+provider = Groq(model="llama-3.3-70b-versatile", strict_dependency_mode=True)
 
 agent = MTPAgent(
     provider=provider,

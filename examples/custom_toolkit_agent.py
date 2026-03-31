@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from mtp import MTPAgent, ToolRegistry, load_dotenv_if_available, mtp_tool, toolkit_from_functions
-from mtp.providers import GroqToolCallingProvider
+from mtp.providers import Groq
 
 
 @mtp_tool(description="Add two integers and return the sum.")
@@ -21,7 +21,7 @@ def reverse_text(text: str) -> str:
 
 def main() -> None:
     load_dotenv_if_available()
-    provider = GroqToolCallingProvider(model="moonshotai/kimi-k2-instruct")
+    provider = Groq(model="moonshotai/kimi-k2-instruct")
 
     registry = ToolRegistry()
     registry.register_toolkit_loader("custom", toolkit_from_functions("custom", add, reverse_text))
