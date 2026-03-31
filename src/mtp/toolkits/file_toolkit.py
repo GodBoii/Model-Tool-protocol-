@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -13,9 +14,14 @@ class FileToolkit(ToolkitLoader):
     def __init__(self, base_dir: str | Path | None = None) -> None:
         self.base_dir = Path(base_dir or Path.cwd()).resolve()
 
+    def _is_under_base(self, candidate: Path) -> bool:
+        base = os.path.normcase(str(self.base_dir))
+        target = os.path.normcase(str(candidate))
+        return os.path.commonpath([base, target]) == base
+
     def _resolve(self, path: str) -> Path:
-        candidate = (self.base_dir / path).resolve()
-        if self.base_dir not in candidate.parents and candidate != self.base_dir:
+        candidate = (self.base_dir / path).resolve(strict=False)
+        if not self._is_under_base(candidate):
             raise ValueError("Path escapes base_dir.")
         return candidate
 

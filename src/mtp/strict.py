@@ -23,6 +23,19 @@ def _has_ref(value: Any) -> bool:
     return False
 
 
+def _collect_refs(value: Any) -> list[str]:
+    refs: list[str] = []
+    if isinstance(value, dict):
+        if "$ref" in value and isinstance(value["$ref"], str):
+            refs.append(value["$ref"])
+        for item in value.values():
+            refs.extend(_collect_refs(item))
+    elif isinstance(value, list):
+        for item in value:
+            refs.extend(_collect_refs(item))
+    return refs
+
+
 def _namespace(tool_name: str) -> str:
     return tool_name.split(".", 1)[0] if "." in tool_name else tool_name
 
@@ -60,6 +73,18 @@ def validate_strict_dependencies(plan: ExecutionPlan) -> list[StrictViolation]:
                             tool_name=call.name,
                         )
                     )
+                refs = list(dict.fromkeys(_collect_refs(call.arguments)))
+                missing_dep_refs = [ref for ref in refs if ref not in call.depends_on]
+                if missing_dep_refs:
+                    violations.append(
+                        StrictViolation(
+                            message=(
+                                "Strict dependency mode: each $ref must also appear in depends_on. "
+                                f"Missing refs in depends_on: {missing_dep_refs}"
+                            ),
+                            call_id=call.id,
+                            tool_name=call.name,
+                        )
+                    )
 
     return violations
-
