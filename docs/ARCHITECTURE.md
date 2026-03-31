@@ -62,9 +62,8 @@ Cross-provider configuration note:
 
 9. `mtp.simple_agent`
 - `MTPAgent` provides high-level ergonomic construction:
-  - auto dotenv loading
-  - auto local toolkit registration
-  - Groq provider wiring
+  - provider-agnostic wrapper around `Agent`
+  - explicit provider + registry injection
   - short `run()` / `print_response()` interface
 
 ## Module boundaries
