@@ -6,27 +6,27 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from mtp import MTPAgent, ToolRegistry, load_dotenv_if_available
-from mtp.providers import GroqToolCallingProvider
+from mtp.providers import Groq
 from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToolkit
 
 
 def main() -> None:
     load_dotenv_if_available()
 
-    registry = ToolRegistry()
-    registry.register_toolkit_loader("calculator", CalculatorToolkit())
-    registry.register_toolkit_loader("file", FileToolkit(base_dir=pathlib.Path.cwd()))
-    registry.register_toolkit_loader("python", PythonToolkit(base_dir=pathlib.Path.cwd()))
-    registry.register_toolkit_loader("shell", ShellToolkit(base_dir=pathlib.Path.cwd()))
+    tools = ToolRegistry()
+    tools.register_toolkit_loader("calculator", CalculatorToolkit())
+    tools.register_toolkit_loader("file", FileToolkit(base_dir=pathlib.Path.cwd()))
+    tools.register_toolkit_loader("python", PythonToolkit(base_dir=pathlib.Path.cwd()))
+    tools.register_toolkit_loader("shell", ShellToolkit(base_dir=pathlib.Path.cwd()))
 
-    provider = GroqToolCallingProvider(
+    provider = Groq(
         model="moonshotai/kimi-k2-instruct",
         strict_dependency_mode=True,
     )
 
     agent = MTPAgent(
         provider=provider,
-        registry=registry,
+        tools=tools,
         instructions="Use tools for concrete computation or file operations and be concise.",
         debug_mode=False,
         strict_dependency_mode=True,
