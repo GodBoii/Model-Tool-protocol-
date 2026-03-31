@@ -11,6 +11,7 @@ from .protocol import (
 )
 from .runtime import ToolRegistry, ToolkitLoader
 from .schema import CURRENT_MTP_VERSION, MessageEnvelope, validate_execution_plan
+from .strict import StrictViolation, validate_strict_dependencies
 from .toolkits import (
     CalculatorToolkit,
     FileToolkit,
@@ -43,6 +44,8 @@ __all__ = [
     "register_local_toolkits",
     "HTTPTransportServer",
     "run_stdio_transport",
+    "StrictViolation",
+    "validate_strict_dependencies",
     "load_dotenv_if_available",
     "validate_execution_plan",
 ]
