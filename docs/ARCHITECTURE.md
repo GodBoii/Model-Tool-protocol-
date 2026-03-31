@@ -43,6 +43,11 @@
 - Current repo includes:
   - deterministic local planner (`SimplePlannerProvider`) for demo/testing
   - `GroqToolCallingProvider` for real model-driven tool calls
+- Provider plugin registry:
+  - `register_provider(...)`
+  - `create_provider(...)`
+  - `list_providers()`
+  - optional `@provider_plugin(...)` decorator
 
 Cross-provider configuration note:
 - API key loading is intentionally provider-agnostic in `mtp.config` (`load_dotenv_if_available`, `require_env`).

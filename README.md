@@ -42,8 +42,7 @@ GROQ_API_KEY=your_groq_api_key_here
 ## Create an agent (local toolkits + Groq)
 
 ```python
-from mtp import MTPAgent, ToolRegistry, load_dotenv_if_available
-from mtp.providers import GroqToolCallingProvider
+from mtp import MTPAgent, ToolRegistry, create_provider, load_dotenv_if_available
 from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToolkit
 
 load_dotenv_if_available()
@@ -54,7 +53,7 @@ registry.register_toolkit_loader("file", FileToolkit(base_dir="."))
 registry.register_toolkit_loader("python", PythonToolkit(base_dir="."))
 registry.register_toolkit_loader("shell", ShellToolkit(base_dir="."))
 
-provider = GroqToolCallingProvider(model="llama-3.3-70b-versatile")
+provider = create_provider("groq", model="llama-3.3-70b-versatile")
 
 agent = MTPAgent(
     provider=provider,
@@ -82,6 +81,7 @@ python examples/groq_agent.py
 
 ## Docs map
 - [Quickstart](C:\Users\prajw\Downloads\MTP\docs\QUICKSTART.md)
+- [Providers](C:\Users\prajw\Downloads\MTP\docs\PROVIDERS.md)
 - [Events Contract](C:\Users\prajw\Downloads\MTP\docs\EVENTS.md)
 - [Architecture](C:\Users\prajw\Downloads\MTP\docs\ARCHITECTURE.md)
 - [Protocol Spec](C:\Users\prajw\Downloads\MTP\docs\PROTOCOL_SPEC.md)
