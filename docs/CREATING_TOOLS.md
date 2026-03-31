@@ -50,10 +50,10 @@ registry.register_toolkit_loader("custom", toolkit)
 
 ```python
 from mtp import MTPAgent
-from mtp.providers import GroqToolCallingProvider
+from mtp.providers import Groq
 
-provider = GroqToolCallingProvider(model="llama-3.3-70b-versatile")
-agent = MTPAgent(provider=provider, registry=registry)
+provider = Groq(model="llama-3.3-70b-versatile")
+agent = MTPAgent(provider=provider, tools=registry)
 print(agent.run("Use custom.add with a=20 and b=22"))
 ```
 

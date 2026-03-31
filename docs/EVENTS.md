@@ -21,6 +21,7 @@ Every event includes:
 - `timestamp`: ISO 8601 UTC timestamp
 - `run_id`: stable id for the run
 - `sequence`: monotonic event index within the run
+- Optional run context fields on `run_started`: `user_id`, `session_id`, `metadata`
 
 ## Event types
 
@@ -76,6 +77,10 @@ Every event includes:
 - `run_completed`
   - `final_text`
   - `rounds`
+  - `total_tool_calls`
+
+- `run_cancelled`
+  - `round`
 
 ## Why this is provider-agnostic
 
