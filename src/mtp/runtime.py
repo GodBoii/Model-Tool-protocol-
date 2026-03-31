@@ -17,6 +17,9 @@ class ToolkitLoader(Protocol):
     def load_tools(self) -> list["RegisteredTool"]:
         ...
 
+    def list_tool_specs(self) -> list[ToolSpec]:
+        ...
+
 
 @dataclass(slots=True)
 class RegisteredTool:
@@ -50,7 +53,16 @@ class ToolRegistry:
         self._toolkit_loaders[toolkit_name] = loader
 
     def list_tools(self) -> list[ToolSpec]:
-        return [entry.spec for entry in self._tools.values()]
+        specs: dict[str, ToolSpec] = {name: entry.spec for name, entry in self._tools.items()}
+        for loader in self._toolkit_loaders.values():
+            list_fn = getattr(loader, "list_tool_specs", None)
+            if callable(list_fn):
+                preview_specs = list_fn()
+                if not preview_specs:
+                    continue
+                for spec in preview_specs:
+                    specs.setdefault(spec.name, spec)
+        return list(specs.values())
 
     def _cache_key(self, tool_name: str, arguments: dict[str, Any]) -> tuple[str, str]:
         canonical = repr(sorted(arguments.items()))

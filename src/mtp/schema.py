@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 from .protocol import ExecutionPlan
@@ -38,6 +39,25 @@ class MessageEnvelope:
             "payload": self.payload,
             "metadata": self.metadata,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MessageEnvelope":
+        return cls(
+            mtp_version=str(data.get("mtp_version", CURRENT_MTP_VERSION)),
+            kind=str(data["kind"]),
+            payload=dict(data.get("payload", {})),
+            metadata=dict(data.get("metadata", {})),
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
+
+    @classmethod
+    def from_json(cls, raw: str) -> "MessageEnvelope":
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("Envelope JSON must decode to an object.")
+        return cls.from_dict(data)
 
 
 class PlanValidationError(ValueError):
@@ -80,4 +100,3 @@ def validate_execution_plan(plan: ExecutionPlan) -> None:
     for call_id in call_ids:
         if color[call_id] == WHITE:
             visit(call_id, [call_id])
-
