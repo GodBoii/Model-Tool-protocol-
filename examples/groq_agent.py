@@ -12,11 +12,11 @@ from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToo
 def main() -> None:
     load_dotenv_if_available()
 
-    registry = ToolRegistry()
-    registry.register_toolkit_loader("calculator", CalculatorToolkit())
-    registry.register_toolkit_loader("file", FileToolkit(base_dir=pathlib.Path.cwd()))
-    registry.register_toolkit_loader("python", PythonToolkit(base_dir=pathlib.Path.cwd()))
-    registry.register_toolkit_loader("shell", ShellToolkit(base_dir=pathlib.Path.cwd()))
+    tools = ToolRegistry()
+    tools.register_toolkit_loader("calculator", CalculatorToolkit())
+    tools.register_toolkit_loader("file", FileToolkit(base_dir=pathlib.Path.cwd()))
+    tools.register_toolkit_loader("python", PythonToolkit(base_dir=pathlib.Path.cwd()))
+    tools.register_toolkit_loader("shell", ShellToolkit(base_dir=pathlib.Path.cwd()))
 
     provider = Groq(
         model="moonshotai/kimi-k2-instruct",
@@ -25,7 +25,7 @@ def main() -> None:
 
     agent = MTPAgent(
         provider=provider,
-        registry=registry,
+        tools=tools,
         instructions="Use tools for concrete computation or file operations and be concise.",
         debug_mode=True,
         strict_dependency_mode=True,
