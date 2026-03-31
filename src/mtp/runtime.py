@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Protocol
 
 from .policy import PolicyDecision, RiskPolicy
 from .protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
-from .schema import validate_execution_plan
+from .schema import ToolArgumentsValidationError, validate_execution_plan, validate_tool_arguments
 
 ToolHandler = Callable[..., Any] | Callable[..., Awaitable[Any]]
+ApprovalHandler = Callable[[ToolSpec, ToolCall, dict[str, Any]], bool | Awaitable[bool]]
 
 
 class ToolkitLoader(Protocol):
@@ -37,22 +39,35 @@ class _CacheEntry:
 
 
 class ToolRegistry:
-    def __init__(self, policy: RiskPolicy | None = None) -> None:
+    def __init__(
+        self,
+        policy: RiskPolicy | None = None,
+        *,
+        max_cache_entries: int = 1024,
+        approval_handler: ApprovalHandler | None = None,
+    ) -> None:
         self._tools: dict[str, RegisteredTool] = {}
         self._toolkit_loaders: dict[str, ToolkitLoader] = {}
         self._loaded_toolkits: set[str] = set()
         self._cache: dict[tuple[str, str], _CacheEntry] = {}
+        self._tool_specs_cache: list[ToolSpec] | None = None
         self.policy = policy or RiskPolicy()
+        self.max_cache_entries = max_cache_entries
+        self.approval_handler = approval_handler
 
     def register_tool(self, spec: ToolSpec, handler: ToolHandler) -> None:
         if spec.name in self._tools:
             raise ValueError(f"Tool already registered: {spec.name}")
         self._tools[spec.name] = RegisteredTool(spec=spec, handler=handler)
+        self._tool_specs_cache = None
 
     def register_toolkit_loader(self, toolkit_name: str, loader: ToolkitLoader) -> None:
         self._toolkit_loaders[toolkit_name] = loader
+        self._tool_specs_cache = None
 
     def list_tools(self) -> list[ToolSpec]:
+        if self._tool_specs_cache is not None:
+            return list(self._tool_specs_cache)
         specs: dict[str, ToolSpec] = {name: entry.spec for name, entry in self._tools.items()}
         for loader in self._toolkit_loaders.values():
             list_fn = getattr(loader, "list_tool_specs", None)
@@ -62,11 +77,28 @@ class ToolRegistry:
                     continue
                 for spec in preview_specs:
                     specs.setdefault(spec.name, spec)
-        return list(specs.values())
+        self._tool_specs_cache = list(specs.values())
+        return list(self._tool_specs_cache)
 
     def _cache_key(self, tool_name: str, arguments: dict[str, Any]) -> tuple[str, str]:
-        canonical = repr(sorted(arguments.items()))
+        canonical = json.dumps(arguments, sort_keys=True, separators=(",", ":"), default=str)
         return tool_name, canonical
+
+    def _evict_expired_cache_entries(self) -> None:
+        expired = [key for key, entry in self._cache.items() if not entry.valid()]
+        for key in expired:
+            self._cache.pop(key, None)
+
+    def _enforce_cache_limit(self) -> None:
+        if self.max_cache_entries <= 0:
+            self._cache.clear()
+            return
+        if len(self._cache) <= self.max_cache_entries:
+            return
+        ordered = sorted(self._cache.items(), key=lambda item: item[1].expires_at)
+        overflow = len(self._cache) - self.max_cache_entries
+        for key, _ in ordered[:overflow]:
+            self._cache.pop(key, None)
 
     def _load_toolkit(self, toolkit_name: str) -> None:
         if toolkit_name in self._loaded_toolkits:
@@ -77,6 +109,7 @@ class ToolRegistry:
         for tool in loader.load_tools():
             if tool.spec.name not in self._tools:
                 self._tools[tool.spec.name] = tool
+                self._tool_specs_cache = None
         self._loaded_toolkits.add(toolkit_name)
 
     def ensure_tools_available(self, tool_names: list[str]) -> None:
@@ -92,6 +125,14 @@ class ToolRegistry:
         if inspect.isawaitable(result):
             return await result
         return result
+
+    async def _should_allow_ask(self, spec: ToolSpec, call: ToolCall, args: dict[str, Any]) -> bool:
+        if self.approval_handler is None:
+            return False
+        decision = self.approval_handler(spec, call, args)
+        if inspect.isawaitable(decision):
+            return bool(await decision)
+        return bool(decision)
 
     def _resolve_refs(self, value: Any, results: dict[str, ToolResult]) -> Any:
         if isinstance(value, dict):
@@ -118,7 +159,21 @@ class ToolRegistry:
             )
 
         resolved_args = self._resolve_refs(call.arguments, prior_results)
+        try:
+            validate_tool_arguments(resolved_args, tool.spec.input_schema)
+        except ToolArgumentsValidationError as exc:
+            return ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                output=None,
+                success=False,
+                error=f"Invalid tool arguments: {exc}",
+            )
         decision = self.policy.decide(tool.spec, call, resolved_args)
+        if decision == PolicyDecision.ASK:
+            approved = await self._should_allow_ask(tool.spec, call, resolved_args)
+            if approved:
+                decision = PolicyDecision.ALLOW
         if decision != PolicyDecision.ALLOW:
             suffix = "requires explicit human approval" if decision == PolicyDecision.ASK else "denied by policy"
             return ToolResult(
@@ -134,6 +189,7 @@ class ToolRegistry:
         cache_key = self._cache_key(call.name, resolved_args)
         ttl = tool.spec.cache_ttl_seconds
         if ttl > 0:
+            self._evict_expired_cache_entries()
             cached = self._cache.get(cache_key)
             if cached and cached.valid():
                 return ToolResult(
@@ -151,6 +207,7 @@ class ToolRegistry:
             if ttl > 0:
                 expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
                 self._cache[cache_key] = _CacheEntry(value=output, expires_at=expires_at)
+                self._enforce_cache_limit()
             return ToolResult(
                 call_id=call.id,
                 tool_name=call.name,
@@ -159,6 +216,8 @@ class ToolRegistry:
                 approval=decision.value,
                 expires_at=expires_at,
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001
             return ToolResult(
                 call_id=call.id,

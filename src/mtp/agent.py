@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, field
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, Callable, Protocol
 
 from .events import EventStreamContext
@@ -52,6 +52,7 @@ class Agent:
         instructions: str | None = None,
         system_instructions: str | None = None,
         stream_chunk_size: int = 40,
+        max_history_messages: int = 200,
     ) -> None:
         self.provider = provider
         self.registry = registry
@@ -62,6 +63,7 @@ class Agent:
         self.instructions = instructions
         self.system_instructions = system_instructions or DEFAULT_MTP_SYSTEM_INSTRUCTIONS
         self.stream_chunk_size = stream_chunk_size
+        self.max_history_messages = max_history_messages
         self._system_seeded = False
         self.messages: list[dict[str, Any]] = []
 
@@ -84,6 +86,38 @@ class Agent:
     def run(self, user_text: str) -> str:
         return self.run_loop(user_text=user_text, max_rounds=1)
 
+    async def arun(self, user_text: str) -> str:
+        return await self.arun_loop(user_text=user_text, max_rounds=1)
+
+    def _run_coro_sync(self, coro: Any) -> Any:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        close_fn = getattr(coro, "close", None)
+        if callable(close_fn):
+            close_fn()
+        raise RuntimeError(
+            "Agent sync APIs cannot run inside an active asyncio event loop. "
+            "Use arun()/arun_loop() instead."
+        )
+
+    def _trim_messages(self) -> None:
+        if self.max_history_messages <= 0 or len(self.messages) <= self.max_history_messages:
+            return
+        system_messages = [msg for msg in self.messages if msg.get("role") == "system"]
+        non_system = [msg for msg in self.messages if msg.get("role") != "system"]
+        keep_non_system = max(self.max_history_messages - len(system_messages), 0)
+        self.messages = system_messages + non_system[-keep_non_system:]
+
+    def _append_message(self, message: dict[str, Any]) -> None:
+        self.messages.append(message)
+        self._trim_messages()
+
+    def _extend_messages(self, messages: list[dict[str, Any]]) -> None:
+        self.messages.extend(messages)
+        self._trim_messages()
+
     def _chunk_text(self, text: str) -> Iterator[str]:
         if self.stream_chunk_size <= 0:
             yield text
@@ -95,17 +129,17 @@ class Agent:
         if self._system_seeded:
             return
         if self.system_instructions:
-            self.messages.append({"role": "system", "content": self.system_instructions})
+            self._append_message({"role": "system", "content": self.system_instructions})
             self._debug(f"mtp_system_instructions={self._short(self.system_instructions)}")
         if self.instructions:
-            self.messages.append({"role": "system", "content": self.instructions})
+            self._append_message({"role": "system", "content": self.instructions})
             self._debug(f"user_instructions={self._short(self.instructions)}")
         self._system_seeded = True
 
     def _run_tool_rounds(self, user_text: str, max_rounds: int) -> tuple[list[ToolResult], str | None]:
         self._seed_system_messages_if_needed()
 
-        self.messages.append({"role": "user", "content": user_text})
+        self._append_message({"role": "user", "content": user_text})
         self._debug(f"user_message={user_text!r}")
         tools = self.registry.list_tools()
         self._debug(f"tools_available={len(tools)}")
@@ -134,7 +168,7 @@ class Agent:
             if action.response_text and action.plan is None:
                 self._debug("provider returned direct response (no tool plan)")
                 self._debug(f"assistant_response={self._short(action.response_text)}")
-                self.messages.append({"role": "assistant", "content": action.response_text})
+                self._append_message({"role": "assistant", "content": action.response_text})
                 return last_results, action.response_text
 
             if action.plan is None:
@@ -156,7 +190,7 @@ class Agent:
                             f"strict_violation call_id={violation.call_id} "
                             f"tool={violation.tool_name} message={violation.message}"
                         )
-                    self.messages.append(
+                    self._append_message(
                         {
                             "role": "system",
                             "content": (
@@ -172,9 +206,9 @@ class Agent:
             if isinstance(assistant_tool_message, dict):
                 self._debug("assistant tool-call message appended")
                 self._debug(f"assistant_tool_message={self._short(assistant_tool_message)}")
-                self.messages.append(assistant_tool_message)
+                self._append_message(assistant_tool_message)
 
-            last_results = asyncio.run(self.registry.execute_plan(action.plan))
+            last_results = self._run_coro_sync(self.registry.execute_plan(action.plan))
             self._debug(f"executed_calls={len(last_results)}")
             for result in last_results:
                 self._debug(
@@ -197,7 +231,7 @@ class Agent:
                 }
                 for result in last_results
             ]
-            self.messages.extend(tool_messages)
+            self._extend_messages(tool_messages)
 
         return last_results, None
 
@@ -211,8 +245,67 @@ class Agent:
 
         self._debug("calling provider.finalize")
         final_text = self.provider.finalize(self.messages, last_results)
-        self.messages.append({"role": "assistant", "content": final_text})
+        self._append_message({"role": "assistant", "content": final_text})
         self._debug(f"final response generated text={self._short(final_text)}")
+        return final_text
+
+    async def _arun_tool_rounds(self, user_text: str, max_rounds: int) -> tuple[list[ToolResult], str | None]:
+        self._seed_system_messages_if_needed()
+        self._append_message({"role": "user", "content": user_text})
+        tools = self.registry.list_tools()
+        last_results: list[ToolResult] = []
+
+        for _round_idx in range(1, max_rounds + 1):
+            action = self.provider.next_action(self.messages, tools)
+            if action.response_text and action.plan is None:
+                self._append_message({"role": "assistant", "content": action.response_text})
+                return last_results, action.response_text
+            if action.plan is None:
+                break
+
+            if self.strict_dependency_mode:
+                violations = validate_strict_dependencies(action.plan)
+                if violations:
+                    self._append_message(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Strict dependency mode is enabled. "
+                                "Replan tool calls with explicit depends_on and/or $ref "
+                                "for multi-call same-toolkit batches."
+                            ),
+                        }
+                    )
+                    continue
+
+            assistant_tool_message = action.metadata.get("assistant_tool_message")
+            if isinstance(assistant_tool_message, dict):
+                self._append_message(assistant_tool_message)
+
+            last_results = await self.registry.execute_plan(action.plan)
+            tool_messages = [
+                {
+                    "role": "tool",
+                    "tool_call_id": result.call_id,
+                    "tool_name": result.tool_name,
+                    "content": result.output if result.success else result.error,
+                    "success": result.success,
+                    "cached": result.cached,
+                }
+                for result in last_results
+            ]
+            self._extend_messages(tool_messages)
+
+        return last_results, None
+
+    async def arun_loop(self, user_text: str, max_rounds: int = 5) -> str:
+        if max_rounds < 1:
+            raise ValueError("max_rounds must be >= 1")
+        last_results, direct_response = await self._arun_tool_rounds(user_text=user_text, max_rounds=max_rounds)
+        if direct_response is not None:
+            return direct_response
+        final_text = self.provider.finalize(self.messages, last_results)
+        self._append_message({"role": "assistant", "content": final_text})
         return final_text
 
     def run_loop_stream(self, user_text: str, max_rounds: int = 5) -> Iterator[str]:
@@ -229,7 +322,7 @@ class Agent:
         finalize_stream = getattr(self.provider, "finalize_stream", None)
         if not callable(finalize_stream):
             final_text = self.provider.finalize(self.messages, last_results)
-            self.messages.append({"role": "assistant", "content": final_text})
+            self._append_message({"role": "assistant", "content": final_text})
             self._debug(f"final response generated text={self._short(final_text)}")
             yield final_text
             return
@@ -240,7 +333,7 @@ class Agent:
                 chunks.append(chunk)
                 yield chunk
         final_text = "".join(chunks)
-        self.messages.append({"role": "assistant", "content": final_text})
+        self._append_message({"role": "assistant", "content": final_text})
         self._debug(f"final streamed response generated text={self._short(final_text)}")
 
     def run_loop_events(
@@ -255,7 +348,7 @@ class Agent:
 
         events = EventStreamContext()
         self._seed_system_messages_if_needed()
-        self.messages.append({"role": "user", "content": user_text})
+        self._append_message({"role": "user", "content": user_text})
         tools = self.registry.list_tools()
         yield events.emit(
             "run_started",
@@ -271,7 +364,7 @@ class Agent:
             action = self.provider.next_action(self.messages, tools)
 
             if action.response_text and action.plan is None:
-                self.messages.append({"role": "assistant", "content": action.response_text})
+                self._append_message({"role": "assistant", "content": action.response_text})
                 if stream_final:
                     for chunk in self._chunk_text(action.response_text):
                         yield events.emit("text_chunk", chunk=chunk, source="direct")
@@ -309,7 +402,7 @@ class Agent:
                             for violation in violations
                         ],
                     )
-                    self.messages.append(
+                    self._append_message(
                         {
                             "role": "system",
                             "content": (
@@ -323,7 +416,7 @@ class Agent:
 
             assistant_tool_message = action.metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
-                self.messages.append(assistant_tool_message)
+                self._append_message(assistant_tool_message)
                 yield events.emit("assistant_tool_message", round=round_idx, message=assistant_tool_message)
 
             for batch_idx, batch in enumerate(action.plan.batches, start=1):
@@ -345,7 +438,7 @@ class Agent:
                         depends_on=call.depends_on,
                     )
 
-            last_results = asyncio.run(self.registry.execute_plan(action.plan))
+            last_results = self._run_coro_sync(self.registry.execute_plan(action.plan))
             for result in last_results:
                 yield events.emit(
                     "tool_finished",
@@ -370,7 +463,7 @@ class Agent:
                 }
                 for result in last_results
             ]
-            self.messages.extend(tool_messages)
+            self._extend_messages(tool_messages)
 
         finalize_stream = getattr(self.provider, "finalize_stream", None)
         if stream_final and callable(finalize_stream):
@@ -386,5 +479,151 @@ class Agent:
                 for chunk in self._chunk_text(final_text):
                     yield events.emit("text_chunk", chunk=chunk, source="finalize_fallback")
 
-        self.messages.append({"role": "assistant", "content": final_text})
+        self._append_message({"role": "assistant", "content": final_text})
+        yield events.emit("run_completed", final_text=final_text, rounds=max_rounds)
+
+    async def arun_loop_events(
+        self,
+        user_text: str,
+        max_rounds: int = 5,
+        *,
+        stream_final: bool = True,
+    ) -> AsyncIterator[dict[str, Any]]:
+        if max_rounds < 1:
+            raise ValueError("max_rounds must be >= 1")
+
+        events = EventStreamContext()
+        self._seed_system_messages_if_needed()
+        self._append_message({"role": "user", "content": user_text})
+        tools = self.registry.list_tools()
+        yield events.emit(
+            "run_started",
+            user_message=user_text,
+            max_rounds=max_rounds,
+            tools_available=len(tools),
+            tool_names=[tool.name for tool in tools],
+        )
+
+        last_results: list[ToolResult] = []
+        for round_idx in range(1, max_rounds + 1):
+            yield events.emit("round_started", round=round_idx)
+            action = self.provider.next_action(self.messages, tools)
+
+            if action.response_text and action.plan is None:
+                self._append_message({"role": "assistant", "content": action.response_text})
+                if stream_final:
+                    for chunk in self._chunk_text(action.response_text):
+                        yield events.emit("text_chunk", chunk=chunk, source="direct")
+                yield events.emit("run_completed", final_text=action.response_text, rounds=round_idx)
+                return
+
+            if action.plan is None:
+                break
+
+            yield events.emit(
+                "plan_received",
+                round=round_idx,
+                batches=[
+                    {
+                        "mode": batch.mode,
+                        "calls": [call.name for call in batch.calls],
+                        "call_ids": [call.id for call in batch.calls],
+                    }
+                    for batch in action.plan.batches
+                ],
+            )
+
+            if self.strict_dependency_mode:
+                violations = validate_strict_dependencies(action.plan)
+                if violations:
+                    yield events.emit(
+                        "strict_violations",
+                        round=round_idx,
+                        violations=[
+                            {
+                                "call_id": violation.call_id,
+                                "tool_name": violation.tool_name,
+                                "message": violation.message,
+                            }
+                            for violation in violations
+                        ],
+                    )
+                    self._append_message(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Strict dependency mode is enabled. "
+                                "Replan tool calls with explicit depends_on and/or $ref "
+                                "for multi-call same-toolkit batches."
+                            ),
+                        }
+                    )
+                    continue
+
+            assistant_tool_message = action.metadata.get("assistant_tool_message")
+            if isinstance(assistant_tool_message, dict):
+                self._append_message(assistant_tool_message)
+                yield events.emit("assistant_tool_message", round=round_idx, message=assistant_tool_message)
+
+            for batch_idx, batch in enumerate(action.plan.batches, start=1):
+                yield events.emit(
+                    "batch_started",
+                    round=round_idx,
+                    batch_index=batch_idx,
+                    mode=batch.mode,
+                    call_ids=[call.id for call in batch.calls],
+                )
+                for call in batch.calls:
+                    yield events.emit(
+                        "tool_started",
+                        round=round_idx,
+                        batch_index=batch_idx,
+                        call_id=call.id,
+                        tool_name=call.name,
+                        arguments=call.arguments,
+                        depends_on=call.depends_on,
+                    )
+
+            last_results = await self.registry.execute_plan(action.plan)
+            for result in last_results:
+                yield events.emit(
+                    "tool_finished",
+                    round=round_idx,
+                    call_id=result.call_id,
+                    tool_name=result.tool_name,
+                    success=result.success,
+                    cached=result.cached,
+                    approval=result.approval,
+                    output=result.output if result.success else None,
+                    error=result.error if not result.success else None,
+                )
+
+            tool_messages = [
+                {
+                    "role": "tool",
+                    "tool_call_id": result.call_id,
+                    "tool_name": result.tool_name,
+                    "content": result.output if result.success else result.error,
+                    "success": result.success,
+                    "cached": result.cached,
+                }
+                for result in last_results
+            ]
+            self._extend_messages(tool_messages)
+
+        finalize_stream = getattr(self.provider, "finalize_stream", None)
+        if stream_final and callable(finalize_stream):
+            chunks: list[str] = []
+            for chunk in finalize_stream(self.messages, last_results):
+                if chunk:
+                    chunks.append(chunk)
+                    yield events.emit("text_chunk", chunk=chunk, source="finalize_stream")
+            final_text = "".join(chunks)
+        else:
+            final_text = self.provider.finalize(self.messages, last_results)
+            if stream_final:
+                for chunk in self._chunk_text(final_text):
+                    yield events.emit("text_chunk", chunk=chunk, source="finalize_fallback")
+
+        self._append_message({"role": "assistant", "content": final_text})
         yield events.emit("run_completed", final_text=final_text, rounds=max_rounds)
