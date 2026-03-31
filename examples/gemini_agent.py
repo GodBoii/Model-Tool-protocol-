@@ -21,7 +21,7 @@ def main():
     # Note: Using a free model for demonstration. 
     # Requires GEMINI_API_KEY in your .env file.
     provider = Gemini(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
     )
     
     # 4. Create Agent
