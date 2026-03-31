@@ -5,45 +5,30 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from mtp import Agent, ToolRegistry, ToolRiskLevel, ToolSpec, load_dotenv_if_available
+from mtp import Agent, ToolRegistry, load_dotenv_if_available, register_local_toolkits
 from mtp.providers import GroqToolCallingProvider
-
-
-def list_repos(username: str) -> dict:
-    # Replace with real GitHub API logic in your project.
-    return {"username": username, "repos": ["mtp-core", "mtp-docs", "mtp-examples"]}
-
 
 def main() -> None:
     # Provider-agnostic env loading for all future adapters (Groq/OpenAI/Claude/Gemini/etc.).
     load_dotenv_if_available()
 
     registry = ToolRegistry()
-    registry.register_tool(
-        ToolSpec(
-            name="github.list_repos",
-            description="List public repositories for a given GitHub username.",
-            input_schema={
-                "type": "object",
-                "properties": {"username": {"type": "string"}},
-                "required": ["username"],
-                "additionalProperties": False,
-            },
-            risk_level=ToolRiskLevel.READ_ONLY,
-            cache_ttl_seconds=60,
-        ),
-        list_repos,
-    )
+    register_local_toolkits(registry, base_dir=pathlib.Path.cwd())
 
     provider = GroqToolCallingProvider(
-        model="llama-3.3-70b-versatile",
+        model="moonshotai/kimi-k2-instruct",
         system_prompt=(
             "You are an agent that uses tools when needed. "
-            "Call github.list_repos if user asks about repositories."
+            "Available local toolkits include calculator, file, python, and shell. "
+            "Use tools for concrete computation or file operations."
         ),
     )
-    agent = Agent(provider=provider, registry=registry)
-    reply = agent.run("write a poem on github")
+    agent = Agent(provider=provider, registry=registry, debug_mode=True)
+    reply = agent.run_loop(
+        "Calculate (25 * 4) + 10 and then list files in the current directory. "
+        "Give a short summary.",
+        max_rounds=4,
+    )
     print(reply)
 
 
