@@ -64,6 +64,86 @@ class PlanValidationError(ValueError):
     pass
 
 
+class ToolArgumentsValidationError(ValueError):
+    pass
+
+
+def _validate_schema_type(expected: str, value: Any) -> bool:
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return (isinstance(value, int) and not isinstance(value, bool)) or isinstance(value, float)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "null":
+        return value is None
+    return True
+
+
+def _validate_value(value: Any, schema: dict[str, Any], path: str) -> None:
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list) and any_of:
+        errors: list[str] = []
+        for option in any_of:
+            if not isinstance(option, dict):
+                continue
+            try:
+                _validate_value(value, option, path)
+                return
+            except ToolArgumentsValidationError as exc:
+                errors.append(str(exc))
+        joined = "; ".join(errors) if errors else "no anyOf branch matched"
+        raise ToolArgumentsValidationError(f"{path}: {joined}")
+
+    expected_type = schema.get("type")
+    if isinstance(expected_type, str) and not _validate_schema_type(expected_type, value):
+        actual = type(value).__name__
+        raise ToolArgumentsValidationError(
+            f"{path}: expected {expected_type}, got {actual}"
+        )
+
+    if expected_type == "object" and isinstance(value, dict):
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            properties = {}
+
+        required = schema.get("required")
+        if isinstance(required, list):
+            missing = [name for name in required if isinstance(name, str) and name not in value]
+            if missing:
+                raise ToolArgumentsValidationError(f"{path}: missing required fields: {missing}")
+
+        additional = schema.get("additionalProperties", True)
+        if additional is False:
+            unknown = [key for key in value if key not in properties]
+            if unknown:
+                raise ToolArgumentsValidationError(f"{path}: unknown fields: {unknown}")
+
+        for key, child_value in value.items():
+            child_schema = properties.get(key)
+            if isinstance(child_schema, dict):
+                _validate_value(child_value, child_schema, f"{path}.{key}")
+        return
+
+    if expected_type == "array" and isinstance(value, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for idx, item in enumerate(value):
+                _validate_value(item, item_schema, f"{path}[{idx}]")
+
+
+def validate_tool_arguments(arguments: dict[str, Any], input_schema: dict[str, Any] | None) -> None:
+    if input_schema is None:
+        return
+    _validate_value(arguments, input_schema, "$")
+
+
 def validate_execution_plan(plan: ExecutionPlan) -> None:
     call_ids: list[str] = []
     deps_map: dict[str, list[str]] = {}
