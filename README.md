@@ -55,6 +55,9 @@ print(response)
 
 # Stream final response tokens:
 agent.print_response("Give me a short summary.", max_rounds=4, stream=True)
+
+# Stream structured runtime events (JSON lines):
+agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stream_events=True)
 ```
 
 ## Run examples
@@ -66,6 +69,7 @@ python examples/groq_agent.py
 
 ## Docs map
 - [Quickstart](C:\Users\prajw\Downloads\MTP\docs\QUICKSTART.md)
+- [Events Contract](C:\Users\prajw\Downloads\MTP\docs\EVENTS.md)
 - [Architecture](C:\Users\prajw\Downloads\MTP\docs\ARCHITECTURE.md)
 - [Protocol Spec](C:\Users\prajw\Downloads\MTP\docs\PROTOCOL_SPEC.md)
 - [Local Toolkits](C:\Users\prajw\Downloads\MTP\docs\LOCAL_TOOLKITS.md)
