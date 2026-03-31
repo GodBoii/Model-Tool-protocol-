@@ -7,18 +7,23 @@
 - Provider adapter interface and local planner.
 - Basic tests and quickstart.
 
-## Phase 1 (next)
-- Versioned wire schema (`mtp_version`, message envelope, JSON schema files).
+## Phase 1 (implemented)
+- Versioned wire schema baseline:
+  - `mtp_version` envelope (`MessageEnvelope`)
 - Deterministic plan validator:
   - no duplicate call IDs
   - cycle detection
   - dependency edge validation
 - Approval policy hooks:
-  - allow / ask / deny by risk level and tool tags
-  - per-tool override and audit record
+  - allow / ask / deny by risk level
+  - per-tool override via `by_tool_name`
+- Groq provider adapter:
+  - model-native tool calls
+  - dotenv loading support
+  - one-round tool execution + final response
 
 ## Phase 2
-- Real provider adapters:
+- Additional provider adapters:
   - OpenAI Responses API
   - Anthropic Messages API
   - Gemini function calling
@@ -26,6 +31,7 @@
 - Planner modes:
   - direct model-native tool calls
   - model-generated MTP plan mode
+- Multi-round tool-call loop (`max_rounds`) with stop conditions
 
 ## Phase 3
 - Transport and remote execution:
@@ -38,5 +44,5 @@
 - Developer experience:
   - `mtp new` project template
   - tool decorator package (`@mtp_tool`)
-  - docs site with runnable examples
+  - docs site with runnable examples and cookbook
   - integration test matrix across providers
