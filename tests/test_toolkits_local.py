@@ -56,6 +56,15 @@ class LocalToolkitsTests(unittest.TestCase):
             )
             self.assertEqual(read_result.output, "hello")
 
+            shell_result = asyncio.run(
+                reg.execute_call(
+                    ToolCall(id="s1", name="shell.run_command", arguments={"command": "python --version"}),
+                    {},
+                )
+            )
+            self.assertFalse(shell_result.success)
+            self.assertIn("not allowed", shell_result.error or "")
+
 
 if __name__ == "__main__":
     unittest.main()
