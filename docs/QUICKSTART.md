@@ -64,6 +64,12 @@ result = agent.run(
 )
 print(result)
 
+# Async usage (inside existing asyncio apps):
+# result = await agent.arun(
+#     "Calculate (25*4)+10 and list current directory files in one short summary.",
+#     max_rounds=4,
+# )
+
 # Or stream tokens to terminal:
 agent.print_response(
     "Share a short summary of current directory files.",

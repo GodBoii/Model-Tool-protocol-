@@ -11,7 +11,13 @@ from .protocol import (
     ToolSpec,
 )
 from .runtime import ToolRegistry, ToolkitLoader
-from .schema import CURRENT_MTP_VERSION, MessageEnvelope, validate_execution_plan
+from .schema import (
+    CURRENT_MTP_VERSION,
+    MessageEnvelope,
+    ToolArgumentsValidationError,
+    validate_execution_plan,
+    validate_tool_arguments,
+)
 from .simple_agent import MTPAgent
 from .strict import StrictViolation, validate_strict_dependencies
 from .tools import FunctionToolkit, mtp_tool, tool_spec_from_callable, toolkit_from_functions
@@ -57,4 +63,6 @@ __all__ = [
     "validate_strict_dependencies",
     "load_dotenv_if_available",
     "validate_execution_plan",
+    "validate_tool_arguments",
+    "ToolArgumentsValidationError",
 ]
