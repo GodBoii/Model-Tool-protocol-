@@ -4,7 +4,9 @@ MTP is a protocol-first Python library for agent tool orchestration, built to su
 - Lazy tool loading by toolkit/category.
 - Dependency-aware batch tool execution.
 - Policy-aware execution based on tool risk.
+- Multi-round model-tool-model loops.
 - Provider adapters (now including Groq).
+- Transport primitives (stdio + HTTP envelope transport).
 
 ## Repository structure
 
@@ -13,6 +15,8 @@ MTP is a protocol-first Python library for agent tool orchestration, built to su
 - `src/mtp/policy.py`: Risk policy (`allow` / `ask` / `deny`).
 - `src/mtp/runtime.py`: Tool registry, lazy loading, caching, batch execution.
 - `src/mtp/agent.py`: Agent loop around provider + runtime.
+- `src/mtp/toolkits/`: Local toolkits (`calculator`, `file`, `python`, `shell`).
+- `src/mtp/transport/`: Envelope transport over stdio and HTTP.
 - `src/mtp/providers/`: Provider adapters (`MockPlannerProvider`, `GroqToolCallingProvider`).
 - `docs/`: Architecture, roadmap, protocol details, Groq integration guide.
 
@@ -52,6 +56,8 @@ python examples/quickstart.py
 ```bash
 python examples/groq_agent.py
 ```
+
+This example uses local toolkits and `Agent.run_loop(..., max_rounds=4)`.
 
 ## Tests
 
