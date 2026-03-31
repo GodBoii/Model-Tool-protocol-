@@ -1,49 +1,38 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 import json
 from typing import Any
 
 from .agent import Agent
-from .config import load_dotenv_if_available
-from .providers import GroqToolCallingProvider
 from .runtime import ToolRegistry
-from .toolkits import register_local_toolkits
+from .agent import ProviderAdapter
 
 
 class MTPAgent:
     """
-    High-level convenience API for common single-agent usage.
+    Provider-agnostic convenience wrapper around Agent.
+    Requires explicit provider + tool registry from the user.
     """
 
     def __init__(
         self,
         *,
-        model: str = "llama-3.3-70b-versatile",
-        instructions: str | None = None,
+        provider: ProviderAdapter,
+        registry: ToolRegistry,
         debug_mode: bool = False,
         strict_dependency_mode: bool = False,
-        base_dir: str | Path = ".",
-        load_dotenv: bool = True,
+        instructions: str | None = None,
+        system_instructions: str | None = None,
         stream_chunk_size: int = 40,
     ) -> None:
-        if load_dotenv:
-            load_dotenv_if_available()
-
-        registry = ToolRegistry()
-        register_local_toolkits(registry, base_dir=base_dir)
-
-        provider = GroqToolCallingProvider(
-            model=model,
-            strict_dependency_mode=strict_dependency_mode,
-        )
         self._agent = Agent(
             provider=provider,
             registry=registry,
             debug_mode=debug_mode,
             strict_dependency_mode=strict_dependency_mode,
             instructions=instructions,
+            system_instructions=system_instructions,
             stream_chunk_size=stream_chunk_size,
         )
 
