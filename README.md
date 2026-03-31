@@ -8,26 +8,22 @@ MTP is a protocol-first Python library for agent tool orchestration, built to su
 - Provider adapters (now including Groq).
 - Transport primitives (stdio + HTTP envelope transport).
 
-## Repository structure
-
-- `src/mtp/protocol.py`: Core protocol entities (`ToolSpec`, `ToolCall`, `ExecutionPlan`, etc.).
-- `src/mtp/schema.py`: Versioned envelope + execution plan validation.
-- `src/mtp/policy.py`: Risk policy (`allow` / `ask` / `deny`).
-- `src/mtp/runtime.py`: Tool registry, lazy loading, caching, batch execution.
-- `src/mtp/agent.py`: Agent loop around provider + runtime.
-- `src/mtp/toolkits/`: Local toolkits (`calculator`, `file`, `python`, `shell`).
-- `src/mtp/transport/`: Envelope transport over stdio and HTTP.
-- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider`, `GroqToolCallingProvider`).
-- `docs/`: Architecture, roadmap, protocol details, Groq integration guide.
+## Quickstart
 
 ## Install
 
-### Base install
+### From source (this repo)
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e .
+```
+
+### From PyPI (target usage)
+
+```bash
+pip install mtp
 ```
 
 ### Provider SDKs and dotenv (install separately)
@@ -43,24 +39,50 @@ Copy `.env.example` to `.env` and set your key:
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
-## Quickstart
+## Create an agent (local toolkits + Groq)
 
-### Local mock planner
+```python
+from mtp import Agent, ToolRegistry, load_dotenv_if_available, register_local_toolkits
+from mtp.providers import GroqToolCallingProvider
+
+load_dotenv_if_available()
+
+registry = ToolRegistry()
+register_local_toolkits(registry, base_dir=".")
+
+provider = GroqToolCallingProvider(
+    model="llama-3.3-70b-versatile",
+    system_prompt="Use tools when needed and return concise answers.",
+)
+
+agent = Agent(provider=provider, registry=registry, debug_mode=True)
+response = agent.run_loop("Calculate 25*4+10 and list files in current directory.", max_rounds=4)
+print(response)
+```
+
+## Run examples
 
 ```bash
 python examples/quickstart.py
-```
-
-### Groq provider (real API)
-
-```bash
 python examples/groq_agent.py
 ```
 
-This example uses local toolkits and `Agent.run_loop(..., max_rounds=4)`.
+## Docs map
+- [Quickstart](C:\Users\prajw\Downloads\MTP\docs\QUICKSTART.md)
+- [Architecture](C:\Users\prajw\Downloads\MTP\docs\ARCHITECTURE.md)
+- [Protocol Spec](C:\Users\prajw\Downloads\MTP\docs\PROTOCOL_SPEC.md)
+- [Local Toolkits](C:\Users\prajw\Downloads\MTP\docs\LOCAL_TOOLKITS.md)
+- [Groq Integration](C:\Users\prajw\Downloads\MTP\docs\GROQ_INTEGRATION.md)
+- [Transport](C:\Users\prajw\Downloads\MTP\docs\TRANSPORT.md)
+- [Publishing](C:\Users\prajw\Downloads\MTP\docs\PUBLISHING.md)
 
-## Tests
-
-```bash
-python -m unittest discover -s tests -v
-```
+## Repository structure
+- `src/mtp/protocol.py`: Core protocol entities (`ToolSpec`, `ToolCall`, `ExecutionPlan`, etc.).
+- `src/mtp/schema.py`: Versioned envelope + execution plan validation.
+- `src/mtp/policy.py`: Risk policy (`allow` / `ask` / `deny`).
+- `src/mtp/runtime.py`: Tool registry, lazy loading, caching, batch execution.
+- `src/mtp/agent.py`: Agent loop around provider + runtime.
+- `src/mtp/toolkits/`: Local toolkits (`calculator`, `file`, `python`, `shell`).
+- `src/mtp/transport/`: Envelope transport over stdio and HTTP.
+- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider`, `GroqToolCallingProvider`).
+- `docs/`: documentation and implementation guides.

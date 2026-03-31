@@ -33,6 +33,7 @@
   - execute plan
   - return tool results to provider for final response
 - Includes `run_loop(max_rounds=N)` for multi-round tool chaining.
+- Optional strict dependency enforcement (`strict_dependency_mode=True`) to reject guessed intermediate values in same-toolkit multi-call batches.
 
 6. `mtp.providers`
 - Provider adapter interface for OpenAI/Anthropic/Gemini/Groq/etc.
@@ -50,10 +51,36 @@ Cross-provider configuration note:
   - `file`: list/read/write/search
   - `python`: run code and files in constrained context
   - `shell`: run local shell commands
+- Local toolkit parameter schemas accept `{"$ref":"<tool_call_id>"}` values to enable dependency wiring in model-generated arguments.
 
 8. `mtp.transport`
 - `stdio` transport for line-delimited JSON envelopes.
 - HTTP transport server for envelope POST roundtrips.
+
+## Module boundaries
+
+- `mtp.providers`:
+  - Converts model-native responses into `AgentAction`
+  - Does not execute tools
+  - Does not own file system or toolkit logic
+
+- `mtp.toolkits`:
+  - Owns tool specs + handlers for domain capabilities
+  - Can expose spec previews via `list_tool_specs()` for lazy discovery
+  - Should avoid provider-specific assumptions
+
+- `mtp.runtime`:
+  - Single source of truth for plan execution
+  - Handles lazy loading, caching, refs, and policy checks
+
+- `mtp.agent`:
+  - Orchestration loop only
+  - No provider-specific tool parsing logic
+
+- `mtp.transport`:
+  - Message ingress/egress only
+  - Uses `MessageEnvelope` serialization
+  - No business logic execution
 
 ## Protocol direction
 
