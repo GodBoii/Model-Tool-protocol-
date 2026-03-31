@@ -1,17 +1,17 @@
 # Providers
 
-MTP uses a provider registry plugin pattern so new providers are easy to add and discover.
+MTP uses explicit provider classes.  
+You instantiate the provider you want and pass it to `Agent` / `MTPAgent`.
 
-## Built-in usage
+## Built-in usage (explicit)
 
 ```python
-from mtp import create_provider, list_providers
+from mtp.providers import GroqToolCallingProvider
 
-print(list_providers())  # e.g. ["groq", "mock"]
-provider = create_provider("groq", model="llama-3.3-70b-versatile")
+provider = GroqToolCallingProvider(model="llama-3.3-70b-versatile")
 ```
 
-## Add a new provider (1 file + 1 registration line)
+## Add a new provider
 
 ## 1) Create provider file
 
@@ -28,38 +28,27 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         ...
 ```
 
-## 2) Register provider
+## 2) Export provider class
 
 In `src/mtp/providers/__init__.py`:
 
 ```python
 from .anthropic_provider import AnthropicToolCallingProvider
-from .registry import register_provider, list_providers
-
-if "anthropic" not in list_providers():
-    register_provider("anthropic", AnthropicToolCallingProvider)
 ```
 
-That is the required registration line.
-
-## Optional decorator style
+## 3) Use provider directly
 
 ```python
-from mtp.providers import provider_plugin
+from mtp import MTPAgent, ToolRegistry
+from mtp.providers import AnthropicToolCallingProvider
 
-@provider_plugin("anthropic")
-class AnthropicToolCallingProvider(...):
-    ...
+provider = AnthropicToolCallingProvider(model="claude-...")
+registry = ToolRegistry()
+agent = MTPAgent(provider=provider, registry=registry)
 ```
-
-## Registry API
-
-- `register_provider(name, factory, override=False)`
-- `create_provider(name, **kwargs)`
-- `list_providers()`
-- `provider_plugin(name, override=False)`
 
 ## Notes
 
-- Registry is provider-agnostic. No provider is mandatory for core Agent.
-- `MTPAgent` stays explicit: user supplies `provider` + `registry`.
+- This matches the explicit style used by frameworks like Agno.
+- No provider is defaulted by core `Agent` / `MTPAgent`.
+- Different providers can expose different constructor parameters safely.
