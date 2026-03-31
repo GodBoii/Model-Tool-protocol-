@@ -34,6 +34,7 @@
   - return tool results to provider for final response
 - Includes `run_loop(max_rounds=N)` for multi-round tool chaining.
 - Optional strict dependency enforcement (`strict_dependency_mode=True`) to reject guessed intermediate values in same-toolkit multi-call batches.
+- Injects internal MTP system instructions automatically; user instructions are layered on top.
 
 6. `mtp.providers`
 - Provider adapter interface for OpenAI/Anthropic/Gemini/Groq/etc.
@@ -56,6 +57,13 @@ Cross-provider configuration note:
 8. `mtp.transport`
 - `stdio` transport for line-delimited JSON envelopes.
 - HTTP transport server for envelope POST roundtrips.
+
+9. `mtp.simple_agent`
+- `MTPAgent` provides high-level ergonomic construction:
+  - auto dotenv loading
+  - auto local toolkit registration
+  - Groq provider wiring
+  - short `run()` / `print_response()` interface
 
 ## Module boundaries
 
