@@ -11,6 +11,19 @@ from ..protocol import ToolRiskLevel, ToolSpec
 from ..runtime import RegisteredTool, ToolRegistry, ToolkitLoader
 
 
+def _ref_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"$ref": {"type": "string"}},
+        "required": ["$ref"],
+        "additionalProperties": False,
+    }
+
+
+def _allow_ref(base_schema: dict[str, Any]) -> dict[str, Any]:
+    return {"anyOf": [base_schema, _ref_schema()]}
+
+
 class CalculatorToolkit(ToolkitLoader):
     def list_tool_specs(self) -> list[ToolSpec]:
         return [
@@ -19,7 +32,7 @@ class CalculatorToolkit(ToolkitLoader):
                 description="Add two numbers.",
                 input_schema={
                     "type": "object",
-                    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                    "properties": {"a": _allow_ref({"type": "number"}), "b": _allow_ref({"type": "number"})},
                     "required": ["a", "b"],
                     "additionalProperties": False,
                 },
@@ -30,7 +43,7 @@ class CalculatorToolkit(ToolkitLoader):
                 description="Subtract b from a.",
                 input_schema={
                     "type": "object",
-                    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                    "properties": {"a": _allow_ref({"type": "number"}), "b": _allow_ref({"type": "number"})},
                     "required": ["a", "b"],
                     "additionalProperties": False,
                 },
@@ -41,7 +54,7 @@ class CalculatorToolkit(ToolkitLoader):
                 description="Multiply two numbers.",
                 input_schema={
                     "type": "object",
-                    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                    "properties": {"a": _allow_ref({"type": "number"}), "b": _allow_ref({"type": "number"})},
                     "required": ["a", "b"],
                     "additionalProperties": False,
                 },
@@ -52,7 +65,7 @@ class CalculatorToolkit(ToolkitLoader):
                 description="Divide a by b.",
                 input_schema={
                     "type": "object",
-                    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                    "properties": {"a": _allow_ref({"type": "number"}), "b": _allow_ref({"type": "number"})},
                     "required": ["a", "b"],
                     "additionalProperties": False,
                 },
@@ -63,7 +76,7 @@ class CalculatorToolkit(ToolkitLoader):
                 description="Square root of a non-negative number.",
                 input_schema={
                     "type": "object",
-                    "properties": {"x": {"type": "number"}},
+                    "properties": {"x": _allow_ref({"type": "number"})},
                     "required": ["x"],
                     "additionalProperties": False,
                 },
@@ -120,8 +133,8 @@ class FileToolkit(ToolkitLoader):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string"},
-                        "recursive": {"type": "boolean"},
+                        "path": _allow_ref({"type": "string"}),
+                        "recursive": _allow_ref({"type": "boolean"}),
                     },
                     "additionalProperties": False,
                 },
@@ -132,7 +145,7 @@ class FileToolkit(ToolkitLoader):
                 description="Read text content from a file.",
                 input_schema={
                     "type": "object",
-                    "properties": {"path": {"type": "string"}},
+                    "properties": {"path": _allow_ref({"type": "string"})},
                     "required": ["path"],
                     "additionalProperties": False,
                 },
@@ -144,9 +157,9 @@ class FileToolkit(ToolkitLoader):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string"},
-                        "content": {"type": "string"},
-                        "append": {"type": "boolean"},
+                        "path": _allow_ref({"type": "string"}),
+                        "content": _allow_ref({"type": "string"}),
+                        "append": _allow_ref({"type": "boolean"}),
                     },
                     "required": ["path", "content"],
                     "additionalProperties": False,
@@ -159,8 +172,8 @@ class FileToolkit(ToolkitLoader):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "pattern": {"type": "string"},
-                        "path": {"type": "string"},
+                        "pattern": _allow_ref({"type": "string"}),
+                        "path": _allow_ref({"type": "string"}),
                     },
                     "required": ["pattern"],
                     "additionalProperties": False,
@@ -260,8 +273,8 @@ class PythonToolkit(ToolkitLoader):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "code": {"type": "string"},
-                        "return_variable": {"type": "string"},
+                        "code": _allow_ref({"type": "string"}),
+                        "return_variable": _allow_ref({"type": "string"}),
                     },
                     "required": ["code"],
                     "additionalProperties": False,
@@ -274,8 +287,8 @@ class PythonToolkit(ToolkitLoader):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string"},
-                        "return_variable": {"type": "string"},
+                        "path": _allow_ref({"type": "string"}),
+                        "return_variable": _allow_ref({"type": "string"}),
                     },
                     "required": ["path"],
                     "additionalProperties": False,
@@ -316,7 +329,7 @@ class ShellToolkit(ToolkitLoader):
                 description="Run a shell command in base_dir and return stdout/stderr.",
                 input_schema={
                     "type": "object",
-                    "properties": {"command": {"type": "string"}},
+                    "properties": {"command": _allow_ref({"type": "string"})},
                     "required": ["command"],
                     "additionalProperties": False,
                 },
@@ -358,4 +371,3 @@ def register_local_toolkits(
     registry.register_toolkit_loader("file", FileToolkit(base_dir=root))
     registry.register_toolkit_loader("python", PythonToolkit(base_dir=root))
     registry.register_toolkit_loader("shell", ShellToolkit(base_dir=root))
-
