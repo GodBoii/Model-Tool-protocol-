@@ -14,6 +14,9 @@ agent.print_response(prompt, stream=True, stream_events=True)
 
 All providers map into the same event shape.
 
+`print_response(..., stream_events=True)` now defaults to human-readable terminal formatting.
+Use `event_format="json"` to print raw JSON lines.
+
 ## Base fields
 
 Every event includes:
@@ -31,6 +34,8 @@ Every event includes:
   - `max_rounds`
   - `tools_available`
   - `tool_names`
+  - `system_instructions`
+  - `member_agents`: list of `{id, mode, delegation_tool, instructions, system_instructions, tools}`
 
 - `round_started`
   - `round`

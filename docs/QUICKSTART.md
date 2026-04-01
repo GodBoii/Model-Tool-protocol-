@@ -77,12 +77,21 @@ agent.print_response(
     stream=True,
 )
 
-# Stream structured runtime events (JSON lines):
+# Stream structured runtime events (readable terminal logs by default):
 agent.print_response(
     "Calculate (25*4)+10 and list current directory files in one short summary.",
     max_rounds=4,
     stream=True,
     stream_events=True,
+)
+
+# For raw JSON lines:
+agent.print_response(
+    "Calculate (25*4)+10 and list current directory files in one short summary.",
+    max_rounds=4,
+    stream=True,
+    stream_events=True,
+    event_format="json",
 )
 ```
 
