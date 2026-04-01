@@ -21,11 +21,13 @@
 - Maintains tool registry and toolkit loaders.
 - Supports lazy toolkit loading by tool prefix (example: `github.*`).
 - Supports tool spec preview from loaders so providers can discover tools before handlers load.
+- Supports dynamic tool mutation via registry-level `add_tool` / `set_tools`.
 - Executes `ExecutionPlan` batches in sequential or parallel mode.
 - Resolves inter-call references via `{ "$ref": "<call_id>" }`.
 - Applies result caching with TTL.
 - Enforces policy decisions before tool invocation.
 - Supports `ASK` approval flow via optional `approval_handler`.
+- Propagates tool control-flow exceptions (`RetryAgentRun`, `StopAgentRun`) to the agent loop.
 
 5. `mtp.agent`
 - Generic agent loop:
@@ -35,8 +37,11 @@
   - return tool results to provider for final response
 - Includes `run_loop(max_rounds=N)` for multi-round tool chaining.
 - Includes async APIs: `arun()` / `arun_loop()` / `arun_loop_events(...)`.
+- Supports optional async provider hooks (`anext_action`, `afinalize`) with sync fallback.
 - Includes `run_loop_stream(...)` for text streaming.
 - Includes `run_loop_events(...)` for structured runtime event streaming.
+- Supports `continue_run(...)` / `acontinue_run(...)` for paused-run continuation.
+- Supports structured input validation (`input_schema`) and output refinement pipeline (`output_model`, `parser_model`).
 - Optional strict dependency enforcement (`strict_dependency_mode=True`) to reject guessed intermediate values in same-toolkit multi-call batches.
 - Injects internal MTP system instructions automatically; user instructions are layered on top.
 
@@ -109,11 +114,13 @@ Implemented:
 - Groq provider + dotenv loading support.
 - Local no-key toolkits for calculator/file/python/shell.
 - Multi-round execution loop in agent.
+- Continue/pause run primitives with tool-driven control flow.
+- Structured input schema validation.
+- Output model + parser model refinement pipeline.
 - Envelope transport primitives (stdio + HTTP).
 
 Next steps:
 - JSON schema + versioned wire format for MTP messages.
 - Transport abstraction (stdio/http/ws).
-- Approval policy hooks based on risk level.
 - Streaming result chunks for long-running tools.
-- More provider adapters and multi-round tool-call loops.
+- Provider capability matrix and richer per-provider options.

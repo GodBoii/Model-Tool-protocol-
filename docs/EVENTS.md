@@ -22,6 +22,7 @@ Every event includes:
 - `run_id`: stable id for the run
 - `sequence`: monotonic event index within the run
 - Optional run context fields on `run_started`: `user_id`, `session_id`, `metadata`
+- Optional validation field on `run_started`: `input_validation_error`
 
 ## Event types
 
@@ -81,6 +82,16 @@ Every event includes:
 
 - `run_cancelled`
   - `round`
+
+- `tool_retry_requested`
+  - `round`
+  - `tool_name`
+  - `feedback`
+
+- `run_paused`
+  - `round`
+  - `reason`
+  - `tool_name`
 
 ## Why this is provider-agnostic
 
