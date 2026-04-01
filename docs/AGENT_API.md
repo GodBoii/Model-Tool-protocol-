@@ -1,22 +1,8 @@
-# Agent API Reference (Detailed)
+# Agent API Reference
 
-This guide explains every major parameter and runtime option for creating and running agents in MTP.
+This document is the canonical reference for `Agent` and `MTPAgent`.
 
-It is written in the same spirit as Agno's agent docs, but mapped to MTP's architecture:
-- Agno often exposes `model=` directly on `Agent`.
-- MTP keeps model/provider details inside a `provider` object and passes that provider into `Agent`/`MTPAgent`.
-
-## 1) Mental Model
-
-In MTP, there are two layers:
-1. Provider layer: model + API details (for example OpenAI/Groq/Anthropic model names, API keys, tool-call parsing).
-2. Agent layer: orchestration loop (rounds, tool execution, event streaming, strict dependencies, debug logging).
-
-So when you ask "what model parameter can I set on Agent?", the answer is:
-- `model` is set on the provider instance.
-- `provider` is passed to `Agent` or `MTPAgent`.
-
-## 2) `Agent` Constructor Parameters
+## Constructor
 
 Source: [agent.py](/c:/Users/prajw/Downloads/MTP/src/mtp/agent.py)
 
@@ -34,222 +20,136 @@ Agent(
     system_instructions: str | None = None,
     stream_chunk_size: int = 40,
     max_history_messages: int = 200,
+    mode: str = "standalone",
+    members: dict[str, Agent] | None = None,
 )
 ```
 
-### `provider` (required)
-- Type: `ProviderAdapter`
-- Purpose: Connects the agent to a model backend and translates model responses into `AgentAction`.
-- Important: model name/config is controlled here (for example `OpenAIToolCallingProvider(model="gpt-4o")`).
+`mode` options:
+- `standalone` (default): regular single-agent behavior.
+- `member`: marks this instance as a delegated sub-agent.
+- `delegator` / `orchestration`: enables member delegation tools.
 
-### `tools` (required, recommended)
-- Type: `ToolRegistry`
-- Purpose: Holds tools/toolkits and executes tool plans returned by the provider.
+When `mode` is `delegator` or `orchestration`, each member is exposed as a tool:
+- `agent.member.<member_name>`
+- input: `{"task": ..., "max_rounds": 5, "tool_call_limit": ...}`
+- output: member agent final text response.
 
-### `registry` (legacy alias)
-- Type: `ToolRegistry | None`
-- Purpose: Backward-compatible alias for `tools`.
+## Runtime methods
 
-### `debug_mode`
-- Type: `bool`
-- Default: `False`
-- Purpose: Enables verbose runtime logs (`[MTP DEBUG] ...`) for planning/execution visibility.
+### Basic execution
 
-### `debug_logger`
-- Type: `Callable[[str], None] | None`
-- Default: `print`
-- Purpose: Custom log sink for debug messages.
+- `run(user_input: Any) -> str`
+- `arun(user_input: Any) -> str`
+- `run_loop(user_input: Any, max_rounds: int = 5, *, tool_call_limit: int | None = None, input_schema: dict | None = None) -> str`
+- `arun_loop(...) -> str`
 
-### `debug_max_chars`
-- Type: `int`
-- Default: `600`
-- Purpose: Truncation limit for debug payload logging.
+`user_input` can be a string, dict, list, or model-like object (`model_dump`/`dict` supported).
 
-### `strict_dependency_mode`
-- Type: `bool`
-- Default: `False`
-- Purpose: Enforces explicit dependency wiring for multi-call same-toolkit batches.
-- Behavior: if violations are detected, agent injects a replan instruction and continues next round.
+### Structured input
 
-### `instructions`
-- Type: `str | None`
-- Default: `None`
-- Purpose: Your app/task-specific system instruction.
-- Added as a system message at run start (after built-in MTP system instructions).
+- `input_schema` is supported on:
+  - `run_loop`
+  - `arun_loop`
+  - `run_output`
+  - `arun_output`
+  - `run_stream`/events wrappers via `MTPAgent`
 
-### `system_instructions`
-- Type: `str | None`
-- Default: internal MTP instructions (`DEFAULT_MTP_SYSTEM_INSTRUCTIONS`)
-- Purpose: Override/replace the default core orchestration system instructions.
+If validation fails, run exits early with `RunOutput.output_validation_error`.
 
-### `stream_chunk_size`
-- Type: `int`
-- Default: `40`
-- Purpose: Chunk size when non-stream final text is chunked for streaming interfaces.
-- If `<= 0`, full text is yielded in one chunk.
+### Structured output
 
-### `max_history_messages`
-- Type: `int`
-- Default: `200`
-- Purpose: Bounds retained conversation history in memory.
-- System messages are retained; non-system messages are trimmed from oldest first.
+- `output_schema` is supported on:
+  - `run_output`
+  - `arun_output`
 
-## 3) `MTPAgent` Constructor Parameters
+When provided, MTP parses final text as JSON and validates against the schema.
+
+### Output model pipeline
+
+`run_output` and `arun_output` support:
+
+- `output_model`
+- `output_model_prompt`
+- `parser_model`
+- `parser_model_prompt`
+
+Pipeline order:
+1. primary run generates final text
+2. optional `output_model` refines it
+3. optional `parser_model` post-processes it
+4. optional `output_schema` validation runs
+
+### RunOutput
+
+Source: [agent.py](/c:/Users/prajw/Downloads/MTP/src/mtp/agent.py)
+
+Fields:
+
+- `run_id`
+- `input`
+- `final_text`
+- `messages`
+- `tool_results`
+- `user_id`
+- `session_id`
+- `metadata`
+- `cancelled`
+- `total_tool_calls`
+- `output`
+- `output_validation_error`
+- `paused`
+- `pause_reason`
+
+### Cancellation and continuation
+
+- `cancel_run(run_id: str) -> bool`
+- `continue_run(run_output: RunOutput | None = None, run_id: str | None = None, ...) -> RunOutput`
+- `acontinue_run(...) -> RunOutput`
+
+Paused runs (for example from `StopAgentRun`) can be resumed by `run_id` or prior `RunOutput`.
+
+### Streaming
+
+- `run_loop_stream(...) -> Iterator[str]`
+- `run_loop_events(...) -> Iterator[dict]`
+- `arun_loop_events(...) -> AsyncIterator[dict]`
+
+`MTPAgent.print_response(..., stream_events=True)` prints event JSON lines.
+
+### Dynamic tool management
+
+- `add_tool(tool: RegisteredTool | Callable) -> None`
+- `set_tools(tools: list[RegisteredTool | Callable]) -> None`
+
+This enables post-initialization tool updates without rebuilding the agent.
+
+## Tool control-flow exceptions
+
+Source: [exceptions.py](/c:/Users/prajw/Downloads/MTP/src/mtp/exceptions.py)
+
+- `RetryAgentRun("feedback")`: injects feedback and asks the model to replan.
+- `StopAgentRun("reason")`: pauses/stops the current run and returns with `paused=True`.
+
+## Async provider contract
+
+Providers may now implement optional async hooks:
+
+- `anext_action(...)`
+- `afinalize(...)`
+
+If not implemented, agent async APIs use thread fallback for sync provider methods.
+
+## MTPAgent wrapper
 
 Source: [simple_agent.py](/c:/Users/prajw/Downloads/MTP/src/mtp/simple_agent.py)
 
-`MTPAgent` is a convenience wrapper around `Agent` with nearly the same config:
+`MTPAgent` mirrors the same features:
 
-```python
-MTPAgent(
-    *,
-    provider: ProviderAdapter,
-    tools: ToolRegistry | None = None,
-    registry: ToolRegistry | None = None,
-    debug_mode: bool = False,
-    strict_dependency_mode: bool = False,
-    instructions: str | None = None,
-    system_instructions: str | None = None,
-    stream_chunk_size: int = 40,
-    max_history_messages: int = 200,
-)
-```
-
-Use `MTPAgent` when you want simpler high-level methods (`run`, `print_response`) without directly managing lower-level orchestration calls.
-
-## 4) Runtime Methods and Their Parameters
-
-## `Agent` methods
-
-### `run(user_text: str) -> str`
-- Single-round helper (`run_loop(..., max_rounds=1)`).
-
-### `run_loop(user_text: str, max_rounds: int = 5) -> str`
-- Multi-round tool planning/execution loop.
-- `max_rounds` must be `>= 1`.
-- Optional: `tool_call_limit` to cap total planned tool calls per run.
-
-### `arun(user_text: str) -> str`, `arun_loop(..., max_rounds=5)`
-- Async equivalents.
-- Use these in existing asyncio applications.
-
-### `run_output(...) -> RunOutput` / `arun_output(...) -> RunOutput`
-- Structured run result with:
-  - `run_id`
-  - `final_text`
-  - `messages`
-  - `tool_results`
-  - `total_tool_calls`
-  - `cancelled`
-  - optional parsed `output` + `output_validation_error` when `output_schema` is provided
-- Supports per-run context: `user_id`, `session_id`, `metadata`.
-
-### `cancel_run(run_id: str) -> bool`
-- Cancels an active run by id.
-- Returns `True` when cancellation was accepted.
-
-### `run_loop_stream(user_text: str, max_rounds: int = 5) -> Iterator[str]`
-- Streams text chunks.
-
-### `run_loop_events(user_text: str, max_rounds: int = 5, stream_final: bool = True)`
-- Emits structured events (`run_started`, `plan_received`, `tool_started`, `tool_finished`, `text_chunk`, `run_completed`).
-- Optional per-run context and controls:
-  - `run_id`
-  - `user_id`
-  - `session_id`
-  - `metadata`
-  - `tool_call_limit`
-- Emits `run_cancelled` when cancellation is requested.
-
-### `arun_loop_events(...)`
-- Async event-stream variant.
-
-## `MTPAgent` methods
-
-### `run(prompt: str, max_rounds: int = 5) -> str`
-### `run_stream(prompt: str, max_rounds: int = 5) -> Iterator[str]`
-### `arun(prompt: str, max_rounds: int = 5) -> str`
-### `run_events(prompt: str, max_rounds: int = 5, stream_final: bool = True)`
-### `arun_events(prompt: str, max_rounds: int = 5, stream_final: bool = True)`
-
-### `print_response(prompt, max_rounds=5, stream=False, stream_events=False)`
-- `stream=False`, `stream_events=False`: prints one final response.
-- `stream=True`, `stream_events=False`: prints text chunks.
-- `stream_events=True`: prints JSON event stream (`stream` controls whether final text is chunked in events).
-
-`stream_events` is equivalent in spirit to Agno's runtime event streaming toggles.
-
-## 5) Where `model` Is Configured (Important)
-
-In MTP, `model` is set on provider constructors, not on `Agent`.
-
-Examples:
-
-```python
-from mtp.providers import OpenAIToolCallingProvider, OpenRouterToolCallingProvider
-from mtp.providers import AnthropicToolCallingProvider, GeminiToolCallingProvider
-
-openai_provider = OpenAIToolCallingProvider(model="gpt-4o")
-openrouter_provider = OpenRouterToolCallingProvider(model="qwen/qwen3.6-plus-preview:free")
-anthropic_provider = AnthropicToolCallingProvider(model="claude-3-5-sonnet-20241022")
-gemini_provider = GeminiToolCallingProvider(model="gemini-2.0-flash")
-```
-
-Then pass provider into agent:
-
-```python
-agent = MTPAgent(provider=openai_provider, tools=registry, debug_mode=True)
-```
-
-## 6) Common Creation Patterns
-
-## Minimal
-
-```python
-from mtp import MTPAgent, ToolRegistry
-from mtp.providers import OpenAIToolCallingProvider
-from mtp.toolkits import register_local_toolkits
-
-registry = ToolRegistry()
-register_local_toolkits(registry, base_dir=".")
-
-provider = OpenAIToolCallingProvider(model="gpt-4o")
-agent = MTPAgent(provider=provider, tools=registry)
-print(agent.run("List files in this folder.", max_rounds=3))
-```
-
-## Debug + strict dependencies + events
-
-```python
-agent = MTPAgent(
-    provider=provider,
-    tools=registry,
-    debug_mode=True,
-    strict_dependency_mode=True,
-    instructions="Prefer precise tool usage and concise summaries.",
-    max_history_messages=300,
-)
-
-agent.print_response(
-    "Calculate 23*19 and show relevant files.",
-    max_rounds=4,
-    stream=True,
-    stream_events=True,
-)
-```
-
-## 7) Agno-to-MTP Parameter Mapping
-
-- Agno `model=` on `Agent` -> MTP provider instance with `model=...`
-- Agno `instructions` -> MTP `instructions`
-- Agno `debug_mode` -> MTP `debug_mode`
-- Agno `stream`/`stream_events` runtime flags -> MTP `print_response(stream=..., stream_events=...)`
-- Agno tool configuration -> MTP `ToolRegistry` + toolkit loaders
-
-## 8) Pitfalls and Tips
-
-1. If you're inside asyncio, use async APIs (`arun`, `arun_loop`, `arun_events`).
-2. Ensure toolkit loader prefixes match tool names (example: `calculator` for `calculator.*`).
-3. Keep `max_rounds` high enough for tool-plan + execution + final response cycles.
-4. Use `debug_mode=True` during development to inspect provider plans and tool outputs.
-5. Use `stream_events=True` to build UIs with stable event contracts.
+- `run`, `arun`
+- `run_output`, `arun_output`
+- `run_stream`
+- `run_events`, `arun_events`
+- `continue_run`, `acontinue_run`
+- `cancel_run`
+- `print_response`

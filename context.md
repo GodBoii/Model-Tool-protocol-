@@ -123,3 +123,15 @@
   - transport
   - events
 - Keep examples practical but non-coupling for future providers.
+
+
+read all the docs, codes and analyze the entire codebase
+<context>
+[agno_library\agno\Lib\site-packages\agno\models\anthropic\claude.py
+agno_library\agno\Lib\site-packages\agno\models\google\gemini.py
+agno_library\agno\Lib\site-packages\agno\models\openai\responses.py
+agno_library\agno\Lib\site-packages\agno\models\openrouter\openrouter.py
+agno_library\agno\Lib\site-packages\agno\models\groq\groq.py
+agno_library\agno\Lib\site-packages\agno\agent\agent.py]
+</context>
+"https://docs.agno.com/reference/agents/agent" , "https://docs.agno.com/agents/running-agents", "https://docs.agno.com/run-cancellation/agent-cancel-run" , "https://docs.agno.com/agents/usage/agent-with-tools" , "https://docs.agno.com/input-output/structured-input/agent", "https://docs.agno.com/input-output/output-model" , "https://docs.agno.com/tools/agent" , "https://github.com/agno-agi/agno/tree/main/cookbook" , "https://docs.agno.com/tools/exceptions" , "https://docs.agno.com/tools/toolkits/overview" , "https://docs.agno.com/tools/attaching-tools" , "https://docs.agno.com/teams/overview" , "https://docs.agno.com/teams/building-teams" , "https://docs.agno.com/teams/running-teams" , "https://docs.agno.com/teams/delegation" , "https://docs.agno.com/teams/debugging-teams" , "https://docs.agno.com/teams/usage/streaming" , "https://docs.agno.com/teams/usage/respond-directly" , "https://docs.agno.com/examples/basics/multi-agent-team"
