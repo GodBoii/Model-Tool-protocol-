@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -163,3 +164,9 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         if texts:
             return "\n".join(texts).strip()
         return "Done."
+
+    async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+        return await asyncio.to_thread(self.next_action, messages, tools)
+
+    async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
+        return await asyncio.to_thread(self.finalize, messages, tool_results)
