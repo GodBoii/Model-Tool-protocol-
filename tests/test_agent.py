@@ -130,16 +130,16 @@ class AgentTests(unittest.TestCase):
         with contextlib.redirect_stdout(buffer):
             agent.print_response("hello", max_rounds=1, stream=True, stream_events=True)
         printed = buffer.getvalue()
-        self.assertIn("------agent-run-started------", printed)
-        self.assertIn("tools:", printed)
-        self.assertIn("sub_agents:", printed)
-        self.assertIn("id: calculator", printed)
+        self.assertIn("[MTP RUN START]", printed)
+        self.assertIn("Tools:", printed)
+        self.assertIn("Sub Agents:", printed)
+        self.assertIn("id=calculator", printed)
         self.assertIn("calc.add", printed)
-        self.assertIn("system_instructions:", printed)
-        self.assertIn("user_instructions:", printed)
-        self.assertIn("orchestration_instructions:", printed)
-        self.assertIn("user_message:", printed)
-        self.assertIn("------agent-run-completed------", printed)
+        self.assertIn("System Instructions:", printed)
+        self.assertIn("User Instructions:", printed)
+        self.assertIn("Orchestration Instructions:", printed)
+        self.assertIn("User Message:", printed)
+        self.assertIn("[MTP RUN END]", printed)
 
 
 if __name__ == "__main__":
