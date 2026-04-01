@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from .agent import Agent, RunOutput
+from .protocol import ToolResult
 from .runtime import ToolRegistry
 from .agent import ProviderAdapter
 
@@ -27,6 +28,8 @@ class MTPAgent:
         system_instructions: str | None = None,
         stream_chunk_size: int = 40,
         max_history_messages: int = 200,
+        mode: str = "standalone",
+        members: dict[str, Agent] | None = None,
     ) -> None:
         if registry is not None and tools is not None and registry is not tools:
             raise ValueError("Pass only one of `tools` or `registry`.")
@@ -43,10 +46,12 @@ class MTPAgent:
             system_instructions=system_instructions,
             stream_chunk_size=stream_chunk_size,
             max_history_messages=max_history_messages,
+            mode=mode,
+            members=members,
         )
 
     def run(self, prompt: str, *, max_rounds: int = 5, tool_call_limit: int | None = None) -> str:
-        return self._agent.run_loop(prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit)
+        return self._agent.run_loop(user_input=prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit)
 
     def run_output(
         self,
@@ -58,17 +63,27 @@ class MTPAgent:
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
+        input_schema: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | None = None,
+        output_model: ProviderAdapter | None = None,
+        output_model_prompt: str | None = None,
+        parser_model: ProviderAdapter | None = None,
+        parser_model_prompt: str | None = None,
     ) -> RunOutput:
         return self._agent.run_output(
-            prompt,
+            user_input=prompt,
             max_rounds=max_rounds,
             run_id=run_id,
             user_id=user_id,
             session_id=session_id,
             metadata=metadata,
             tool_call_limit=tool_call_limit,
+            input_schema=input_schema,
             output_schema=output_schema,
+            output_model=output_model,
+            output_model_prompt=output_model_prompt,
+            parser_model=parser_model,
+            parser_model_prompt=parser_model_prompt,
         )
 
     def run_stream(
@@ -78,16 +93,18 @@ class MTPAgent:
         max_rounds: int = 5,
         tool_call_limit: int | None = None,
         run_id: str | None = None,
+        input_schema: dict[str, Any] | None = None,
     ) -> Iterator[str]:
         return self._agent.run_loop_stream(
-            prompt,
+            user_input=prompt,
             max_rounds=max_rounds,
             tool_call_limit=tool_call_limit,
             run_id=run_id,
+            input_schema=input_schema,
         )
 
     async def arun(self, prompt: str, *, max_rounds: int = 5, tool_call_limit: int | None = None) -> str:
-        return await self._agent.arun_loop(prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit)
+        return await self._agent.arun_loop(user_input=prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit)
 
     async def arun_output(
         self,
@@ -99,17 +116,27 @@ class MTPAgent:
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
+        input_schema: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | None = None,
+        output_model: ProviderAdapter | None = None,
+        output_model_prompt: str | None = None,
+        parser_model: ProviderAdapter | None = None,
+        parser_model_prompt: str | None = None,
     ) -> RunOutput:
         return await self._agent.arun_output(
-            prompt,
+            user_input=prompt,
             max_rounds=max_rounds,
             run_id=run_id,
             user_id=user_id,
             session_id=session_id,
             metadata=metadata,
             tool_call_limit=tool_call_limit,
+            input_schema=input_schema,
             output_schema=output_schema,
+            output_model=output_model,
+            output_model_prompt=output_model_prompt,
+            parser_model=parser_model,
+            parser_model_prompt=parser_model_prompt,
         )
 
     def run_events(
@@ -123,9 +150,10 @@ class MTPAgent:
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
+        input_schema: dict[str, Any] | None = None,
     ) -> Iterator[dict[str, Any]]:
         return self._agent.run_loop_events(
-            prompt,
+            user_input=prompt,
             max_rounds=max_rounds,
             stream_final=stream_final,
             run_id=run_id,
@@ -133,6 +161,7 @@ class MTPAgent:
             session_id=session_id,
             metadata=metadata,
             tool_call_limit=tool_call_limit,
+            input_schema=input_schema,
         )
 
     def arun_events(
@@ -146,9 +175,10 @@ class MTPAgent:
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
+        input_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         return self._agent.arun_loop_events(
-            prompt,
+            user_input=prompt,
             max_rounds=max_rounds,
             stream_final=stream_final,
             run_id=run_id,
@@ -156,10 +186,45 @@ class MTPAgent:
             session_id=session_id,
             metadata=metadata,
             tool_call_limit=tool_call_limit,
+            input_schema=input_schema,
         )
 
     def cancel_run(self, run_id: str) -> bool:
         return self._agent.cancel_run(run_id)
+
+    def continue_run(
+        self,
+        *,
+        run_output: RunOutput | None = None,
+        run_id: str | None = None,
+        max_rounds: int = 5,
+        updated_tools: list[ToolResult] | None = None,
+        tool_call_limit: int | None = None,
+    ) -> RunOutput:
+        return self._agent.continue_run(
+            run_output=run_output,
+            run_id=run_id,
+            max_rounds=max_rounds,
+            updated_tools=updated_tools,
+            tool_call_limit=tool_call_limit,
+        )
+
+    async def acontinue_run(
+        self,
+        *,
+        run_output: RunOutput | None = None,
+        run_id: str | None = None,
+        max_rounds: int = 5,
+        updated_tools: list[ToolResult] | None = None,
+        tool_call_limit: int | None = None,
+    ) -> RunOutput:
+        return await self._agent.acontinue_run(
+            run_output=run_output,
+            run_id=run_id,
+            max_rounds=max_rounds,
+            updated_tools=updated_tools,
+            tool_call_limit=tool_call_limit,
+        )
 
     def print_response(
         self,
