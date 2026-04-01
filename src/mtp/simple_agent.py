@@ -242,6 +242,11 @@ class MTPAgent:
             if event_format not in {"pretty", "json"}:
                 raise ValueError("event_format must be 'pretty' or 'json'")
             printed_chunk = False
+            pretty_context: dict[str, Any] = {
+                "member_map": {},
+                "delegated_calls": {},
+                "tool_starts": {},
+            }
             for event in self.run_events(
                 prompt,
                 max_rounds=max_rounds,
@@ -252,7 +257,7 @@ class MTPAgent:
                 if event_format == "json":
                     print(json.dumps(event, default=str))
                     continue
-                printed_chunk = self._print_pretty_event(event, printed_chunk=printed_chunk)
+                printed_chunk = self._print_pretty_event(event, printed_chunk=printed_chunk, context=pretty_context)
             return
         if not stream:
             print(self.run(prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit))
@@ -266,7 +271,13 @@ class MTPAgent:
             print(chunk, end="", flush=True)
         print()
 
-    def _print_pretty_event(self, event: dict[str, Any], *, printed_chunk: bool) -> bool:
+    def _print_pretty_event(
+        self,
+        event: dict[str, Any],
+        *,
+        printed_chunk: bool,
+        context: dict[str, Any],
+    ) -> bool:
         event_type = str(event.get("type", ""))
         stamp = str(event.get("timestamp", ""))
         sequence = event.get("sequence")
@@ -297,6 +308,7 @@ class MTPAgent:
                 direct_tools = [tool for tool in all_tools if tool not in member_delegation_tools and not tool.startswith("agent.member.")]
             list_block("tools", direct_tools)
             member_agents = list(event.get("member_agents", []))
+            context["member_map"] = {str(member.get("id")): member for member in member_agents}
             print("sub_agents:")
             if not member_agents:
                 print("  - (none)")
@@ -331,26 +343,62 @@ class MTPAgent:
             print(f"round: {event.get('round')}")
             batches = event.get("batches", [])
             for idx, batch in enumerate(batches, start=1):
-                print(
-                    f"batch#{idx}: mode={batch.get('mode')} "
-                    f"calls={batch.get('calls')} call_ids={batch.get('call_ids')}"
-                )
+                print(f"batch#{idx}: mode={batch.get('mode')}")
+                calls = list(batch.get("calls", []))
+                call_ids = list(batch.get("call_ids", []))
+                for call_name, call_id in zip(calls, call_ids, strict=False):
+                    print(f"  - call: {call_name} ({call_id})")
             return False
 
         if event_type == "tool_started":
+            call_id = str(event.get("call_id"))
+            context.setdefault("tool_starts", {})[call_id] = stamp
             print(
                 f"{meta()} [tool-started] round={event.get('round')} "
                 f"tool={event.get('tool_name')} id={event.get('call_id')} "
                 f"args={event.get('arguments')}"
             )
+            tool_name = str(event.get("tool_name", ""))
+            if tool_name.startswith("agent.member."):
+                member_id = tool_name.removeprefix("agent.member.")
+                context.setdefault("delegated_calls", {})[call_id] = member_id
+                section(f"sub-agent-run-started:{member_id}")
+                print(f"parent_call_id: {call_id}")
+                print(f"task_args: {event.get('arguments')}")
+                member = context.get("member_map", {}).get(member_id, {})
+                role = member.get("role")
+                if role:
+                    print(f"role: {role}")
+                member_tools = list(member.get("tools", []))
+                list_block("member_tools", member_tools)
             return False
 
         if event_type == "tool_finished":
             success = "success" if event.get("success") else "failed"
+            call_id = str(event.get("call_id"))
+            start_stamp = context.get("tool_starts", {}).get(call_id)
+            duration_text = ""
+            if isinstance(start_stamp, str) and "T" in start_stamp and "T" in stamp:
+                try:
+                    start_dt = start_stamp.replace("Z", "+00:00")
+                    end_dt = stamp.replace("Z", "+00:00")
+                    from datetime import datetime
+
+                    delta = datetime.fromisoformat(end_dt) - datetime.fromisoformat(start_dt)
+                    duration_text = f" duration={delta.total_seconds():.3f}s"
+                except Exception:
+                    duration_text = ""
             print(
                 f"{meta()} [tool-finished] {success} tool={event.get('tool_name')} "
-                f"id={event.get('call_id')} cached={event.get('cached')} output={event.get('output')}"
+                f"id={event.get('call_id')} cached={event.get('cached')}{duration_text} "
+                f"output={event.get('output')}"
             )
+            member_id = context.get("delegated_calls", {}).pop(call_id, None)
+            if member_id:
+                section(f"sub-agent-run-completed:{member_id}")
+                print(f"parent_call_id: {call_id}")
+                print(f"status: {success}")
+                print(f"result: {event.get('output')}")
             return False
 
         if event_type == "batch_started":
@@ -367,9 +415,16 @@ class MTPAgent:
             print(f"{meta()} [assistant-tool-message] round={event.get('round')} tool_calls={len(tool_calls)}")
             for call in tool_calls:
                 function = call.get("function", {})
+                args = function.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        parsed = json.loads(args)
+                        args = json.dumps(parsed, ensure_ascii=True, sort_keys=True)
+                    except Exception:
+                        pass
                 print(
                     "  - "
-                    f"name={function.get('name')} id={call.get('id')} args={function.get('arguments')}"
+                    f"name={function.get('name')} id={call.get('id')} args={args}"
                 )
             return False
 
