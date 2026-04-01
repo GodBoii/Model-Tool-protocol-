@@ -28,16 +28,30 @@
   - shell
 - Agent multi-round execution:
   - `run_loop(max_rounds=N)`
+- Run continuation:
+  - `continue_run(...)` / `acontinue_run(...)`
+- Structured input/output:
+  - `input_schema` validation
+  - `output_schema` parsing/validation
+- Output refinement pipeline:
+  - `output_model` + `parser_model`
+- Dynamic tool mutation:
+  - `add_tool(...)` / `set_tools(...)`
+- Tool control-flow exceptions:
+  - `RetryAgentRun`
+  - `StopAgentRun`
+- Async provider hooks:
+  - `anext_action(...)`
+  - `afinalize(...)`
 - Transport scaffolding:
   - stdio envelope transport
   - HTTP envelope transport
 
 ## Phase 2
-- Additional provider adapters:
-  - OpenAI Responses API
-  - Anthropic Messages API
-  - Gemini function calling
-  - Groq-compatible OpenAI schema mode
+- Provider depth:
+  - richer per-provider feature flags
+  - native structured output modes where available
+  - advanced token/usage/trace metadata
 - Planner modes:
   - direct model-native tool calls
   - model-generated MTP plan mode
@@ -51,6 +65,7 @@
   - remote tool servers
   - streamable partial results for long-running tools
 - Unified tracing events for all tool calls.
+- Persistent run/session store for resume and analytics.
 
 ## Phase 4
 - Developer experience:
