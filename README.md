@@ -69,8 +69,10 @@ print(response)
 # Stream final response tokens:
 agent.print_response("Give me a short summary.", max_rounds=4, stream=True)
 
-# Stream structured runtime events (JSON lines):
+# Stream structured runtime events (readable terminal logs by default):
 agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stream_events=True)
+# Raw JSON lines:
+agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stream_events=True, event_format="json")
 ```
 
 ## Run examples

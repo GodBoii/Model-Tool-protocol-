@@ -115,7 +115,8 @@ Paused runs (for example from `StopAgentRun`) can be resumed by `run_id` or prio
 - `run_loop_events(...) -> Iterator[dict]`
 - `arun_loop_events(...) -> AsyncIterator[dict]`
 
-`MTPAgent.print_response(..., stream_events=True)` prints event JSON lines.
+`MTPAgent.print_response(..., stream_events=True)` prints readable terminal logs by default.
+Use `event_format="json"` for raw JSON lines.
 
 ### Dynamic tool management
 
