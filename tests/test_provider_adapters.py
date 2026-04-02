@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+import pathlib
+import sys
+import unittest
+from types import SimpleNamespace
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
+
+from mtp.protocol import ToolSpec
+from mtp.providers import (
+    AnthropicToolCallingProvider,
+    GeminiToolCallingProvider,
+    OpenAIToolCallingProvider,
+    OpenRouterToolCallingProvider,
+    SambaNovaToolCallingProvider,
+)
+
+
+class _Fn:
+    def __init__(self, name: str, arguments: str) -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _ToolCall:
+    def __init__(self, call_id: str, name: str, arguments: str) -> None:
+        self.id = call_id
+        self.function = _Fn(name, arguments)
+
+
+class _OpenAIMessage:
+    def __init__(self, content: str, tool_calls=None) -> None:
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class _OpenAIResponse:
+    def __init__(self, message: _OpenAIMessage) -> None:
+        self.choices = [SimpleNamespace(message=message)]
+
+
+class _FakeOpenAIClient:
+    def __init__(self) -> None:
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+        self.calls = 0
+
+    def _create(self, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return _OpenAIResponse(_OpenAIMessage("", [_ToolCall("c1", "x.test", "{bad json}")]))
+        return _OpenAIResponse(_OpenAIMessage("done"))
+
+
+class _AnthropicContent:
+    def __init__(self, block_type: str, **kwargs) -> None:
+        self.type = block_type
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class _FakeAnthropicMessages:
+    def __init__(self) -> None:
+        self.last_kwargs = None
+        self.calls = 0
+
+    def create(self, **kwargs):
+        self.last_kwargs = kwargs
+        self.calls += 1
+        if self.calls == 1:
+            return SimpleNamespace(
+                content=[
+                    _AnthropicContent("text", text="prep"),
+                    _AnthropicContent("tool_use", id="tu1", name="x.test", input={"v": 1}),
+                ]
+            )
+        return SimpleNamespace(content=[_AnthropicContent("text", text="final")])
+
+
+class _FakeAnthropicClient:
+    def __init__(self) -> None:
+        self.messages = _FakeAnthropicMessages()
+
+
+class _GeminiFunctionCall:
+    def __init__(self, name: str, args: dict) -> None:
+        self.name = name
+        self.args = args
+
+
+class _GeminiPart:
+    def __init__(self, function_call=None) -> None:
+        self.function_call = function_call
+
+
+class _GeminiResponse:
+    def __init__(self, text: str, parts=None) -> None:
+        self.text = text
+        self.candidates = [SimpleNamespace(content=SimpleNamespace(parts=parts or []))]
+
+
+class _FakeGeminiModels:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            return _GeminiResponse("", [_GeminiPart(_GeminiFunctionCall("x.test", {"a": 1}))])
+        return _GeminiResponse("done")
+
+
+class _FakeGeminiClient:
+    def __init__(self) -> None:
+        self.models = _FakeGeminiModels()
+
+
+class ProviderAdapterTests(unittest.TestCase):
+    def test_openai_like_providers_handle_invalid_tool_json(self) -> None:
+        tools = [ToolSpec(name="x.test", description="x", input_schema={"type": "object"})]
+        for provider_cls in (OpenAIToolCallingProvider, OpenRouterToolCallingProvider, SambaNovaToolCallingProvider):
+            provider = provider_cls(client=_FakeOpenAIClient())
+            action = provider.next_action(messages=[{"role": "user", "content": "go"}], tools=tools)
+            self.assertIsNotNone(action.plan)
+            self.assertEqual(action.plan.batches[0].calls[0].arguments, {"_raw_arguments": "{bad json}"})
+
+    def test_anthropic_preserves_system_and_tool_message_metadata(self) -> None:
+        fake = _FakeAnthropicClient()
+        provider = AnthropicToolCallingProvider(client=fake)
+        action = provider.next_action(
+            messages=[
+                {"role": "system", "content": "rules"},
+                {"role": "user", "content": "use tool"},
+            ],
+            tools=[ToolSpec(name="x.test", description="x", input_schema={"type": "object"})],
+        )
+        self.assertIsNotNone(action.plan)
+        self.assertIn("assistant_tool_message", action.metadata)
+        self.assertEqual(fake.messages.last_kwargs["system"], "rules")
+
+    def test_gemini_uses_history_prompt_for_finalize(self) -> None:
+        fake = _FakeGeminiClient()
+        provider = GeminiToolCallingProvider(client=fake)
+        _ = provider.next_action(messages=[{"role": "user", "content": "first"}], tools=[])
+        _ = provider.finalize(
+            messages=[
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "ok"},
+                {"role": "tool", "tool_name": "x", "content": {"v": 1}},
+            ],
+            tool_results=[],
+        )
+        self.assertGreaterEqual(len(fake.models.calls), 2)
+        self.assertIn("tool_result", fake.models.calls[-1]["contents"])
+
+    def test_gemini_sanitizes_mtp_schema_for_function_declarations(self) -> None:
+        fake = _FakeGeminiClient()
+        provider = GeminiToolCallingProvider(client=fake)
+        provider.next_action(
+            messages=[{"role": "user", "content": "run"}],
+            tools=[
+                ToolSpec(
+                    name="calculator.add",
+                    description="Add two numbers",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "a": {
+                                "anyOf": [
+                                    {"type": "number"},
+                                    {
+                                        "type": "object",
+                                        "properties": {"$ref": {"type": "string"}},
+                                        "required": ["$ref"],
+                                        "additionalProperties": False,
+                                    },
+                                ]
+                            }
+                        },
+                        "required": ["a"],
+                        "additionalProperties": False,
+                    },
+                )
+            ],
+        )
+        first_call = fake.models.calls[0]
+        tool_decl = first_call["config"]["tools"][0]["function_declarations"][0]
+        params = tool_decl["parameters"]
+        self.assertEqual(params["type"], "object")
+        self.assertEqual(params["properties"]["a"]["type"], "number")
+        self.assertNotIn("additionalProperties", str(params))
+
+
+if __name__ == "__main__":
+    unittest.main()
