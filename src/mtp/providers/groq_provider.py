@@ -9,7 +9,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolResult, ToolSpec
-from .common import extract_usage_metrics
+from .common import extract_usage_metrics, format_openai_like_message
 
 
 class GroqToolCallingProvider(ProviderAdapter):
@@ -164,31 +164,18 @@ class GroqToolCallingProvider(ProviderAdapter):
             )
 
         for msg in messages:
-            role = msg.get("role")
-            if role not in {"system", "user", "assistant", "tool"}:
+            converted = format_openai_like_message(
+                msg,
+                allow_images=True,
+                allow_audio=False,
+                allow_video=False,
+                allow_files=False,
+            )
+            if converted is None:
                 continue
-
-            if role == "tool":
-                content = msg.get("content", "")
-                if not isinstance(content, str):
-                    content = json.dumps(content)
-                formatted.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": msg.get("tool_call_id"),
-                        "name": msg.get("tool_name") or msg.get("name"),
-                        "content": content,
-                    }
-                )
-                continue
-
-            assistant_msg: dict[str, Any] = {"role": role}
-            if "tool_calls" in msg:
-                assistant_msg["tool_calls"] = msg["tool_calls"]
-                assistant_msg["content"] = msg.get("content") or ""
-            else:
-                assistant_msg["content"] = msg.get("content") or ""
-            formatted.append(assistant_msg)
+            if converted.get("role") == "tool":
+                converted["name"] = msg.get("tool_name") or msg.get("name")
+            formatted.append(converted)
         return formatted
 
     def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:

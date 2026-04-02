@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -11,6 +10,7 @@ from .common import (
     calls_to_dependency_batches,
     extract_refs,
     extract_usage_metrics,
+    format_openai_like_message,
     normalize_refs,
     safe_load_arguments,
 )
@@ -53,21 +53,15 @@ class OpenAIToolCallingProvider(ProviderAdapter):
     def _to_openai_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         formatted: list[dict[str, Any]] = []
         for msg in messages:
-            role = msg.get("role")
-            if role == "tool":
-                content = msg.get("content", "")
-                if not isinstance(content, str):
-                    content = json.dumps(content)
-                formatted.append({
-                    "role": "tool",
-                    "tool_call_id": msg.get("tool_call_id"),
-                    "content": content
-                })
-            else:
-                new_msg = {"role": role, "content": msg.get("content") or ""}
-                if "tool_calls" in msg:
-                    new_msg["tool_calls"] = msg["tool_calls"]
-                formatted.append(new_msg)
+            converted = format_openai_like_message(
+                msg,
+                allow_images=True,
+                allow_audio=True,
+                allow_video=False,
+                allow_files=True,
+            )
+            if converted is not None:
+                formatted.append(converted)
         return formatted
 
     def _to_openai_tools(self, tools: list[ToolSpec]) -> list[dict[str, Any]]:
