@@ -6,6 +6,13 @@ MTP includes local/no-key toolkits inspired by common agent toolkit patterns:
 - python
 - shell
 
+MTP also includes optional search/web-scrape toolkits inspired by Agno:
+- wikipedia
+- website
+- newspaper
+- newspaper4k
+- crawl4ai
+
 Use them with:
 
 ```python
@@ -49,6 +56,40 @@ Unsafe in-process `exec` mode is opt-in via `allow_unsafe_exec=True`.
 
 Runs commands in `base_dir` with timeout and an allowlist (`echo`, `pwd`, `ls`, `dir` by default).
 Use `allowed_commands=` to customize.
+
+## Search + web-scrape toolkits
+
+These are dependency-optional and lazily loaded. You can register them without installing packages, but the first call will fail with an install hint if dependencies are missing.
+
+## `wikipedia.*`
+- `wikipedia.search_wikipedia`
+
+Dependency:
+- `pip install wikipedia`
+
+## `website.*`
+- `website.read_url`
+
+Dependencies:
+- `pip install requests beautifulsoup4`
+
+## `newspaper.*`
+- `newspaper.get_article_text`
+
+Dependencies:
+- `pip install newspaper3k lxml_html_clean`
+
+## `newspaper4k.*`
+- `newspaper4k.read_article`
+
+Dependencies:
+- `pip install newspaper4k lxml_html_clean`
+
+## `crawl4ai.*`
+- `crawl4ai.web_crawler`
+
+Dependency:
+- `pip install crawl4ai`
 
 ## Risk and policy
 

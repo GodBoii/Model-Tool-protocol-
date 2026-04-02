@@ -10,6 +10,8 @@ It supports:
 - sending tool results back as `role="tool"` messages with `tool_call_id`
 - multi-round execution support via `Agent.run_loop(max_rounds=N)`
 - optional strict dependency guidance (`strict_dependency_mode=True`)
+- optional reasoning controls (`include_reasoning`, `reasoning_format`, `reasoning_effort`)
+- streaming usage capture (`stream_options.include_usage`) for richer debug metrics
 
 ## Install
 
@@ -52,6 +54,18 @@ registry.register_tool(
 provider = Groq(strict_dependency_mode=True)
 agent = Agent(provider=provider, tools=registry)
 print(agent.run("List repos for username demo-user"))
+```
+
+Reasoning + streaming usage example:
+
+```python
+provider = Groq(
+    model="moonshotai/kimi-k2-instruct",
+    include_reasoning=True,
+    reasoning_format="parsed",
+    reasoning_effort="medium",
+    stream_include_usage=True,
+)
 ```
 
 ## Current behavior
