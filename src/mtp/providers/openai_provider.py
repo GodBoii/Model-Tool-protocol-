@@ -7,7 +7,13 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
-from .common import calls_to_dependency_batches, extract_refs, normalize_refs, safe_load_arguments
+from .common import (
+    calls_to_dependency_batches,
+    extract_refs,
+    extract_usage_metrics,
+    normalize_refs,
+    safe_load_arguments,
+)
 
 
 class OpenAIToolCallingProvider(ProviderAdapter):
@@ -30,6 +36,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self._last_finalize_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
@@ -93,6 +100,10 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         response = self._client.chat.completions.create(**request_args)
         message = response.choices[0].message
         tool_calls = getattr(message, "tool_calls", None)
+        usage = extract_usage_metrics(response)
+        action_meta: dict[str, Any] = {"provider": "openai", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
 
         if tool_calls:
             mtp_calls: list[ToolCall] = []
@@ -128,15 +139,16 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             return AgentAction(
                 plan=plan,
                 metadata={
+                    **action_meta,
                     "assistant_tool_message": {
                         "role": "assistant",
                         "content": message.content or "",
                         "tool_calls": serialized_tool_calls,
-                    }
+                    },
                 },
             )
 
-        return AgentAction(response_text=message.content or "")
+        return AgentAction(response_text=message.content or "", metadata=action_meta)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         openai_messages = self._to_openai_messages(messages)
@@ -145,6 +157,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             messages=openai_messages,
             temperature=self.temperature,
         )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
             return "Model requested an additional tool round; rerun with a larger max_rounds."

@@ -9,6 +9,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolResult, ToolSpec
+from .common import extract_usage_metrics
 
 
 class GroqToolCallingProvider(ProviderAdapter):
@@ -23,6 +24,10 @@ class GroqToolCallingProvider(ProviderAdapter):
         parallel_tool_calls: bool = True,
         encourage_batch_tool_calls: bool = True,
         strict_dependency_mode: bool = False,
+        include_reasoning: bool | None = None,
+        reasoning_format: str | None = None,
+        reasoning_effort: str | None = None,
+        stream_include_usage: bool = True,
         client: Any | None = None,
     ) -> None:
         self.model = model
@@ -32,7 +37,13 @@ class GroqToolCallingProvider(ProviderAdapter):
         self.parallel_tool_calls = parallel_tool_calls
         self.encourage_batch_tool_calls = encourage_batch_tool_calls
         self.strict_dependency_mode = strict_dependency_mode
+        self.include_reasoning = include_reasoning
+        self.reasoning_format = reasoning_format
+        self.reasoning_effort = reasoning_effort
+        self.stream_include_usage = stream_include_usage
         self._last_response: Any | None = None
+        self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     def _extract_refs(self, value: Any) -> list[str]:
@@ -189,6 +200,12 @@ class GroqToolCallingProvider(ProviderAdapter):
             "messages": groq_messages,
             "temperature": self.temperature,
         }
+        if self.include_reasoning is not None:
+            request_args["include_reasoning"] = self.include_reasoning
+        if self.reasoning_format is not None:
+            request_args["reasoning_format"] = self.reasoning_format
+        if self.reasoning_effort is not None:
+            request_args["reasoning_effort"] = self.reasoning_effort
         if groq_tools:
             request_args["tools"] = groq_tools
             request_args["tool_choice"] = self.tool_choice
@@ -204,6 +221,13 @@ class GroqToolCallingProvider(ProviderAdapter):
         choice = response.choices[0]
         message = choice.message
         tool_calls = getattr(message, "tool_calls", None)
+        reasoning = getattr(message, "reasoning", None)
+        usage = extract_usage_metrics(response)
+        action_meta: dict[str, Any] = {"provider": "groq", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if reasoning:
+            action_meta["reasoning"] = reasoning
 
         if tool_calls:
             mtp_calls: list[ToolCall] = []
@@ -249,23 +273,34 @@ class GroqToolCallingProvider(ProviderAdapter):
             return AgentAction(
                 plan=plan,
                 metadata={
+                    **action_meta,
                     "assistant_tool_message": {
                         "role": "assistant",
                         "content": message.content or "",
                         "tool_calls": serialized_tool_calls,
-                    }
+                        "reasoning": reasoning,
+                    },
                 },
             )
 
-        return AgentAction(response_text=message.content or "")
+        return AgentAction(response_text=message.content or "", metadata=action_meta)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         groq_messages = self._to_groq_messages(messages)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=groq_messages,
-            temperature=self.temperature,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": groq_messages,
+            "temperature": self.temperature,
+        }
+        if self.include_reasoning is not None:
+            request_args["include_reasoning"] = self.include_reasoning
+        if self.reasoning_format is not None:
+            request_args["reasoning_format"] = self.reasoning_format
+        if self.reasoning_effort is not None:
+            request_args["reasoning_effort"] = self.reasoning_effort
+        response = self._client.chat.completions.create(**request_args)
+        self._last_response = response
+        self._last_finalize_usage = extract_usage_metrics(response) or None
         choice = response.choices[0]
         message = choice.message
         if getattr(message, "tool_calls", None):
@@ -274,13 +309,29 @@ class GroqToolCallingProvider(ProviderAdapter):
 
     def finalize_stream(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> Iterator[str]:
         groq_messages = self._to_groq_messages(messages)
-        stream = self._client.chat.completions.create(
-            model=self.model,
-            messages=groq_messages,
-            temperature=self.temperature,
-            stream=True,
-        )
+        self._last_stream_usage = None
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": groq_messages,
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": self.stream_include_usage},
+        }
+        if self.include_reasoning is not None:
+            request_args["include_reasoning"] = self.include_reasoning
+        if self.reasoning_format is not None:
+            request_args["reasoning_format"] = self.reasoning_format
+        if self.reasoning_effort is not None:
+            request_args["reasoning_effort"] = self.reasoning_effort
+        try:
+            stream = self._client.chat.completions.create(**request_args)
+        except TypeError:
+            request_args.pop("stream_options", None)
+            stream = self._client.chat.completions.create(**request_args)
         for chunk in stream:
+            chunk_usage = extract_usage_metrics(chunk)
+            if chunk_usage:
+                self._last_stream_usage = chunk_usage
             if not getattr(chunk, "choices", None):
                 continue
             delta = chunk.choices[0].delta
