@@ -8,6 +8,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from mtp.protocol import ToolSpec
+from mtp.media import Audio, File, Image, Video
 from mtp.providers import (
     AnthropicToolCallingProvider,
     GeminiToolCallingProvider,
@@ -138,6 +139,25 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertIn("assistant_tool_message", action.metadata)
         self.assertEqual(fake.messages.last_kwargs["system"], "rules")
 
+    def test_anthropic_formats_user_media_blocks(self) -> None:
+        fake = _FakeAnthropicClient()
+        provider = AnthropicToolCallingProvider(client=fake)
+        provider.next_action(
+            messages=[
+                {
+                    "role": "user",
+                    "content": "inspect",
+                    "images": [Image(content=b"\xff\xd8\xff", mime_type="image/jpeg")],
+                    "files": [File(content=b"hello", filename="note.txt", mime_type="text/plain")],
+                }
+            ],
+            tools=[],
+        )
+        sent = fake.messages.last_kwargs["messages"][0]["content"]
+        block_types = [block["type"] for block in sent]
+        self.assertIn("image", block_types)
+        self.assertIn("document", block_types)
+
     def test_gemini_uses_history_prompt_for_finalize(self) -> None:
         fake = _FakeGeminiClient()
         provider = GeminiToolCallingProvider(client=fake)
@@ -151,7 +171,14 @@ class ProviderAdapterTests(unittest.TestCase):
             tool_results=[],
         )
         self.assertGreaterEqual(len(fake.models.calls), 2)
-        self.assertIn("tool_result", fake.models.calls[-1]["contents"])
+        contents = fake.models.calls[-1]["contents"]
+        self.assertIsInstance(contents, list)
+        has_tool_result = any(
+            getattr(part, "function_response", None) is not None
+            for content in contents
+            for part in getattr(content, "parts", [])
+        )
+        self.assertTrue(has_tool_result)
 
     def test_gemini_sanitizes_mtp_schema_for_function_declarations(self) -> None:
         fake = _FakeGeminiClient()
@@ -189,6 +216,43 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(params["type"], "object")
         self.assertEqual(params["properties"]["a"]["type"], "number")
         self.assertNotIn("additionalProperties", str(params))
+
+    def test_openrouter_formats_multimodal_user_parts(self) -> None:
+        provider = OpenRouterToolCallingProvider(client=_FakeOpenAIClient())
+        formatted = provider._to_openrouter_messages(  # noqa: SLF001
+            [
+                {
+                    "role": "user",
+                    "content": "analyze media",
+                    "images": [Image(content=b"\xff\xd8\xff", mime_type="image/jpeg")],
+                    "audios": [Audio(content=b"RIFF....WAVEfmt ", format="wav")],
+                    "videos": [Video(url="https://example.com/video.mp4", format="mp4")],
+                    "files": [File(content=b"%PDF-1.4", filename="note.pdf", mime_type="application/pdf")],
+                }
+            ]
+        )
+        parts = formatted[0]["content"]
+        part_types = [part["type"] for part in parts]
+        self.assertIn("image_url", part_types)
+        self.assertIn("input_audio", part_types)
+        self.assertIn("video_url", part_types)
+        self.assertIn("file", part_types)
+
+    def test_openrouter_formats_text_files_as_text_parts(self) -> None:
+        provider = OpenRouterToolCallingProvider(client=_FakeOpenAIClient())
+        formatted = provider._to_openrouter_messages(  # noqa: SLF001
+            [
+                {
+                    "role": "user",
+                    "content": "read this",
+                    "files": [File(content=b"hello world", filename="note.txt", mime_type="text/plain")],
+                }
+            ]
+        )
+        parts = formatted[0]["content"]
+        text_parts = [part for part in parts if part["type"] == "text"]
+        self.assertGreaterEqual(len(text_parts), 2)
+        self.assertIn("[file:note.txt]", text_parts[-1]["text"])
 
 
 if __name__ == "__main__":
