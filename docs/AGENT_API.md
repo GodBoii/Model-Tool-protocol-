@@ -117,6 +117,9 @@ Paused runs (for example from `StopAgentRun`) can be resumed by `run_id` or prio
 
 `MTPAgent.print_response(..., stream_events=True)` prints readable terminal logs by default.
 Use `event_format="json"` for raw JSON lines.
+`debug_mode` controls event verbosity for `print_response(..., stream_events=True)`:
+- `False`: normal concise logs
+- `True`: detailed debug logs (plans, batches, tool lifecycle, payloads, top-level XML context sections, metrics blocks)
 
 ### Dynamic tool management
 

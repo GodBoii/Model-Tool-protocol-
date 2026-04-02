@@ -16,6 +16,12 @@ All providers map into the same event shape.
 
 `print_response(..., stream_events=True)` now defaults to human-readable terminal formatting.
 Use `event_format="json"` to print raw JSON lines.
+Pretty logs use explicit level prefixes such as `INFO |`, `DEBUG |`, and `ERROR |`.
+
+Event verbosity follows `debug_mode`:
+- `debug_mode=False` (normal): concise lifecycle logs (`run_started`, `round_started`, streamed text, completion/cancel/pause/retry, strict violations).
+- `debug_mode=True` (debug): full trace, including plans, batch starts, assistant tool-call messages, and tool start/end payloads.
+  - Debug trace includes only top-level XML sections for separation of concerns (`<tools>`, `<team_members>`, `<system_instructions>`, `<user_instructions>`, `<orchestration_instructions>`), plus metrics blocks.
 
 ## Base fields
 
@@ -43,6 +49,16 @@ Every event includes:
 
 - `round_started`
   - `round`
+
+- `llm_response`
+  - `round`
+  - `stage`: optional (`"finalize"` for final response generation)
+  - `provider`
+  - `model`
+  - `usage`: optional `{input_tokens, output_tokens, total_tokens, reasoning_tokens}`
+  - `duration_seconds`
+  - `has_plan`
+  - `has_response`
 
 - `plan_received`
   - `round`
@@ -91,6 +107,11 @@ Every event includes:
 
 - `run_cancelled`
   - `round`
+
+- `run_failed`
+  - `round`
+  - `error_type`
+  - `error`
 
 - `tool_retry_requested`
   - `round`
