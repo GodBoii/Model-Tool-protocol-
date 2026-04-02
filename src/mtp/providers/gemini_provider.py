@@ -4,6 +4,7 @@ import asyncio
 import json
 import mimetypes
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -50,6 +51,45 @@ class GeminiToolCallingProvider(ProviderAdapter):
             return json.dumps(content, default=str)
         except Exception:
             return str(content)
+
+    def _get_content_and_part_types(self) -> tuple[Any, Any]:
+        try:
+            from google.genai.types import Content, Part
+
+            return Content, Part
+        except Exception:
+            class _Part:
+                def __init__(self, *, text: str | None = None, function_call: Any = None, function_response: Any = None) -> None:
+                    self.text = text
+                    self.function_call = function_call
+                    self.function_response = function_response
+
+                @staticmethod
+                def from_text(text: str) -> "_Part":
+                    return _Part(text=text)
+
+                @staticmethod
+                def from_bytes(*, mime_type: str, data: bytes) -> "_Part":
+                    return _Part(text=f"[bytes:{mime_type}:{len(data)}]")
+
+                @staticmethod
+                def from_uri(*, file_uri: str, mime_type: str) -> "_Part":
+                    return _Part(text=f"[uri:{mime_type}:{file_uri}]")
+
+                @staticmethod
+                def from_function_call(*, name: str, args: dict[str, Any]) -> "_Part":
+                    return _Part(function_call=SimpleNamespace(name=name, args=args))
+
+                @staticmethod
+                def from_function_response(*, name: str, response: dict[str, Any]) -> "_Part":
+                    return _Part(function_response=SimpleNamespace(name=name, response=response))
+
+            class _Content:
+                def __init__(self, *, role: str, parts: list[Any]) -> None:
+                    self.role = role
+                    self.parts = parts
+
+            return _Content, _Part
 
     def _guess_mime(self, name_or_path: str, default: str) -> str:
         guessed = mimetypes.guess_type(name_or_path)[0]
@@ -130,7 +170,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         return Part.from_bytes(mime_type=mime, data=raw)
 
     def _to_gemini_payload(self, messages: list[dict[str, Any]]) -> tuple[list[Any], str | None]:
-        from google.genai.types import Content, Part
+        Content, Part = self._get_content_and_part_types()
 
         contents: list[Any] = []
         system_lines: list[str] = []
