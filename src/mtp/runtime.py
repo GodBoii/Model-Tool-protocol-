@@ -8,8 +8,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Protocol
 
 from .exceptions import RetryAgentRun, StopAgentRun
+from .media import coerce_audios, coerce_files, coerce_images, coerce_videos
 from .policy import PolicyDecision, RiskPolicy
-from .protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .protocol import ExecutionPlan, ToolCall, ToolOutput, ToolResult, ToolSpec
 from .schema import ToolArgumentsValidationError, validate_execution_plan, validate_tool_arguments
 
 ToolHandler = Callable[..., Any] | Callable[..., Awaitable[Any]]
@@ -156,8 +157,38 @@ class ToolRegistry:
         for prefix in prefixes:
             self._load_toolkit(prefix)
 
-    async def _invoke(self, handler: ToolHandler, args: dict[str, Any]) -> Any:
-        result = handler(**args)
+    def _inject_media_args(
+        self,
+        handler: ToolHandler,
+        args: dict[str, Any],
+        media_context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if media_context is None:
+            return args
+        try:
+            signature = inspect.signature(handler)
+        except Exception:
+            return args
+
+        call_args = dict(args)
+        if "images" in signature.parameters and "images" not in call_args:
+            call_args["images"] = media_context.get("images")
+        if "videos" in signature.parameters and "videos" not in call_args:
+            call_args["videos"] = media_context.get("videos")
+        if "audios" in signature.parameters and "audios" not in call_args:
+            call_args["audios"] = media_context.get("audios")
+        if "files" in signature.parameters and "files" not in call_args:
+            call_args["files"] = media_context.get("files")
+        return call_args
+
+    async def _invoke(
+        self,
+        handler: ToolHandler,
+        args: dict[str, Any],
+        media_context: dict[str, Any] | None = None,
+    ) -> Any:
+        call_args = self._inject_media_args(handler, args, media_context)
+        result = handler(**call_args)
         if inspect.isawaitable(result):
             return await result
         return result
@@ -182,7 +213,13 @@ class ToolRegistry:
             return [self._resolve_refs(v, results) for v in value]
         return value
 
-    async def execute_call(self, call: ToolCall, prior_results: dict[str, ToolResult]) -> ToolResult:
+    async def execute_call(
+        self,
+        call: ToolCall,
+        prior_results: dict[str, ToolResult],
+        *,
+        media_context: dict[str, Any] | None = None,
+    ) -> ToolResult:
         self.ensure_tools_available([call.name])
         tool = self._tools.get(call.name)
         if tool is None:
@@ -228,29 +265,78 @@ class ToolRegistry:
             self._evict_expired_cache_entries()
             cached = self._cache.get(cache_key)
             if cached and cached.valid():
+                cached_output = cached.value
+                cached_content = cached_output
+                cached_images = None
+                cached_videos = None
+                cached_audios = None
+                cached_files = None
+                if isinstance(cached_output, dict) and cached_output.get("_mtp_tool_output") is True:
+                    cached_content = cached_output.get("content")
+                    cached_images = coerce_images(cached_output.get("images"))
+                    cached_videos = coerce_videos(cached_output.get("videos"))
+                    cached_audios = coerce_audios(cached_output.get("audios"))
+                    cached_files = coerce_files(cached_output.get("files"))
                 return ToolResult(
                     call_id=call.id,
                     tool_name=call.name,
-                    output=cached.value,
+                    output=cached_content,
                     cached=True,
                     approval=decision.value,
                     expires_at=cached.expires_at,
+                    images=cached_images,
+                    videos=cached_videos,
+                    audios=cached_audios,
+                    files=cached_files,
                 )
 
         try:
-            output = await self._invoke(tool.handler, resolved_args)
+            output = await self._invoke(tool.handler, resolved_args, media_context=media_context)
+            content = output
+            images = None
+            videos = None
+            audios = None
+            files = None
+            if isinstance(output, ToolOutput):
+                content = output.content
+                images = output.images
+                videos = output.videos
+                audios = output.audios
+                files = output.files
+            elif isinstance(output, dict):
+                has_media_keys = any(k in output for k in ("images", "videos", "audios", "files"))
+                if has_media_keys:
+                    content = output.get("content", output)
+                    images = coerce_images(output.get("images"))
+                    videos = coerce_videos(output.get("videos"))
+                    audios = coerce_audios(output.get("audios"))
+                    files = coerce_files(output.get("files"))
             expires_at = None
             if ttl > 0:
                 expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
-                self._cache[cache_key] = _CacheEntry(value=output, expires_at=expires_at)
+                cache_value: Any = content
+                if images or videos or audios or files:
+                    cache_value = {
+                        "_mtp_tool_output": True,
+                        "content": content,
+                        "images": [img.to_dict() for img in images or []],
+                        "videos": [vid.to_dict() for vid in videos or []],
+                        "audios": [aud.to_dict() for aud in audios or []],
+                        "files": [file.to_dict() for file in files or []],
+                    }
+                self._cache[cache_key] = _CacheEntry(value=cache_value, expires_at=expires_at)
                 self._enforce_cache_limit()
             return ToolResult(
                 call_id=call.id,
                 tool_name=call.name,
-                output=output,
+                output=content,
                 success=True,
                 approval=decision.value,
                 expires_at=expires_at,
+                images=images,
+                videos=videos,
+                audios=audios,
+                files=files,
             )
         except asyncio.CancelledError:
             raise
@@ -275,6 +361,7 @@ class ToolRegistry:
         plan: ExecutionPlan,
         *,
         cancel_checker: CancelChecker | None = None,
+        media_context: dict[str, Any] | None = None,
     ) -> list[ToolResult]:
         validate_execution_plan(plan)
         results: dict[str, ToolResult] = {}
@@ -293,7 +380,7 @@ class ToolRegistry:
                             raise ValueError(
                                 f"Call {call.id} depends on unresolved calls: {unresolved}"
                             )
-                    result = await self.execute_call(call, results)
+                    result = await self.execute_call(call, results, media_context=media_context)
                     results[call.id] = result
                     ordered.append(result)
                 continue
@@ -308,7 +395,7 @@ class ToolRegistry:
 
             if cancel_checker is not None and cancel_checker():
                 raise ExecutionCancelledError("Execution plan cancelled before parallel tool execution.")
-            task_calls = [self.execute_call(call, results) for call in batch.calls]
+            task_calls = [self.execute_call(call, results, media_context=media_context) for call in batch.calls]
             batch_results = await asyncio.gather(*task_calls)
             for call, result in zip(batch.calls, batch_results, strict=True):
                 results[call.id] = result

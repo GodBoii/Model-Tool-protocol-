@@ -7,6 +7,7 @@ import textwrap
 from typing import Any
 
 from .agent import Agent, RunOutput
+from .media import Audio, File, Image, Video
 from .protocol import ToolResult
 from .runtime import ToolRegistry
 from .agent import ProviderAdapter
@@ -52,14 +53,36 @@ class MTPAgent:
             members=members,
         )
 
-    def run(self, prompt: str, *, max_rounds: int = 5, tool_call_limit: int | None = None) -> str:
-        return self._agent.run_loop(user_input=prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit)
+    def run(
+        self,
+        prompt: str,
+        *,
+        max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
+        tool_call_limit: int | None = None,
+    ) -> str:
+        return self._agent.run_loop(
+            user_input=prompt,
+            max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
+            tool_call_limit=tool_call_limit,
+        )
 
     def run_output(
         self,
         prompt: str,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         run_id: str | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
@@ -75,6 +98,10 @@ class MTPAgent:
         return self._agent.run_output(
             user_input=prompt,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             run_id=run_id,
             user_id=user_id,
             session_id=session_id,
@@ -93,6 +120,10 @@ class MTPAgent:
         prompt: str,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         tool_call_limit: int | None = None,
         run_id: str | None = None,
         input_schema: dict[str, Any] | None = None,
@@ -100,19 +131,45 @@ class MTPAgent:
         return self._agent.run_loop_stream(
             user_input=prompt,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             tool_call_limit=tool_call_limit,
             run_id=run_id,
             input_schema=input_schema,
         )
 
-    async def arun(self, prompt: str, *, max_rounds: int = 5, tool_call_limit: int | None = None) -> str:
-        return await self._agent.arun_loop(user_input=prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit)
+    async def arun(
+        self,
+        prompt: str,
+        *,
+        max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
+        tool_call_limit: int | None = None,
+    ) -> str:
+        return await self._agent.arun_loop(
+            user_input=prompt,
+            max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
+            tool_call_limit=tool_call_limit,
+        )
 
     async def arun_output(
         self,
         prompt: str,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         run_id: str | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
@@ -128,6 +185,10 @@ class MTPAgent:
         return await self._agent.arun_output(
             user_input=prompt,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             run_id=run_id,
             user_id=user_id,
             session_id=session_id,
@@ -146,6 +207,10 @@ class MTPAgent:
         prompt: str,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         stream_final: bool = True,
         run_id: str | None = None,
         user_id: str | None = None,
@@ -157,6 +222,10 @@ class MTPAgent:
         return self._agent.run_loop_events(
             user_input=prompt,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             stream_final=stream_final,
             run_id=run_id,
             user_id=user_id,
@@ -171,6 +240,10 @@ class MTPAgent:
         prompt: str,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         stream_final: bool = True,
         run_id: str | None = None,
         user_id: str | None = None,
@@ -182,6 +255,10 @@ class MTPAgent:
         return self._agent.arun_loop_events(
             user_input=prompt,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             stream_final=stream_final,
             run_id=run_id,
             user_id=user_id,
@@ -233,6 +310,10 @@ class MTPAgent:
         prompt: str,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         stream: bool = False,
         stream_events: bool = False,
         run_id: str | None = None,
@@ -270,6 +351,10 @@ class MTPAgent:
             for event in self.run_events(
                 prompt,
                 max_rounds=max_rounds,
+                images=images,
+                audios=audios,
+                videos=videos,
+                files=files,
                 stream_final=stream,
                 run_id=run_id,
                 tool_call_limit=tool_call_limit,
@@ -282,11 +367,25 @@ class MTPAgent:
                 printed_chunk = self._print_pretty_event(event, printed_chunk=printed_chunk, context=pretty_context)
             return
         if not stream:
-            print(self.run(prompt, max_rounds=max_rounds, tool_call_limit=tool_call_limit))
+            print(
+                self.run(
+                    prompt,
+                    max_rounds=max_rounds,
+                    images=images,
+                    audios=audios,
+                    videos=videos,
+                    files=files,
+                    tool_call_limit=tool_call_limit,
+                )
+            )
             return
         for chunk in self.run_stream(
             prompt,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             tool_call_limit=tool_call_limit,
             run_id=run_id,
         ):
