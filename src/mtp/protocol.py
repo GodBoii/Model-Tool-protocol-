@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from .media import Audio, File, Image, Video
+
 
 class ToolRiskLevel(str, Enum):
     READ_ONLY = "read_only"
@@ -44,6 +46,19 @@ class ToolResult:
     skipped: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = None
+    images: list[Image] | None = None
+    videos: list[Video] | None = None
+    audios: list[Audio] | None = None
+    files: list[File] | None = None
+
+
+@dataclass(slots=True)
+class ToolOutput:
+    content: Any
+    images: list[Image] | None = None
+    videos: list[Video] | None = None
+    audios: list[Audio] | None = None
+    files: list[File] | None = None
 
 
 @dataclass(slots=True)

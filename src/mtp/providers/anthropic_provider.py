@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import mimetypes
+from pathlib import Path
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
+from ..media import File, Image
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
-from .common import calls_to_dependency_batches, extract_refs, extract_usage_metrics, normalize_refs
+from .common import calls_to_dependency_batches, extract_refs, extract_usage_metrics, normalize_refs, safe_load_arguments
 
 
 class AnthropicToolCallingProvider(ProviderAdapter):
@@ -52,6 +56,105 @@ class AnthropicToolCallingProvider(ProviderAdapter):
             for tool in tools
         ]
 
+    def _to_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        try:
+            return json.dumps(content, default=str)
+        except Exception:
+            return str(content)
+
+    def _guess_mime(self, name_or_path: str, default: str) -> str:
+        guessed = mimetypes.guess_type(name_or_path)[0]
+        return guessed or default
+
+    def _image_block(self, image: Image) -> dict[str, Any] | None:
+        if image.url:
+            return {"type": "image", "source": {"type": "url", "url": image.url}}
+        raw = image.get_content_bytes()
+        if raw is None:
+            return None
+        mime = image.mime_type
+        if mime is None:
+            if image.format:
+                mime = f"image/{image.format}"
+            elif image.filepath:
+                mime = self._guess_mime(str(image.filepath), "image/jpeg")
+            else:
+                mime = "image/jpeg"
+        encoded = base64.b64encode(raw).decode("utf-8")
+        return {
+            "type": "image",
+            "source": {"type": "base64", "media_type": mime, "data": encoded},
+        }
+
+    def _file_block(self, file: File) -> dict[str, Any] | None:
+        if file.url:
+            return {
+                "type": "document",
+                "source": {"type": "url", "url": file.url},
+                "citations": {"enabled": True},
+            }
+        raw = file.get_content_bytes()
+        if raw is None:
+            return None
+        file_name = file.filename
+        if file_name is None and file.filepath is not None:
+            file_name = Path(str(file.filepath)).name
+        mime = file.mime_type or (self._guess_mime(file_name, "application/pdf") if file_name else "application/pdf")
+        if mime.startswith("text/") or mime == "application/json":
+            return {
+                "type": "document",
+                "source": {
+                    "type": "text",
+                    "media_type": "text/plain",
+                    "data": raw.decode("utf-8", errors="replace"),
+                },
+                "citations": {"enabled": True},
+            }
+        encoded = base64.b64encode(raw).decode("utf-8")
+        return {
+            "type": "document",
+            "source": {"type": "base64", "media_type": mime, "data": encoded},
+            "citations": {"enabled": True},
+        }
+
+    def _assistant_blocks(self, msg: dict[str, Any]) -> list[dict[str, Any]]:
+        blocks: list[dict[str, Any]] = []
+        text = self._to_text(msg.get("content", ""))
+        if text.strip():
+            blocks.append({"type": "text", "text": text})
+        tool_calls = msg.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function")
+                if not isinstance(function, dict):
+                    continue
+                name = function.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                raw_arguments = function.get("arguments")
+                if isinstance(raw_arguments, str):
+                    call_input = safe_load_arguments(raw_arguments)
+                elif isinstance(raw_arguments, dict):
+                    call_input = raw_arguments
+                else:
+                    call_input = {}
+                call_id = tool_call.get("id")
+                if not isinstance(call_id, str) or not call_id:
+                    call_id = f"call_{len(blocks)}"
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": name,
+                        "input": call_input,
+                    }
+                )
+        return blocks
+
     def _to_anthropic_payload(self, messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
         system_blocks: list[str] = []
         formatted: list[dict[str, Any]] = []
@@ -62,23 +165,66 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                 if isinstance(content, str) and content.strip():
                     system_blocks.append(content)
             elif role == "user":
-                formatted.append({"role": "user", "content": msg.get("content") or ""})
+                blocks: list[dict[str, Any]] = []
+                text = self._to_text(msg.get("content", ""))
+                if text.strip():
+                    blocks.append({"type": "text", "text": text})
+
+                images = msg.get("images")
+                if isinstance(images, list):
+                    for image in images:
+                        if isinstance(image, Image):
+                            image_block = self._image_block(image)
+                            if image_block is not None:
+                                blocks.append(image_block)
+
+                files = msg.get("files")
+                if isinstance(files, list):
+                    for file in files:
+                        if isinstance(file, File):
+                            file_block = self._file_block(file)
+                            if file_block is not None:
+                                blocks.append(file_block)
+
+                audios = msg.get("audios")
+                if audios is None:
+                    audios = msg.get("audio")
+                if isinstance(audios, list) and audios:
+                    blocks.append(
+                        {
+                            "type": "text",
+                            "text": f"[audio attachments: {len(audios)} item(s)]",
+                        }
+                    )
+
+                videos = msg.get("videos")
+                if isinstance(videos, list) and videos:
+                    blocks.append(
+                        {
+                            "type": "text",
+                            "text": f"[video attachments: {len(videos)} item(s)]",
+                        }
+                    )
+
+                if not blocks:
+                    blocks.append({"type": "text", "text": ""})
+                formatted.append({"role": "user", "content": blocks})
             elif role == "assistant":
-                assistant_message: dict[str, Any] = {"role": "assistant", "content": msg.get("content") or ""}
-                if "tool_calls" in msg:
-                    assistant_message["tool_calls"] = msg["tool_calls"]
-                formatted.append(assistant_message)
+                blocks = self._assistant_blocks(msg)
+                if not blocks:
+                    blocks.append({"type": "text", "text": ""})
+                formatted.append({"role": "assistant", "content": blocks})
             elif role == "tool":
-                content = msg.get("content", "")
-                if not isinstance(content, str):
-                    content = json.dumps(content)
+                tool_content = msg.get("content", "")
+                if not isinstance(tool_content, str):
+                    tool_content = self._to_text(tool_content)
                 formatted.append({
                     "role": "user",
                     "content": [
                         {
                             "type": "tool_result",
                             "tool_use_id": msg["tool_call_id"],
-                            "content": content,
+                            "content": tool_content,
                         }
                     ],
                 })
@@ -110,14 +256,16 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         calls: list[ToolCall] = []
         serialized_tool_calls: list[dict[str, Any]] = []
         id_by_index: dict[int, str] = {}
-        response_text = ""
+        response_text_parts: list[str] = []
         for idx, content in enumerate(response.content):
             if content.type == "text":
-                response_text = content.text
+                text = getattr(content, "text", None)
+                if isinstance(text, str) and text:
+                    response_text_parts.append(text)
             elif content.type == "tool_use":
                 call_id = content.id or f"call_{idx}"
                 id_by_index[idx] = call_id
-                raw_input = dict(content.input)
+                raw_input = content.input if isinstance(content.input, dict) else dict(content.input)
                 normalized_args = normalize_refs(raw_input, id_by_index)
                 depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
                 calls.append(
@@ -135,6 +283,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                         "function": {"name": content.name, "arguments": json.dumps(raw_input)},
                     }
                 )
+        response_text = "\n".join(response_text_parts).strip()
 
         if calls:
             plan = ExecutionPlan(
