@@ -5,12 +5,14 @@ from .agent import Agent, AgentAction, ProviderAdapter, RunOutput
 from .exceptions import RetryAgentRun, StopAgentRun
 from .protocol import (
     ExecutionPlan,
+    ToolOutput,
     ToolBatch,
     ToolCall,
     ToolResult,
     ToolRiskLevel,
     ToolSpec,
 )
+from .media import Audio, File, Image, Video
 from .runtime import ExecutionCancelledError, ToolRegistry, ToolkitLoader, ToolRetryError, ToolStopError
 from .schema import (
     CURRENT_MTP_VERSION,
@@ -54,6 +56,7 @@ __all__ = [
     "RiskPolicy",
     "ToolBatch",
     "ToolCall",
+    "ToolOutput",
     "ToolRegistry",
     "ExecutionCancelledError",
     "ToolRetryError",
@@ -61,6 +64,10 @@ __all__ = [
     "ToolResult",
     "ToolRiskLevel",
     "ToolSpec",
+    "Audio",
+    "Image",
+    "Video",
+    "File",
     "ToolkitLoader",
     "CalculatorToolkit",
     "Crawl4aiToolkit",

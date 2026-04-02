@@ -11,6 +11,7 @@ from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from .events import EventStreamContext
+from .media import Audio, File, Image, Video
 from .prompts import DEFAULT_MTP_SYSTEM_INSTRUCTIONS
 from .runtime import (
     ExecutionCancelledError,
@@ -98,6 +99,7 @@ class Agent:
         system_instructions: str | None = None,
         stream_chunk_size: int = 40,
         max_history_messages: int = 200,
+        send_media_to_model: bool = True,
         mode: str = "standalone",
         members: dict[str, "Agent"] | None = None,
     ) -> None:
@@ -118,6 +120,7 @@ class Agent:
         self.system_instructions = system_instructions or DEFAULT_MTP_SYSTEM_INSTRUCTIONS
         self.stream_chunk_size = stream_chunk_size
         self.max_history_messages = max_history_messages
+        self.send_media_to_model = send_media_to_model
         self.mode = self._validate_mode(mode)
         self.members: dict[str, Agent] = {}
         self._system_seeded = False
@@ -302,6 +305,81 @@ class Agent:
         except Exception:
             return str(normalized_input)
 
+    def _coerce_media_context(
+        self,
+        *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
+    ) -> dict[str, Any] | None:
+        if not (images or audios or videos or files):
+            return None
+        return {
+            "images": list(images or []),
+            "audios": list(audios or []),
+            "videos": list(videos or []),
+            "files": list(files or []),
+        }
+
+    def _build_user_message(
+        self,
+        *,
+        text: str,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
+    ) -> dict[str, Any]:
+        message: dict[str, Any] = {"role": "user", "content": text}
+        if self.send_media_to_model:
+            if images:
+                message["images"] = images
+            if audios:
+                message["audios"] = audios
+            if videos:
+                message["videos"] = videos
+            if files:
+                message["files"] = files
+        return message
+
+    def _append_tool_messages_and_media(self, results: list[ToolResult]) -> None:
+        tool_messages: list[dict[str, Any]] = []
+        all_images: list[Image] = []
+        all_audios: list[Audio] = []
+        all_videos: list[Video] = []
+        all_files: list[File] = []
+        for result in results:
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result.call_id,
+                    "tool_name": result.tool_name,
+                    "content": result.output if result.success else result.error,
+                    "success": result.success,
+                    "cached": result.cached,
+                }
+            )
+            if result.images:
+                all_images.extend(result.images)
+            if result.audios:
+                all_audios.extend(result.audios)
+            if result.videos:
+                all_videos.extend(result.videos)
+            if result.files:
+                all_files.extend(result.files)
+
+        self._extend_messages(tool_messages)
+        if self.send_media_to_model and (all_images or all_audios or all_videos or all_files):
+            media_message = self._build_user_message(
+                text="Take note of the following content",
+                images=all_images or None,
+                audios=all_audios or None,
+                videos=all_videos or None,
+                files=all_files or None,
+            )
+            self._append_message(media_message)
+
     def _validate_input_schema(
         self,
         normalized_input: Any,
@@ -394,11 +472,41 @@ class Agent:
             return text, f"Output model pipeline failed: {exc}"
         return current, None
 
-    def run(self, user_input: Any) -> str:
-        return self.run_loop(user_input=user_input, max_rounds=1)
+    def run(
+        self,
+        user_input: Any,
+        *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
+    ) -> str:
+        return self.run_loop(
+            user_input=user_input,
+            max_rounds=1,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
+        )
 
-    async def arun(self, user_input: Any) -> str:
-        return await self.arun_loop(user_input=user_input, max_rounds=1)
+    async def arun(
+        self,
+        user_input: Any,
+        *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
+    ) -> str:
+        return await self.arun_loop(
+            user_input=user_input,
+            max_rounds=1,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
+        )
 
     def _run_coro_sync(self, coro: Any) -> Any:
         try:
@@ -489,10 +597,23 @@ class Agent:
         run_id: str,
         tool_call_limit: int | None = None,
         append_user_message: bool = True,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
     ) -> tuple[list[ToolResult], str | None, bool, int, bool]:
         self._seed_system_messages_if_needed()
+        media_context = self._coerce_media_context(images=images, audios=audios, videos=videos, files=files)
         if append_user_message and user_text is not None:
-            self._append_message({"role": "user", "content": user_text})
+            self._append_message(
+                self._build_user_message(
+                    text=user_text,
+                    images=images,
+                    audios=audios,
+                    videos=videos,
+                    files=files,
+                )
+            )
             self._debug(f"user_message={user_text!r}")
         tools = self.registry.list_tools()
         self._debug(f"tools_available={len(tools)}")
@@ -581,7 +702,11 @@ class Agent:
 
             try:
                 last_results = self._run_coro_sync(
-                    self.registry.execute_plan(action.plan, cancel_checker=lambda: self._is_cancelled(run_id))
+                    self.registry.execute_plan(
+                        action.plan,
+                        cancel_checker=lambda: self._is_cancelled(run_id),
+                        media_context=media_context,
+                    )
                 )
             except ExecutionCancelledError:
                 cancelled = True
@@ -611,18 +736,7 @@ class Agent:
                 self._debug(
                     f"tool_result_payload id={result.call_id} data={self._short(result.output if result.success else result.error)}"
                 )
-            tool_messages = [
-                {
-                    "role": "tool",
-                    "tool_call_id": result.call_id,
-                    "tool_name": result.tool_name,
-                    "content": result.output if result.success else result.error,
-                    "success": result.success,
-                    "cached": result.cached,
-                }
-                for result in last_results
-            ]
-            self._extend_messages(tool_messages)
+            self._append_tool_messages_and_media(last_results)
 
         return last_results, None, cancelled, total_tool_calls, paused
 
@@ -631,6 +745,10 @@ class Agent:
         user_input: Any,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         run_id: str | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
@@ -669,6 +787,10 @@ class Agent:
                 max_rounds=max_rounds,
                 run_id=resolved_run_id,
                 tool_call_limit=tool_call_limit,
+                images=images,
+                audios=audios,
+                videos=videos,
+                files=files,
             )
             if cancelled:
                 final_text = "Run cancelled."
@@ -723,12 +845,20 @@ class Agent:
         user_input: Any,
         max_rounds: int = 5,
         *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         tool_call_limit: int | None = None,
         input_schema: dict[str, Any] | None = None,
     ) -> str:
         run = self.run_output(
             user_input=user_input,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             tool_call_limit=tool_call_limit,
             input_schema=input_schema,
         )
@@ -751,18 +881,7 @@ class Agent:
 
         self.messages = list(state.messages)
         if updated_tools:
-            tool_messages = [
-                {
-                    "role": "tool",
-                    "tool_call_id": result.call_id,
-                    "tool_name": result.tool_name,
-                    "content": result.output if result.success else result.error,
-                    "success": result.success,
-                    "cached": result.cached,
-                }
-                for result in updated_tools
-            ]
-            self._extend_messages(tool_messages)
+            self._append_tool_messages_and_media(updated_tools)
 
         resolved_run_id = run_id or state.run_id
         self._register_run(resolved_run_id)
@@ -815,10 +934,23 @@ class Agent:
         run_id: str,
         tool_call_limit: int | None = None,
         append_user_message: bool = True,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
     ) -> tuple[list[ToolResult], str | None, bool, int, bool]:
         self._seed_system_messages_if_needed()
+        media_context = self._coerce_media_context(images=images, audios=audios, videos=videos, files=files)
         if append_user_message and user_text is not None:
-            self._append_message({"role": "user", "content": user_text})
+            self._append_message(
+                self._build_user_message(
+                    text=user_text,
+                    images=images,
+                    audios=audios,
+                    videos=videos,
+                    files=files,
+                )
+            )
         tools = self.registry.list_tools()
         last_results: list[ToolResult] = []
         cancelled = False
@@ -872,6 +1004,7 @@ class Agent:
                 last_results = await self.registry.execute_plan(
                     action.plan,
                     cancel_checker=lambda: self._is_cancelled(run_id),
+                    media_context=media_context,
                 )
             except ExecutionCancelledError:
                 cancelled = True
@@ -890,18 +1023,7 @@ class Agent:
             except ToolStopError as exc:
                 paused = True
                 return last_results, exc.message, cancelled, total_tool_calls, paused
-            tool_messages = [
-                {
-                    "role": "tool",
-                    "tool_call_id": result.call_id,
-                    "tool_name": result.tool_name,
-                    "content": result.output if result.success else result.error,
-                    "success": result.success,
-                    "cached": result.cached,
-                }
-                for result in last_results
-            ]
-            self._extend_messages(tool_messages)
+            self._append_tool_messages_and_media(last_results)
 
         return last_results, None, cancelled, total_tool_calls, paused
 
@@ -910,6 +1032,10 @@ class Agent:
         user_input: Any,
         *,
         max_rounds: int = 5,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         run_id: str | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
@@ -948,6 +1074,10 @@ class Agent:
                 max_rounds=max_rounds,
                 run_id=resolved_run_id,
                 tool_call_limit=tool_call_limit,
+                images=images,
+                audios=audios,
+                videos=videos,
+                files=files,
             )
             if cancelled:
                 final_text = "Run cancelled."
@@ -1000,12 +1130,20 @@ class Agent:
         user_input: Any,
         max_rounds: int = 5,
         *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         tool_call_limit: int | None = None,
         input_schema: dict[str, Any] | None = None,
     ) -> str:
         run = await self.arun_output(
             user_input=user_input,
             max_rounds=max_rounds,
+            images=images,
+            audios=audios,
+            videos=videos,
+            files=files,
             tool_call_limit=tool_call_limit,
             input_schema=input_schema,
         )
@@ -1028,18 +1166,7 @@ class Agent:
 
         self.messages = list(state.messages)
         if updated_tools:
-            tool_messages = [
-                {
-                    "role": "tool",
-                    "tool_call_id": result.call_id,
-                    "tool_name": result.tool_name,
-                    "content": result.output if result.success else result.error,
-                    "success": result.success,
-                    "cached": result.cached,
-                }
-                for result in updated_tools
-            ]
-            self._extend_messages(tool_messages)
+            self._append_tool_messages_and_media(updated_tools)
 
         resolved_run_id = run_id or state.run_id
         self._register_run(resolved_run_id)
@@ -1089,6 +1216,10 @@ class Agent:
         user_input: Any,
         max_rounds: int = 5,
         *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         tool_call_limit: int | None = None,
         run_id: str | None = None,
         input_schema: dict[str, Any] | None = None,
@@ -1106,6 +1237,10 @@ class Agent:
                 max_rounds=max_rounds,
                 run_id=resolved_run_id,
                 tool_call_limit=tool_call_limit,
+                images=images,
+                audios=audios,
+                videos=videos,
+                files=files,
             )
             if cancelled:
                 final_text = "Run cancelled."
@@ -1152,6 +1287,10 @@ class Agent:
         user_input: Any,
         max_rounds: int = 5,
         *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         stream_final: bool = True,
         run_id: str | None = None,
         user_id: str | None = None,
@@ -1165,12 +1304,21 @@ class Agent:
         normalized_input = self._normalize_input(user_input)
         input_validation_error = self._validate_input_schema(normalized_input, input_schema)
         serialized_input = self._serialize_input_for_message(normalized_input)
+        media_context = self._coerce_media_context(images=images, audios=audios, videos=videos, files=files)
 
         resolved_run_id = run_id or str(uuid4())
         self._register_run(resolved_run_id)
         events = EventStreamContext(run_id=resolved_run_id)
         self._seed_system_messages_if_needed()
-        self._append_message({"role": "user", "content": serialized_input})
+        self._append_message(
+            self._build_user_message(
+                text=serialized_input,
+                images=images,
+                audios=audios,
+                videos=videos,
+                files=files,
+            )
+        )
         tools = self.registry.list_tools()
         mode_instruction = self._build_mode_system_instruction()
         system_instructions = [self.system_instructions] if self.system_instructions else []
@@ -1322,6 +1470,7 @@ class Agent:
                         self.registry.execute_plan(
                             action.plan,
                             cancel_checker=lambda: self._is_cancelled(resolved_run_id),
+                            media_context=media_context,
                         )
                     )
                 except ExecutionCancelledError:
@@ -1357,20 +1506,15 @@ class Agent:
                         approval=result.approval,
                         output=result.output if result.success else None,
                         error=result.error if not result.success else None,
+                        media_counts={
+                            "images": len(result.images or []),
+                            "videos": len(result.videos or []),
+                            "audios": len(result.audios or []),
+                            "files": len(result.files or []),
+                        },
                     )
 
-                tool_messages = [
-                    {
-                        "role": "tool",
-                        "tool_call_id": result.call_id,
-                        "tool_name": result.tool_name,
-                        "content": result.output if result.success else result.error,
-                        "success": result.success,
-                        "cached": result.cached,
-                    }
-                    for result in last_results
-                ]
-                self._extend_messages(tool_messages)
+                self._append_tool_messages_and_media(last_results)
 
             finalize_stream = getattr(self.provider, "finalize_stream", None)
             if stream_final and callable(finalize_stream):
@@ -1427,6 +1571,10 @@ class Agent:
         user_input: Any,
         max_rounds: int = 5,
         *,
+        images: list[Image] | None = None,
+        audios: list[Audio] | None = None,
+        videos: list[Video] | None = None,
+        files: list[File] | None = None,
         stream_final: bool = True,
         run_id: str | None = None,
         user_id: str | None = None,
@@ -1440,12 +1588,21 @@ class Agent:
         normalized_input = self._normalize_input(user_input)
         input_validation_error = self._validate_input_schema(normalized_input, input_schema)
         serialized_input = self._serialize_input_for_message(normalized_input)
+        media_context = self._coerce_media_context(images=images, audios=audios, videos=videos, files=files)
 
         resolved_run_id = run_id or str(uuid4())
         self._register_run(resolved_run_id)
         events = EventStreamContext(run_id=resolved_run_id)
         self._seed_system_messages_if_needed()
-        self._append_message({"role": "user", "content": serialized_input})
+        self._append_message(
+            self._build_user_message(
+                text=serialized_input,
+                images=images,
+                audios=audios,
+                videos=videos,
+                files=files,
+            )
+        )
         tools = self.registry.list_tools()
         mode_instruction = self._build_mode_system_instruction()
         system_instructions = [self.system_instructions] if self.system_instructions else []
@@ -1596,6 +1753,7 @@ class Agent:
                     last_results = await self.registry.execute_plan(
                         action.plan,
                         cancel_checker=lambda: self._is_cancelled(resolved_run_id),
+                        media_context=media_context,
                     )
                 except ExecutionCancelledError:
                     yield events.emit("run_cancelled", round=round_idx)
@@ -1630,20 +1788,15 @@ class Agent:
                         approval=result.approval,
                         output=result.output if result.success else None,
                         error=result.error if not result.success else None,
+                        media_counts={
+                            "images": len(result.images or []),
+                            "videos": len(result.videos or []),
+                            "audios": len(result.audios or []),
+                            "files": len(result.files or []),
+                        },
                     )
 
-                tool_messages = [
-                    {
-                        "role": "tool",
-                        "tool_call_id": result.call_id,
-                        "tool_name": result.tool_name,
-                        "content": result.output if result.success else result.error,
-                        "success": result.success,
-                        "cached": result.cached,
-                    }
-                    for result in last_results
-                ]
-                self._extend_messages(tool_messages)
+                self._append_tool_messages_and_media(last_results)
 
             finalize_stream = getattr(self.provider, "finalize_stream", None)
             if stream_final and callable(finalize_stream):
