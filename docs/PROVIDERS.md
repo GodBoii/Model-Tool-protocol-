@@ -66,7 +66,10 @@ agent = Agent.MTPAgent(provider=provider, tools=registry)
 
 ## Notes
 
-- Alias names available: `Groq`, `OpenRouter`, `OpenAI`, `Gemini`, `Anthropic`, `SambaNova`.
+- Alias names available (when matching optional SDKs are installed):
+  - `Groq`, `OpenRouter`, `OpenAI`, `Gemini`, `Anthropic`, `SambaNova`
+  - `Cerebras`, `DeepSeek`, `Mistral`, `Cohere`, `TogetherAI`, `FireworksAI`
+- Local deterministic planner provider is also available as `MockPlannerProvider` (class alias for `SimplePlannerProvider`).
 - Provider exports are dependency-optional: missing SDKs no longer block importing other providers.
 - Explicit class names remain fully supported and unchanged.
 - No provider is defaulted by core `Agent` / `MTPAgent`.

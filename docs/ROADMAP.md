@@ -17,10 +17,10 @@
 - Approval policy hooks:
   - allow / ask / deny by risk level
   - per-tool override via `by_tool_name`
-- Groq provider adapter:
+- Provider adapter baseline:
   - model-native tool calls
   - dotenv loading support
-  - one-round tool execution + final response
+  - adapters for Groq/OpenAI/OpenRouter/Gemini/Anthropic/SambaNova and additional optional providers
 - Local toolkit package:
   - calculator
   - file
@@ -64,10 +64,10 @@
   - budget-aware continuation
 
 ## Phase 3
-- Transport and remote execution:
-  - stdio and HTTP transports
-  - remote tool servers
-  - streamable partial results for long-running tools
+- Advanced transport and remote execution:
+  - remote tool servers and cross-process execution patterns
+  - streamable transport upgrades (for long-running workflows and resumability)
+  - pluggable transport expansion beyond current stdio/HTTP envelope primitives
 - Unified tracing events for all tool calls.
 - Rich analytics/query APIs on top of persisted session data.
 
