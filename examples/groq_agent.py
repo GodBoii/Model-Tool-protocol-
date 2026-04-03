@@ -7,7 +7,7 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from mtp import Agent, RetryAgentRun, StopAgentRun, ToolRegistry, load_dotenv_if_available, mtp_tool
+from mtp import Agent
 from mtp.providers import Groq
 from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToolkit
 
@@ -15,21 +15,21 @@ from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToo
 _retry_state = {"count": 0}
 
 
-@mtp_tool(name="demo.retry_once", description="Retry once, then succeed.")
+@Agent.mtp_tool(name="demo.retry_once", description="Retry once, then succeed.")
 def retry_once(task: str = "") -> str:
     _ = task
     _retry_state["count"] += 1
     if _retry_state["count"] == 1:
-        raise RetryAgentRun("Please call demo.retry_once one more time with the same task.")
+        raise Agent.RetryAgentRun("Please call demo.retry_once one more time with the same task.")
     return "retry_succeeded"
 
 
-@mtp_tool(name="demo.stop_now", description="Stop/pause the current run.")
+@Agent.mtp_tool(name="demo.stop_now", description="Stop/pause the current run.")
 def stop_now(reason: str = "manual-approval-required") -> str:
-    raise StopAgentRun(f"Run paused by tool: {reason}")
+    raise Agent.StopAgentRun(f"Run paused by tool: {reason}")
 
 
-@mtp_tool(name="demo.echo", description="Echo text back.")
+@Agent.mtp_tool(name="demo.echo", description="Echo text back.")
 def echo(text: str) -> str:
     return text
 
@@ -46,9 +46,9 @@ def safe_print_json(name: str, value: Any) -> None:
 
 
 def main() -> None:
-    load_dotenv_if_available()
+    Agent.load_dotenv_if_available()
 
-    tools = ToolRegistry()
+    tools = Agent.ToolRegistry()
     tools.register_toolkit_loader("calculator", CalculatorToolkit())
     tools.register_toolkit_loader("file", FileToolkit(base_dir=pathlib.Path.cwd()))
     tools.register_toolkit_loader("python", PythonToolkit(base_dir=pathlib.Path.cwd()))
@@ -190,3 +190,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
