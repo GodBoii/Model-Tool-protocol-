@@ -132,5 +132,5 @@ python examples/groq_agent.py
 - `src/mtp/agent.py`: Agent loop around provider + runtime.
 - `src/mtp/toolkits/`: Local toolkits (`calculator`, `file`, `python`, `shell`).
 - `src/mtp/transport/`: Envelope transport over stdio and HTTP.
-- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider`, `GroqToolCallingProvider`).
+- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider` + OpenAI/Groq/OpenRouter/Gemini/Anthropic/SambaNova/Cerebras/DeepSeek/Mistral/Cohere/TogetherAI/FireworksAI).
 - `docs/`: documentation and implementation guides.

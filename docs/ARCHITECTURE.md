@@ -48,8 +48,20 @@
 6. `mtp.providers`
 - Provider adapter interface for OpenAI/Anthropic/Gemini/Groq/etc.
 - Current repo includes:
-  - deterministic local planner (`SimplePlannerProvider`) for demo/testing
-  - `GroqToolCallingProvider` for real model-driven tool calls
+  - deterministic local planner (`SimplePlannerProvider`, exported as `MockPlannerProvider`) for demo/testing
+  - model providers:
+    - `GroqToolCallingProvider`
+    - `OpenAIToolCallingProvider`
+    - `OpenRouterToolCallingProvider`
+    - `GeminiToolCallingProvider`
+    - `AnthropicToolCallingProvider`
+    - `SambaNovaToolCallingProvider`
+    - `CerebrasToolCallingProvider`
+    - `DeepSeekToolCallingProvider`
+    - `MistralToolCallingProvider`
+    - `CohereToolCallingProvider`
+    - `TogetherAIToolCallingProvider`
+    - `FireworksAIToolCallingProvider`
 - Providers are instantiated explicitly by users and passed into `Agent`/`MTPAgent`.
 
 Cross-provider configuration note:
@@ -120,7 +132,7 @@ Implemented:
 - Lazy toolkit loading and execution in one runtime.
 - Plan validation (including cycle checks).
 - Risk policy hooks.
-- Groq provider + dotenv loading support.
+- Multi-provider adapter coverage + dotenv loading support.
 - Local no-key toolkits for calculator/file/python/shell.
 - Multi-round execution loop in agent.
 - Continue/pause run primitives with tool-driven control flow.
