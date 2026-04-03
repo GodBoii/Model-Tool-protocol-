@@ -166,3 +166,6 @@ Source: [simple_agent.py](/c:/Users/prajw/Downloads/MTP/src/mtp/simple_agent.py)
 - `continue_run`, `acontinue_run`
 - `cancel_run`
 - `print_response`
+
+See full persistence examples and provider-specific setup:
+- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)

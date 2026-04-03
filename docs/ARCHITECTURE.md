@@ -78,6 +78,14 @@ Cross-provider configuration note:
   - explicit provider + registry injection
   - short `run()` / `print_response()` interface
 
+10. `mtp.session_store`
+- Optional session persistence abstraction (`SessionStore` protocol).
+- Built-in stores:
+  - `JsonSessionStore`
+  - `PostgresSessionStore`
+  - `MySQLSessionStore`
+- Persists message history and run summaries keyed by `session_id`.
+
 ## Module boundaries
 
 - `mtp.providers`:
@@ -97,6 +105,7 @@ Cross-provider configuration note:
 - `mtp.agent`:
   - Orchestration loop only
   - No provider-specific tool parsing logic
+  - Delegates persistence to `session_store` when configured
 
 - `mtp.transport`:
   - Message ingress/egress only
@@ -118,9 +127,13 @@ Implemented:
 - Structured input schema validation.
 - Output model + parser model refinement pipeline.
 - Envelope transport primitives (stdio + HTTP).
+- Session persistence via JSON/PostgreSQL/MySQL stores.
 
 Next steps:
 - JSON schema + versioned wire format for MTP messages.
 - Transport abstraction (stdio/http/ws).
 - Streaming result chunks for long-running tools.
 - Provider capability matrix and richer per-provider options.
+
+See:
+- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
