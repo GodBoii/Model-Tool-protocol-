@@ -123,6 +123,8 @@ Full schema:
 
 ## 5) Next steps
 
+- Enable persistent sessions:
+  - [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
 - Add your own provider adapter under `src/mtp/providers/`
 - Add your own toolkit under `src/mtp/toolkits/`
 - Add a transport layer integration under `src/mtp/transport/`
@@ -136,3 +138,15 @@ When `strict_dependency_mode=True`, MTP enforces explicit dependency wiring for 
 Example expectation:
 - good: second call argument uses `{"$ref":"<tool_call_id>"}` or has `depends_on`
 - rejected: second call hardcodes an inferred intermediate value
+
+## Session persistence quick example
+
+```python
+from mtp import Agent, JsonSessionStore
+
+store = JsonSessionStore(db_path="tmp/mtp_json_db")
+agent = Agent.MTPAgent(provider=provider, tools=tools, session_store=store)
+
+agent.run("Remember: project codename is Atlas.", session_id="dev-session", user_id="u1")
+agent.run("What is the codename?", session_id="dev-session", user_id="u1")
+```

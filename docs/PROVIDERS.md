@@ -67,7 +67,11 @@ agent = Agent.MTPAgent(provider=provider, tools=registry)
 ## Notes
 
 - Alias names available: `Groq`, `OpenRouter`, `OpenAI`, `Gemini`, `Anthropic`, `SambaNova`.
+- Provider exports are dependency-optional: missing SDKs no longer block importing other providers.
 - Explicit class names remain fully supported and unchanged.
 - No provider is defaulted by core `Agent` / `MTPAgent`.
 - Different providers can expose different constructor parameters safely.
 - Async provider hooks are optional. If omitted, async agent APIs fall back to running sync provider methods in threads.
+
+Related:
+- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
