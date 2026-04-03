@@ -5,16 +5,16 @@ import sys
 # Add src to path
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from mtp import Agent, ToolRegistry, load_dotenv_if_available
+from mtp import Agent
 from mtp.providers import SambaNova
 from mtp.toolkits import CalculatorToolkit
 
 def main():
     # 1. Load API Keys from .env
-    load_dotenv_if_available()
+    Agent.load_dotenv_if_available()
     
     # 2. Setup Tools
-    tools = ToolRegistry()
+    tools = Agent.ToolRegistry()
     tools.register_toolkit_loader("calculator", CalculatorToolkit())
     
     # 3. Setup SambaNova Provider

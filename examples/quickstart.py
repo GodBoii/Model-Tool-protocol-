@@ -5,12 +5,12 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from mtp import Agent, ToolRegistry, ToolRiskLevel, ToolSpec, ToolkitLoader, load_dotenv_if_available
+from mtp import Agent
 from mtp.providers import OpenRouter
 from mtp.runtime import RegisteredTool
 
 
-class GitHubToolkit(ToolkitLoader):
+class GitHubToolkit(Agent.ToolkitLoader):
     def __init__(self) -> None:
         self._counter = 0
 
@@ -24,17 +24,17 @@ class GitHubToolkit(ToolkitLoader):
 
         return [
             RegisteredTool(
-                spec=ToolSpec(
+                spec=Agent.ToolSpec(
                     name="github.get_user",
                     description="Fetch authenticated GitHub user profile.",
                     input_schema={"type": "object", "properties": {}, "additionalProperties": False},
-                    risk_level=ToolRiskLevel.READ_ONLY,
+                    risk_level=Agent.ToolRiskLevel.READ_ONLY,
                     cache_ttl_seconds=60,
                 ),
                 handler=get_user,
             ),
             RegisteredTool(
-                spec=ToolSpec(
+                spec=Agent.ToolSpec(
                     name="github.create_issue",
                     description="Create a GitHub issue.",
                     input_schema={
@@ -46,7 +46,7 @@ class GitHubToolkit(ToolkitLoader):
                         "required": ["title", "body"],
                         "additionalProperties": False,
                     },
-                    risk_level=ToolRiskLevel.WRITE,
+                    risk_level=Agent.ToolRiskLevel.WRITE,
                     side_effects="remote_state_change",
                 ),
                 handler=create_issue,
@@ -56,10 +56,10 @@ class GitHubToolkit(ToolkitLoader):
 
 def main() -> None:
     # 1. Load your API keys from .env
-    load_dotenv_if_available()
+    Agent.load_dotenv_if_available()
 
     # 2. Setup your tools
-    tools = ToolRegistry()
+    tools = Agent.ToolRegistry()
     tools.register_toolkit_loader("github", GitHubToolkit())
 
     # 3. Setup your REAL free provider!
@@ -79,3 +79,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
