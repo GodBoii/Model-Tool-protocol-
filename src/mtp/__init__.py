@@ -44,10 +44,20 @@ from .transport import HTTPTransportServer, run_stdio_transport
 # helper = Agent.MTPAgent(...)
 Agent.MTPAgent = MTPAgent
 Agent.ToolRegistry = ToolRegistry
+Agent.ToolkitLoader = ToolkitLoader
+Agent.ToolSpec = ToolSpec
+Agent.ToolRiskLevel = ToolRiskLevel
 Agent.Audio = Audio
 Agent.Image = Image
 Agent.Video = Video
 Agent.File = File
+Agent.mtp_tool = staticmethod(mtp_tool)
+Agent.tool_spec_from_callable = staticmethod(tool_spec_from_callable)
+Agent.FunctionToolkit = FunctionToolkit
+Agent.toolkit_from_functions = staticmethod(toolkit_from_functions)
+Agent.RetryAgentRun = RetryAgentRun
+Agent.StopAgentRun = StopAgentRun
+Agent.register_local_toolkits = staticmethod(register_local_toolkits)
 Agent.load_dotenv_if_available = staticmethod(load_dotenv_if_available)
 
 __all__ = [
