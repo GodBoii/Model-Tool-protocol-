@@ -99,3 +99,6 @@ Default policy:
 - destructive tools: ask
 
 Customize with `RiskPolicy` when creating `ToolRegistry`.
+
+Related:
+- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)

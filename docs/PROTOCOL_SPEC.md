@@ -66,3 +66,9 @@ This draft defines the in-process protocol model used by `mtp-python`.
 - cryptographic signing/auth
 - streaming partial tool result chunks
 - formal RFC process
+
+Persistence note:
+- Session persistence is implemented at runtime level (`session_store`) and is intentionally separate from the protocol model.
+
+Related:
+- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
