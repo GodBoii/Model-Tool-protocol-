@@ -11,6 +11,7 @@ from .media import Audio, File, Image, Video
 from .protocol import ToolResult
 from .runtime import ToolRegistry
 from .agent import ProviderAdapter
+from .session_store import SessionStore
 
 
 class MTPAgent:
@@ -33,6 +34,7 @@ class MTPAgent:
         max_history_messages: int = 200,
         mode: str = "standalone",
         members: dict[str, Agent] | None = None,
+        session_store: SessionStore | None = None,
     ) -> None:
         if registry is not None and tools is not None and registry is not tools:
             raise ValueError("Pass only one of `tools` or `registry`.")
@@ -51,6 +53,7 @@ class MTPAgent:
             max_history_messages=max_history_messages,
             mode=mode,
             members=members,
+            session_store=session_store,
         )
 
     def run(
@@ -63,6 +66,9 @@ class MTPAgent:
         videos: list[Video] | None = None,
         files: list[File] | None = None,
         tool_call_limit: int | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         return self._agent.run_loop(
             user_input=prompt,
@@ -71,6 +77,9 @@ class MTPAgent:
             audios=audios,
             videos=videos,
             files=files,
+            user_id=user_id,
+            session_id=session_id,
+            metadata=metadata,
             tool_call_limit=tool_call_limit,
         )
 
@@ -150,6 +159,9 @@ class MTPAgent:
         videos: list[Video] | None = None,
         files: list[File] | None = None,
         tool_call_limit: int | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         return await self._agent.arun_loop(
             user_input=prompt,
@@ -158,6 +170,9 @@ class MTPAgent:
             audios=audios,
             videos=videos,
             files=files,
+            user_id=user_id,
+            session_id=session_id,
+            metadata=metadata,
             tool_call_limit=tool_call_limit,
         )
 
@@ -317,6 +332,9 @@ class MTPAgent:
         stream: bool = False,
         stream_events: bool = False,
         run_id: str | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
         event_format: str = "pretty",
     ) -> None:
@@ -357,6 +375,9 @@ class MTPAgent:
                 files=files,
                 stream_final=stream,
                 run_id=run_id,
+                user_id=user_id,
+                session_id=session_id,
+                metadata=metadata,
                 tool_call_limit=tool_call_limit,
             ):
                 if event_format == "json":
@@ -375,6 +396,9 @@ class MTPAgent:
                     audios=audios,
                     videos=videos,
                     files=files,
+                    user_id=user_id,
+                    session_id=session_id,
+                    metadata=metadata,
                     tool_call_limit=tool_call_limit,
                 )
             )
