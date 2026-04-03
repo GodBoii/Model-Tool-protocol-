@@ -46,6 +46,10 @@
 - Transport scaffolding:
   - stdio envelope transport
   - HTTP envelope transport
+- Persistent session store:
+  - `JsonSessionStore`
+  - `PostgresSessionStore`
+  - `MySQLSessionStore`
 
 ## Phase 2
 - Provider depth:
@@ -65,7 +69,7 @@
   - remote tool servers
   - streamable partial results for long-running tools
 - Unified tracing events for all tool calls.
-- Persistent run/session store for resume and analytics.
+- Rich analytics/query APIs on top of persisted session data.
 
 ## Phase 4
 - Developer experience:
