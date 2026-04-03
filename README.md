@@ -113,6 +113,7 @@ python examples/groq_agent.py
 ## Docs map
 - [Quickstart](C:\Users\prajw\Downloads\MTP\docs\QUICKSTART.md)
 - [Agent API Reference](C:\Users\prajw\Downloads\MTP\docs\AGENT_API.md)
+- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
 - [Providers](C:\Users\prajw\Downloads\MTP\docs\PROVIDERS.md)
 - [Creating Tools](C:\Users\prajw\Downloads\MTP\docs\CREATING_TOOLS.md)
 - [Events Contract](C:\Users\prajw\Downloads\MTP\docs\EVENTS.md)
