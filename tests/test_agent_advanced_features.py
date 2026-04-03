@@ -58,6 +58,14 @@ class _ConstantFinalizeProvider(ProviderAdapter):
         return self.text
 
 
+class _ExplodingProvider(ProviderAdapter):
+    def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
+        raise RuntimeError("boom")
+
+    def finalize(self, messages: list[dict], tool_results: list[ToolResult]) -> str:
+        return "never"
+
+
 class _DelegatingProvider(ProviderAdapter):
     def __init__(self, delegate_tool_name: str) -> None:
         self.delegate_tool_name = delegate_tool_name
@@ -133,6 +141,22 @@ class AgentAdvancedFeaturesTests(unittest.TestCase):
         resumed = agent.continue_run(run_output=paused, max_rounds=2)
         self.assertFalse(resumed.paused)
         self.assertEqual(resumed.final_text, "continued")
+
+    def test_continue_run_finally_preserves_original_exception(self) -> None:
+        reg = ToolRegistry()
+
+        def blocker() -> str:
+            raise StopAgentRun("Need confirmation")
+
+        reg.register_tool(ToolSpec(name="ops.blocker", description=""), blocker)
+        agent = Agent(provider=_OneCallThenTextProvider("ops.blocker", text="continued"), tools=reg)
+        paused = agent.run_output("go", max_rounds=2)
+        self.assertTrue(paused.paused)
+
+        agent.provider = _ExplodingProvider()
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            agent.continue_run(run_output=paused, max_rounds=2)
+        self.assertNotIn(paused.run_id, agent._active_runs)
 
     def test_output_model_pipeline(self) -> None:
         reg = ToolRegistry()

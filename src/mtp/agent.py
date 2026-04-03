@@ -1024,9 +1024,9 @@ class Agent:
             return continued
         finally:
             self._save_session_history(
-                session_id=session_id,
-                user_id=user_id,
-                metadata=metadata,
+                session_id=state.session_id,
+                user_id=state.user_id,
+                metadata=state.metadata,
                 run=None,
             )
             self._complete_run(resolved_run_id)
