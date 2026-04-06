@@ -234,30 +234,59 @@ Returned error codes:
 - `-32002`: server not initialized
 - `-32800`: request cancelled
 
-## Compatibility/conformance matrix
+## Compatibility/conformance automation
 
-Current matrix in this repo:
+MTP now includes an automated conformance harness under:
 
-- JSON-RPC request validation: covered
-- initialize lifecycle gate: covered
-- tools list/call mapping: covered
-- resources list/read: covered
-- prompts list/get: covered
-- auth denial path: covered
-- pluggable auth provider path (sync + async): covered
-- OAuth challenge metadata path (`www_authenticate`): covered
-- cancellation handling: covered
-- progress event capture: covered
-- async in-flight cancellation: covered
-- MCP HTTP adapter semantics (session/auth headers, batch, events): covered
+- `tests/conformance/*`
+- runner: `tests/conformance/run_conformance.py`
+
+Scenario set executed per client profile:
+
+- initialize lifecycle
+- tools list/call
+- resources/prompts
+- cancellation/progress
+- auth challenge behavior
+
+Supported built-in client profiles:
+
+- `direct` (in-process JSON-RPC client)
+- `http` (real HTTP transport client)
+
+Optional external third-party wrappers:
+
+- `tests/conformance/clients.py` includes `SubprocessExternalClient`
+- lets external client adapters run against local MCP server endpoints
+- intended for future integrations with real third-party MCP clients
+
+Artifacts generated:
+
+- machine-readable JSON report (default: `tmp/conformance/report.json`)
+- human-readable matrix doc (default: `docs/MCP_COMPATIBILITY_MATRIX.md`)
+
+Failure triage tags:
+
+- `protocol_mismatch`
+- `transport_mismatch`
+- `auth_mismatch`
+
+Release regression policy:
+
+- Conformance workflow runs in CI matrix:
+  - client profile (`direct`, `http`) x server feature set (`core`, `resumable`)
+- Critical compatibility failures return non-zero (`--fail-on-critical`)
+- CI blocks merge/release on critical breaks.
 
 ## Test coverage
 
 - [test_mcp_adapter.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_adapter.py)
 - [test_mcp_transport.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_transport.py)
+- [test_mcp_conformance.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_conformance.py)
+- [MCP compatibility matrix](/c:/Users/prajw/Downloads/MTP/docs/MCP_COMPATIBILITY_MATRIX.md)
 
 ## Remaining MCP work
 
 1. OAuth discovery/scope/refresh integrations beyond provider hook level.
-2. External client interoperability matrix against third-party MCP clients.
+2. Expand third-party client adapters from wrapper contract to concrete upstream clients in CI.
 3. Resumable stream depth beyond current event replay window (for example durable event stores across process restarts).

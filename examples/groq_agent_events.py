@@ -30,7 +30,7 @@ def main() -> None:
         tools=calculator_tools,
         mode="member",
         instructions="You are the calculator member agent. Solve math tasks precisely and return concise results.",
-        debug_mode=True,
+        debug_mode=False,
         strict_dependency_mode=True,
     )
 
@@ -43,7 +43,7 @@ def main() -> None:
             "You are the orchestrator agent. Delegate math to agent.member.calculator, "
             "use tools for file/system operations, and be concise."
         ),
-        debug_mode=True,
+        debug_mode=False,
         strict_dependency_mode=True,
     )
 
