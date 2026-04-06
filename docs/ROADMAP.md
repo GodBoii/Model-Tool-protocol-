@@ -1,5 +1,27 @@
 # MTP Roadmap (Python)
 
+## Current implementation snapshot (2026-04-06)
+
+Implemented in codebase:
+- Protocol objects, plan validation, risk policy, and runtime caching.
+- Lazy toolkit loading with tool-spec preview.
+- Sync + async agent APIs, multi-round loops, streaming text/events.
+- Pause/resume (`StopAgentRun`) and retry (`RetryAgentRun`) control flow.
+- Structured input validation and structured output pipeline.
+- Session persistence (`JsonSessionStore`, `PostgresSessionStore`, `MySQLSessionStore`).
+- MCP compatibility adapter for `initialize`, `ping`, `tools/list`, `tools/call`.
+- Provider adapters: Groq, OpenAI, OpenRouter, Gemini, Anthropic, SambaNova, Cerebras, DeepSeek, Mistral, Cohere, TogetherAI, FireworksAI.
+- Local toolkits and optional web/scrape toolkits.
+- Delegation/orchestration mode (`mode="delegator"`/`"orchestration"` with member agents as tools).
+
+Still missing from roadmap goals:
+- MCP resources/prompts/progress/cancellation coverage.
+- WebSocket or resumable stream transport layer beyond current stdio/HTTP.
+- Provider capability matrix and deeper per-provider structured-output feature parity.
+- First-party CLI scaffolding (`mtp new`) and template generation.
+- Centralized tracing/analytics query APIs over persisted run data.
+- Broader integration matrix/benchmarks across optional provider SDKs.
+
 ## Phase 0 (current)
 - Protocol objects for tools, calls, results, and plans.
 - Runtime for lazy loading, parallel/sequential batches, call dependencies.

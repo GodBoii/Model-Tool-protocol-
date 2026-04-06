@@ -7,7 +7,7 @@ This guide shows how to create and run an MTP agent quickly.
 ## From PyPI
 
 ```bash
-pip install mtp
+pip install mtpx
 ```
 
 ## Or from source
