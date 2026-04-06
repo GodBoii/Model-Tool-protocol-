@@ -142,6 +142,120 @@ class MCPHTTPTransportTests(unittest.TestCase):
             transport.shutdown()
             thread.join(timeout=1)
 
+    def test_http_transport_events_support_resume_cursor(self) -> None:
+        registry = ToolRegistry()
+        registry.register_tool(ToolSpec(name="calc.add", description="add"), lambda a, b: a + b)
+        server = MCPJsonRpcServer(tools=registry)
+
+        port = self._free_port()
+        transport = MCPHTTPTransportServer("127.0.0.1", port, server)
+        thread = threading.Thread(target=transport.start, daemon=True)
+        thread.start()
+        time.sleep(0.1)
+        try:
+            self._post_json(
+                f"http://127.0.0.1:{port}/rpc",
+                {"jsonrpc": "2.0", "id": "init-1", "method": "initialize", "params": {}},
+            )
+            self._post_json(
+                f"http://127.0.0.1:{port}/rpc",
+                {
+                    "jsonrpc": "2.0",
+                    "id": "call-1",
+                    "method": "tools/call",
+                    "params": {"name": "calc.add", "arguments": {"a": 1, "b": 2}, "progressToken": "p-1"},
+                },
+            )
+            self._post_json(
+                f"http://127.0.0.1:{port}/rpc",
+                {
+                    "jsonrpc": "2.0",
+                    "id": "call-2",
+                    "method": "tools/call",
+                    "params": {"name": "calc.add", "arguments": {"a": 3, "b": 4}, "progressToken": "p-2"},
+                },
+            )
+
+            status_1, payload_1 = self._get_json(f"http://127.0.0.1:{port}/events?limit=1")
+            self.assertEqual(status_1, 200)
+            first_batch = payload_1.get("events", [])
+            self.assertEqual(len(first_batch), 1)
+            first_event_id = int(first_batch[0]["event_id"])
+
+            status_2, payload_2 = self._get_json(
+                f"http://127.0.0.1:{port}/events?{parse.urlencode({'since_id': first_event_id, 'limit': 20})}"
+            )
+            self.assertEqual(status_2, 200)
+            remaining = payload_2.get("events", [])
+            self.assertTrue(all(int(evt["event_id"]) > first_event_id for evt in remaining))
+            self.assertIn("next_resume_token", payload_2)
+            self.assertIn("latest_event_id", payload_2)
+
+            # Header-based cursor should behave the same way.
+            status_3, payload_3 = self._get_json(
+                f"http://127.0.0.1:{port}/events?limit=20",
+                headers={"Last-Event-ID": str(first_event_id)},
+            )
+            self.assertEqual(status_3, 200)
+            header_remaining = payload_3.get("events", [])
+            self.assertTrue(all(int(evt["event_id"]) > first_event_id for evt in header_remaining))
+        finally:
+            transport.shutdown()
+            thread.join(timeout=1)
+
+    def test_http_transport_sse_stream_replays_from_cursor(self) -> None:
+        registry = ToolRegistry()
+        registry.register_tool(ToolSpec(name="calc.add", description="add"), lambda a, b: a + b)
+        server = MCPJsonRpcServer(tools=registry)
+
+        port = self._free_port()
+        transport = MCPHTTPTransportServer("127.0.0.1", port, server)
+        thread = threading.Thread(target=transport.start, daemon=True)
+        thread.start()
+        time.sleep(0.1)
+        try:
+            self._post_json(
+                f"http://127.0.0.1:{port}/rpc",
+                {"jsonrpc": "2.0", "id": "init-1", "method": "initialize", "params": {}},
+            )
+            self._post_json(
+                f"http://127.0.0.1:{port}/rpc",
+                {
+                    "jsonrpc": "2.0",
+                    "id": "call-1",
+                    "method": "tools/call",
+                    "params": {"name": "calc.add", "arguments": {"a": 2, "b": 3}, "progressToken": "p-sse"},
+                },
+            )
+
+            req = request.Request(
+                f"http://127.0.0.1:{port}/events/stream?since_id=0",
+                method="GET",
+                headers={"Accept": "text/event-stream"},
+            )
+            with request.urlopen(req, timeout=5) as resp:
+                content_type = resp.headers.get("Content-Type", "")
+                self.assertTrue(content_type.startswith("text/event-stream"))
+                lines: list[str] = []
+                for _ in range(12):
+                    raw = resp.readline().decode("utf-8", errors="replace")
+                    if not raw:
+                        break
+                    line = raw.strip()
+                    lines.append(line)
+                    if line.startswith("data: "):
+                        break
+
+                data_lines = [line for line in lines if line.startswith("data: ")]
+                self.assertTrue(data_lines)
+                event_payload = json.loads(data_lines[0][len("data: ") :])
+                self.assertEqual(event_payload.get("progressToken"), "p-sse")
+                self.assertIn("event_id", event_payload)
+                self.assertIn("resume_token", event_payload)
+        finally:
+            transport.shutdown()
+            thread.join(timeout=1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
-import queue
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -19,16 +21,65 @@ class MCPHTTPTransportServer:
     - event stream endpoint (`/events`) for progress notifications
     """
 
-    def __init__(self, host: str, port: int, server: MCPJsonRpcServer) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        server: MCPJsonRpcServer,
+        *,
+        replay_window: int = 1000,
+        sse_keepalive_seconds: float = 15.0,
+    ) -> None:
         self.host = host
         self.port = port
         self.server = server
         self._http: ThreadingHTTPServer | None = None
-        self._progress_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
+        self.replay_window = max(1, int(replay_window))
+        self.sse_keepalive_seconds = max(1.0, float(sse_keepalive_seconds))
+        self._events_cv = threading.Condition()
+        self._events: "deque[dict[str, Any]]" = deque(maxlen=self.replay_window)
+        self._next_event_id = 1
         self.server.add_progress_listener(self._on_progress)
 
     def _on_progress(self, event: dict[str, Any]) -> None:
-        self._progress_queue.put(event)
+        with self._events_cv:
+            event_id = self._next_event_id
+            self._next_event_id += 1
+            payload = dict(event)
+            payload["event_id"] = event_id
+            payload["resume_token"] = str(event_id)
+            payload.setdefault("timestamp", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+            self._events.append(payload)
+            self._events_cv.notify_all()
+
+    def _parse_resume_cursor(self, qs: dict[str, list[str]], headers: Any) -> int:
+        raw_cursor = None
+        for key in ("since_id", "last_event_id", "resume_token", "since"):
+            values = qs.get(key)
+            if values and values[0]:
+                raw_cursor = values[0]
+                break
+        if raw_cursor is None:
+            header_cursor = headers.get("Last-Event-ID")
+            if header_cursor:
+                raw_cursor = header_cursor
+        if raw_cursor is None:
+            return 0
+        try:
+            return max(0, int(str(raw_cursor)))
+        except Exception:
+            return 0
+
+    def _latest_event_id(self) -> int:
+        with self._events_cv:
+            if not self._events:
+                return 0
+            return int(self._events[-1]["event_id"])
+
+    def _events_since(self, since_id: int, *, limit: int) -> list[dict[str, Any]]:
+        with self._events_cv:
+            selected = [event for event in self._events if int(event.get("event_id", 0)) > since_id]
+        return selected[:limit]
 
     def start(self) -> None:
         outer = self
@@ -85,12 +136,67 @@ class MCPHTTPTransportServer:
                     if isinstance(challenge, str) and challenge:
                         self.send_header("WWW-Authenticate", challenge)
                 self.send_header("Content-Type", "application/json")
+                self.send_header("X-MCP-Resume-Token", str(outer._latest_event_id()))
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _write_sse_event(self, event: dict[str, Any]) -> None:
+                event_id = int(event.get("event_id", 0))
+                body = (
+                    f"id: {event_id}\n"
+                    "event: progress\n"
+                    f"data: {json.dumps(event, default=str)}\n\n"
+                ).encode("utf-8")
+                self.wfile.write(body)
+                self.wfile.flush()
+
+            def _write_sse_comment(self, text: str) -> None:
+                body = f": {text}\n\n".encode("utf-8")
+                self.wfile.write(body)
+                self.wfile.flush()
+
+            def _serve_sse(self, since_id: int) -> None:
+                self.send_response(200)
+                session_id = self._session_id()
+                if session_id:
+                    self.send_header("MCP-Session-Id", session_id)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("X-MCP-Resume-Token", str(outer._latest_event_id()))
+                self.end_headers()
+
+                last_sent = since_id
+                try:
+                    backlog = outer._events_since(last_sent, limit=outer.replay_window)
+                    for event in backlog:
+                        self._write_sse_event(event)
+                        last_sent = max(last_sent, int(event.get("event_id", 0)))
+
+                    while True:
+                        with outer._events_cv:
+                            wait_ok = outer._events_cv.wait(timeout=outer.sse_keepalive_seconds)
+                            fresh = [
+                                event for event in outer._events if int(event.get("event_id", 0)) > last_sent
+                            ]
+                        if fresh:
+                            for event in fresh:
+                                self._write_sse_event(event)
+                                last_sent = max(last_sent, int(event.get("event_id", 0)))
+                            continue
+                        if not wait_ok:
+                            self._write_sse_comment("keepalive")
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
             def do_GET(self) -> None:  # noqa: N802
                 parsed = urlparse(self.path)
+                if parsed.path in {"/events/stream", "/events/sse"}:
+                    qs = parse_qs(parsed.query)
+                    since_id = outer._parse_resume_cursor(qs, self.headers)
+                    self._serve_sse(since_id)
+                    return
                 if parsed.path != "/events":
                     self.send_response(404)
                     self.end_headers()
@@ -101,14 +207,17 @@ class MCPHTTPTransportServer:
                     limit = max(1, min(200, int(limit_raw)))
                 except Exception:
                     limit = 20
-
-                events: list[dict[str, Any]] = []
-                for _ in range(limit):
-                    try:
-                        events.append(outer._progress_queue.get_nowait())
-                    except queue.Empty:
-                        break
-                self._write_json(200, {"events": events})
+                since_id = outer._parse_resume_cursor(qs, self.headers)
+                events = outer._events_since(since_id, limit=limit)
+                latest_event_id = outer._latest_event_id()
+                self._write_json(
+                    200,
+                    {
+                        "events": events,
+                        "next_resume_token": str(latest_event_id),
+                        "latest_event_id": latest_event_id,
+                    },
+                )
 
             def do_POST(self) -> None:  # noqa: N802
                 parsed = urlparse(self.path)
