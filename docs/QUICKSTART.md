@@ -10,6 +10,22 @@ This guide shows how to create and run an MTP agent quickly.
 pip install mtpx
 ```
 
+Common optional installs:
+
+```bash
+# Groq + dotenv helper
+pip install "mtpx[groq,dotenv]"
+
+# OpenAI + Anthropic providers
+pip install "mtpx[openai,anthropic,dotenv]"
+
+# Web toolkits
+pip install "mtpx[toolkits-web]"
+
+# DB session stores
+pip install "mtpx[stores-db]"
+```
+
 ## Or from source
 
 ```bash
@@ -18,11 +34,10 @@ python -m venv .venv
 pip install -e .
 ```
 
-Install provider and env helpers separately:
+Install provider and env helpers separately (equivalent):
 
 ```bash
-pip install groq
-pip install python-dotenv
+pip install "mtpx[groq,dotenv]"
 ```
 
 ## 2) Configure API key

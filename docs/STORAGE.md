@@ -65,7 +65,7 @@ agent.run("What is my codename?", session_id="chat-1", user_id="u1")
 Install dependency:
 
 ```bash
-pip install psycopg
+pip install "mtpx[store-postgres]"
 ```
 
 Usage:
@@ -91,13 +91,19 @@ Notes:
 Install one dependency:
 
 ```bash
-pip install pymysql
+pip install "mtpx[store-mysql]"
 ```
 
 or:
 
 ```bash
 pip install mysql-connector-python
+```
+
+Install both DB driver families:
+
+```bash
+pip install "mtpx[stores-db]"
 ```
 
 Usage:
