@@ -4,6 +4,11 @@
 
 This draft defines the in-process protocol model used by `mtp-python`.
 
+Positioning note:
+- This file describes protocol-layer contracts only.
+- SDK/framework layering and MCP interoperability strategy are documented in:
+  - [Project Direction](/c:/Users/prajw/Downloads/MTP/docs/PROJECT_DIRECTION.md)
+
 ## Core entities
 
 ## `ToolSpec`

@@ -47,6 +47,42 @@ Progress/Cancellation:
 - `experimental.progressNotifications`
 - `experimental.requestCancellation`
 
+## OAuth-ready auth plugin interface
+
+`MCPJsonRpcServer` now supports pluggable auth providers:
+
+- constructor arg: `auth_provider=...`
+- provider contract: `authorize(token, request, context) -> MCPAuthDecision | bool`
+- async providers are supported in async path (`ahandle_request`)
+
+`MCPAuthDecision` fields:
+
+- `allowed`
+- `error_code` (default `-32001`)
+- `message`
+- `www_authenticate` (for challenge headers)
+- `details` (structured auth metadata)
+
+This enables OAuth-style challenge responses without hard-coding one auth backend into core MCP code.
+
+Example:
+
+```python
+from mtp import MCPAuthDecision, MCPJsonRpcServer
+
+class OAuthProvider:
+    def authorize(self, token, request, context):
+        if token == "valid-token":
+            return MCPAuthDecision(allowed=True)
+        return MCPAuthDecision(
+            allowed=False,
+            message="Missing OAuth bearer token",
+            www_authenticate='Bearer realm="mtp", error="invalid_token"',
+        )
+
+server = MCPJsonRpcServer(tools=tools, auth_provider=OAuthProvider())
+```
+
 ## Sync vs async request handling
 
 `MCPJsonRpcServer` supports:
@@ -93,6 +129,8 @@ Important:
   - request/response header: `MCP-Session-Id`
 - bearer token propagation:
   - `Authorization: Bearer <token>` -> `params.auth_token`
+- auth challenge propagation:
+  - JSON-RPC auth error `error.data.www_authenticate` -> HTTP `WWW-Authenticate` header
 - progress event polling endpoint:
   - `GET /events?limit=20`
 
@@ -154,6 +192,8 @@ Current matrix in this repo:
 - resources list/read: covered
 - prompts list/get: covered
 - auth denial path: covered
+- pluggable auth provider path (sync + async): covered
+- OAuth challenge metadata path (`www_authenticate`): covered
 - cancellation handling: covered
 - progress event capture: covered
 - async in-flight cancellation: covered
@@ -166,6 +206,6 @@ Current matrix in this repo:
 
 ## Remaining MCP work
 
-1. Production-grade auth standards (OAuth discovery, scope negotiation, refresh flows).
+1. OAuth discovery/scope/refresh integrations beyond provider hook level.
 2. External client interoperability matrix against third-party MCP clients.
 3. Optional SSE/streaming endpoint variants for broader client preference beyond current `/events` polling and websocket notifications.
