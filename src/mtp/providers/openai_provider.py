@@ -7,6 +7,9 @@ from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .common import (
+    ProviderCapabilities,
+    USAGE_METRICS_RICH,
+    STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     calls_to_dependency_batches,
     extract_refs,
     extract_usage_metrics,
@@ -156,6 +159,21 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         if getattr(message, "tool_calls", None):
             return "Model requested an additional tool round; rerun with a larger max_rounds."
         return message.content or "Done."
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider="openai",
+            supports_tool_calling=True,
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
+            input_modalities=["text", "image", "audio", "file"],
+            supports_tool_media_output=True,
+            supports_finalize_streaming=False,
+            usage_metrics_quality=USAGE_METRICS_RICH,
+            supports_reasoning_metadata=False,
+            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            supports_native_async=False,
+            allow_finalize_stream_fallback=True,
+        )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)
