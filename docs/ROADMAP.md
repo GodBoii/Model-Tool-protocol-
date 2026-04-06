@@ -10,9 +10,12 @@ Implemented in codebase:
 - Structured input validation and structured output pipeline.
 - Session persistence (`JsonSessionStore`, `PostgresSessionStore`, `MySQLSessionStore`).
 - MCP compatibility adapter for `initialize`, `ping`, `tools/list`, `tools/call`.
+- MCP adapter coverage now also includes resources/prompts/progress/cancellation surfaces.
 - Provider adapters: Groq, OpenAI, OpenRouter, Gemini, Anthropic, SambaNova, Cerebras, DeepSeek, Mistral, Cohere, TogetherAI, FireworksAI.
 - Local toolkits and optional web/scrape toolkits.
 - Delegation/orchestration mode (`mode="delegator"`/`"orchestration"` with member agents as tools).
+- Transport primitives: stdio + HTTP + optional WebSocket, with shared cancel control envelope semantics.
+- Runtime in-flight cancellation checks for running tool execution (async direct, sync cooperative).
 
 Still missing from roadmap goals:
 - Deep MCP transport depth (streaming over HTTP/WebSocket and stronger in-flight cancellation semantics).

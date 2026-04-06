@@ -84,6 +84,8 @@ Cross-provider configuration note:
 8. `mtp.transport`
 - `stdio` transport for line-delimited JSON envelopes.
 - HTTP transport server for envelope POST roundtrips.
+- Optional WebSocket envelope transport server.
+- Cross-transport cancellation control envelopes (`cancel` / `cancel_request`) with handler-level `cancel_checker`.
 
 9. `mtp.simple_agent`
 - `MTPAgent` provides high-level ergonomic construction:
@@ -156,9 +158,11 @@ Implemented:
 - Structured input schema validation.
 - Output model + parser model refinement pipeline.
 - Envelope transport primitives (stdio + HTTP).
+- Optional WebSocket transport primitive.
 - Session persistence via JSON/PostgreSQL/MySQL stores.
 - Experimental MCP compatibility adapter around the existing runtime.
 - Multimodal tool/result payload support (`images`, `videos`, `audios`, `files`) across runtime and compatible providers.
+- Runtime in-flight cancellation checks for running tool executions (async direct, sync cooperative via `cancel_event` / `cancel_checker`).
 
 Next steps:
 - JSON schema + versioned wire format for MTP messages.
