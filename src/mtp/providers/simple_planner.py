@@ -4,6 +4,7 @@ from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolResult, ToolSpec
+from .common import ProviderCapabilities, STRUCTURED_OUTPUT_NONE, USAGE_METRICS_NONE
 
 
 class SimplePlannerProvider(ProviderAdapter):
@@ -53,3 +54,18 @@ class SimplePlannerProvider(ProviderAdapter):
         if created:
             return f"Done. Issue created: {created[-1].output}"
         return f"Done. Ran {len(tool_results)} tool calls."
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider="simple_planner",
+            supports_tool_calling=True,
+            supports_parallel_tool_calls=False,
+            input_modalities=["text"],
+            supports_tool_media_output=False,
+            supports_finalize_streaming=False,
+            usage_metrics_quality=USAGE_METRICS_NONE,
+            supports_reasoning_metadata=False,
+            structured_output_support=STRUCTURED_OUTPUT_NONE,
+            supports_native_async=False,
+            allow_finalize_stream_fallback=True,
+        )
