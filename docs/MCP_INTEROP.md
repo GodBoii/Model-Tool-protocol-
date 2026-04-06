@@ -133,6 +133,15 @@ Important:
   - JSON-RPC auth error `error.data.www_authenticate` -> HTTP `WWW-Authenticate` header
 - progress event polling endpoint:
   - `GET /events?limit=20`
+  - supports resume cursor via query params: `since_id`, `last_event_id`, `resume_token`, or `since`
+  - also supports `Last-Event-ID` request header
+  - returns `next_resume_token` and `latest_event_id` for reconnect checkpoints
+- SSE stream endpoint:
+  - `GET /events/stream` (alias: `GET /events/sse`)
+  - content type: `text/event-stream`
+  - emits `id: <event_id>` + `event: progress` + JSON `data: ...`
+  - supports replay from cursor using query params or `Last-Event-ID`
+  - includes keepalive comments for long-lived connections
 
 Example:
 
@@ -208,4 +217,4 @@ Current matrix in this repo:
 
 1. OAuth discovery/scope/refresh integrations beyond provider hook level.
 2. External client interoperability matrix against third-party MCP clients.
-3. Optional SSE/streaming endpoint variants for broader client preference beyond current `/events` polling and websocket notifications.
+3. Resumable stream depth beyond current event replay window (for example durable event stores across process restarts).

@@ -42,6 +42,7 @@ Implemented now:
 - plan format with dependencies
 - safety policy hook
 - multi-provider adapter set (Groq/OpenAI/OpenRouter/Gemini/Anthropic/SambaNova)
+- multi-provider adapter set (Groq/OpenAI/OpenRouter/Gemini/Anthropic/SambaNova/Cerebras/DeepSeek/Mistral/Cohere/TogetherAI/FireworksAI)
 - run continuation and pause semantics
 - structured input schema validation
 - output model/parser model refinement pipeline
