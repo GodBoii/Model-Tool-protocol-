@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import pathlib
 import sys
 import unittest
@@ -243,3 +244,51 @@ class MCPAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MCPAdapterAsyncTests(unittest.IsolatedAsyncioTestCase):
+    def _new_registry(self) -> ToolRegistry:
+        reg = ToolRegistry()
+
+        async def slow_add(a: int, b: int, cancel_checker=None) -> int:
+            for _ in range(200):
+                if callable(cancel_checker) and cancel_checker():
+                    await asyncio.sleep(0)
+                    raise asyncio.CancelledError()
+                await asyncio.sleep(0.01)
+            return a + b
+
+        reg.register_tool(ToolSpec(name="calc.slow_add", description="slow add"), slow_add)
+        return reg
+
+    async def test_async_tools_call_can_be_cancelled_in_flight(self) -> None:
+        server = MCPJsonRpcServer(tools=self._new_registry())
+        await server.ahandle_request({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {}})
+
+        call_task = asyncio.create_task(
+            server.ahandle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "req-1",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "calc.slow_add",
+                        "arguments": {"a": 1, "b": 2},
+                        "callId": "call-1",
+                    },
+                }
+            )
+        )
+
+        await asyncio.sleep(0.05)
+        await server.ahandle_request(
+            {
+                "jsonrpc": "2.0",
+                "method": "$/cancelRequest",
+                "params": {"id": "req-1"},
+            }
+        )
+        response = await call_task
+        assert response is not None
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32800)

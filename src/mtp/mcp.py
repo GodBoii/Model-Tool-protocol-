@@ -16,6 +16,7 @@ AuthValidator = Callable[[str | None, JsonDict], bool]
 ResourceReader = Callable[[str], Any]
 PromptRenderer = Callable[[str, dict[str, Any]], Any]
 ProgressHandler = Callable[[JsonDict], None]
+ProgressListener = Callable[[JsonDict], None]
 
 
 @dataclass(slots=True)
@@ -102,6 +103,8 @@ class MCPJsonRpcServer:
         self._initialized_at: datetime | None = None
         self._cancelled_request_ids: set[str] = set()
         self._progress_events: list[JsonDict] = []
+        self._progress_listeners: list[ProgressListener] = []
+        self._active_call_tasks: dict[str, asyncio.Task[Any]] = {}
 
     @property
     def initialized(self) -> bool:
@@ -118,6 +121,9 @@ class MCPJsonRpcServer:
     @property
     def progress_events(self) -> list[JsonDict]:
         return list(self._progress_events)
+
+    def add_progress_listener(self, listener: ProgressListener) -> None:
+        self._progress_listeners.append(listener)
 
     def handle_json(self, raw: str) -> str | None:
         """
@@ -175,7 +181,74 @@ class MCPJsonRpcServer:
         except ValueError as exc:
             if is_notification:
                 return None
-            return self._error_response(request_id, -32602, str(exc))
+            message = str(exc)
+            if "cancelled" in message.lower():
+                return self._error_response(request_id, -32800, message)
+            return self._error_response(request_id, -32602, message)
+        except Exception as exc:  # noqa: BLE001
+            if is_notification:
+                return None
+            return self._error_response(request_id, -32000, str(exc))
+
+        if is_notification:
+            return None
+        return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+    async def ahandle_json(self, raw: str) -> str | None:
+        try:
+            data = json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps(self._error_response(None, -32700, f"Parse error: {exc}"))
+        if not isinstance(data, dict):
+            return json.dumps(self._error_response(None, -32600, "Invalid Request: expected object"))
+
+        response = await self.ahandle_request(data)
+        if response is None:
+            return None
+        return json.dumps(response, default=str)
+
+    async def ahandle_request(self, request: JsonDict) -> JsonDict | None:
+        request_id = request.get("id")
+        is_notification = "id" not in request
+
+        validation_error = self._validate_request(request)
+        if validation_error is not None:
+            if is_notification:
+                return None
+            return self._error_response(request_id, -32600, validation_error)
+
+        method = str(request["method"])
+        params = request.get("params") if isinstance(request.get("params"), dict) else {}
+
+        if self.support_cancellation and method in {"$/cancelRequest", "notifications/cancelled"}:
+            self._record_cancel_request(params)
+            return None if is_notification else {"jsonrpc": "2.0", "id": request_id, "result": {}}
+
+        if self._requires_auth(method):
+            if not self._authorized(request):
+                if is_notification:
+                    return None
+                return self._error_response(request_id, -32001, "Unauthorized")
+
+        if method not in {"initialize", "ping", "notifications/initialized"} and not self._initialized:
+            if is_notification:
+                return None
+            return self._error_response(request_id, -32002, "Server not initialized")
+
+        if self.support_cancellation and request_id is not None and self._is_request_cancelled(request_id):
+            if is_notification:
+                return None
+            return self._error_response(request_id, -32800, "Request cancelled")
+
+        try:
+            result = await self._adispatch(method, params, request_id=request_id)
+        except ValueError as exc:
+            if is_notification:
+                return None
+            message = str(exc)
+            if "cancelled" in message.lower():
+                return self._error_response(request_id, -32800, message)
+            return self._error_response(request_id, -32602, message)
         except Exception as exc:  # noqa: BLE001
             if is_notification:
                 return None
@@ -235,6 +308,23 @@ class MCPJsonRpcServer:
             return {"tools": [self._tool_spec_to_mcp(spec) for spec in self.tools.list_tools()]}
         if method == "tools/call":
             return self._tools_call(params, request_id=request_id)
+        if method == "resources/list":
+            return {"resources": [self._resource_to_mcp(resource) for resource in self.resources]}
+        if method == "resources/read":
+            return self._resources_read(params)
+        if method == "prompts/list":
+            return {"prompts": [self._prompt_to_mcp(prompt) for prompt in self.prompts]}
+        if method == "prompts/get":
+            return self._prompts_get(params)
+        raise ValueError(f"Method not found: {method}")
+
+    async def _adispatch(self, method: str, params: JsonDict, *, request_id: Any = None) -> JsonDict:
+        if method in {"ping", "initialize", "notifications/initialized", "notifications/progress"}:
+            return self._dispatch(method, params, request_id=request_id)
+        if method == "tools/list":
+            return {"tools": [self._tool_spec_to_mcp(spec) for spec in self.tools.list_tools()]}
+        if method == "tools/call":
+            return await self._atools_call(params, request_id=request_id)
         if method == "resources/list":
             return {"resources": [self._resource_to_mcp(resource) for resource in self.resources]}
         if method == "resources/read":
@@ -355,6 +445,89 @@ class MCPJsonRpcServer:
         }
         return response
 
+    async def _atools_call(self, params: JsonDict, *, request_id: Any = None) -> JsonDict:
+        name = params.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError("tools/call requires string param `name`")
+        arguments = params.get("arguments", {})
+        if arguments is None:
+            arguments = {}
+        if not isinstance(arguments, dict):
+            raise ValueError("tools/call param `arguments` must be an object")
+        call_id = params.get("callId")
+        if not isinstance(call_id, str) or not call_id:
+            call_id = f"mcp-{datetime.now(UTC).timestamp()}"
+
+        if self.support_cancellation and (
+            (request_id is not None and self._is_request_cancelled(request_id)) or self._is_request_cancelled(call_id)
+        ):
+            raise ValueError("Request cancelled")
+
+        progress_token = params.get("progressToken")
+        if self.support_progress:
+            self._emit_progress(
+                progress_token=progress_token,
+                progress=0,
+                total=1,
+                message=f"Starting tool call: {name}",
+                call_id=call_id,
+            )
+
+        req_key = str(request_id) if request_id is not None else None
+        call_key = str(call_id)
+        call = ToolCall(id=call_id, name=name, arguments=arguments)
+
+        def _cancel_checker() -> bool:
+            if req_key is not None and self._is_request_cancelled(req_key):
+                return True
+            return self._is_request_cancelled(call_key)
+
+        task = asyncio.create_task(
+            self.tools.execute_call(
+                call,
+                prior_results={},
+                cancel_checker=_cancel_checker,
+            )
+        )
+        self._active_call_tasks[call_key] = task
+        if req_key is not None:
+            self._active_call_tasks[req_key] = task
+
+        try:
+            result = await task
+        except asyncio.CancelledError as exc:
+            raise ValueError("Request cancelled") from exc
+        finally:
+            self._active_call_tasks.pop(call_key, None)
+            if req_key is not None:
+                self._active_call_tasks.pop(req_key, None)
+
+        if self.support_progress:
+            self._emit_progress(
+                progress_token=progress_token,
+                progress=1,
+                total=1,
+                message=f"Finished tool call: {name}",
+                call_id=call_id,
+            )
+
+        is_error = (not result.success) or bool(result.error)
+        rendered_text = self._render_tool_output_text(result.output if result.success else result.error)
+        return {
+            "isError": is_error,
+            "content": [{"type": "text", "text": rendered_text}],
+            "result": {
+                "callId": result.call_id,
+                "toolName": result.tool_name,
+                "success": result.success,
+                "error": result.error,
+                "cached": result.cached,
+                "approval": result.approval,
+                "skipped": result.skipped,
+                "output": result.output,
+            },
+        }
+
     def _resource_to_mcp(self, resource: MCPResource) -> JsonDict:
         return {
             "uri": resource.uri,
@@ -467,7 +640,11 @@ class MCPJsonRpcServer:
             request_id = params.get("callId")
         if request_id is None:
             return
-        self._cancelled_request_ids.add(str(request_id))
+        request_id_str = str(request_id)
+        self._cancelled_request_ids.add(request_id_str)
+        task = self._active_call_tasks.get(request_id_str)
+        if task is not None:
+            task.cancel()
 
     def _is_request_cancelled(self, request_id: Any) -> bool:
         return str(request_id) in self._cancelled_request_ids
@@ -507,6 +684,8 @@ class MCPJsonRpcServer:
         self._progress_events.append(event)
         if self.progress_handler is not None:
             self.progress_handler(dict(event))
+        for listener in self._progress_listeners:
+            listener(dict(event))
 
     def _run_coro_sync(self, coro: Any) -> Any:
         try:
