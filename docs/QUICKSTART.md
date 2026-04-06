@@ -33,6 +33,19 @@ Create `.env`:
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
+## CLI bootstrap (optional)
+
+You can scaffold a starter project instead of building manually:
+
+```bash
+mtp new my_agent --template minimal
+cd my_agent
+mtp run
+```
+
+See full CLI reference:
+- [CLI](C:\Users\prajw\Downloads\MTP\docs\CLI.md)
+
 ## 3) Build your first agent
 
 ```python

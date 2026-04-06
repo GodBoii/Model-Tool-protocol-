@@ -25,6 +25,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+mtp = "mtp.cli.main:main"
+
 [project.urls]
 Homepage = "https://github.com/GodBoii/Model-Tool-protocol-"
 Documentation = "https://github.com/GodBoii/Model-Tool-protocol-/tree/main/docs"
@@ -33,6 +36,9 @@ Issues = "https://github.com/GodBoii/Model-Tool-protocol-/issues"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.package-data]
+"mtp.cli" = ["templates/**/*.tpl"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
