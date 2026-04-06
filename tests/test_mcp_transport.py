@@ -6,10 +6,11 @@ import pathlib
 import socket
 import sys
 import threading
-import time
 import uuid
 import unittest
 from urllib import parse, request
+
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -21,6 +22,9 @@ from mtp import (
     ToolRegistry,
     ToolSpec,
 )
+from tests.harness_utils import wait_for_tcp_listener
+
+pytestmark = pytest.mark.integration
 
 
 class MCPHTTPTransportTests(unittest.TestCase):
@@ -58,7 +62,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport = MCPHTTPTransportServer("127.0.0.1", port, server)
         thread = threading.Thread(target=transport.start, daemon=True)
         thread.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port), timeout_seconds=5)
         try:
             status, payload, headers = self._post_json(
                 f"http://127.0.0.1:{port}/rpc",
@@ -92,7 +96,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport = MCPHTTPTransportServer("127.0.0.1", port, server)
         thread = threading.Thread(target=transport.start, daemon=True)
         thread.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port), timeout_seconds=5)
         try:
             status, payload, headers = self._post_json(
                 f"http://127.0.0.1:{port}/rpc",
@@ -114,7 +118,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport = MCPHTTPTransportServer("127.0.0.1", port, server)
         thread = threading.Thread(target=transport.start, daemon=True)
         thread.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port), timeout_seconds=5)
         try:
             status, batch_payload, _headers = self._post_json(
                 f"http://127.0.0.1:{port}/rpc",
@@ -160,7 +164,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport = MCPHTTPTransportServer("127.0.0.1", port, server)
         thread = threading.Thread(target=transport.start, daemon=True)
         thread.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port), timeout_seconds=5)
         try:
             self._post_json(
                 f"http://127.0.0.1:{port}/rpc",
@@ -221,7 +225,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport = MCPHTTPTransportServer("127.0.0.1", port, server)
         thread = threading.Thread(target=transport.start, daemon=True)
         thread.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port), timeout_seconds=5)
         try:
             self._post_json(
                 f"http://127.0.0.1:{port}/rpc",
@@ -278,7 +282,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport_1 = MCPHTTPTransportServer("127.0.0.1", port_1, server, replay_store_path=replay_path)
         thread_1 = threading.Thread(target=transport_1.start, daemon=True)
         thread_1.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port_1), timeout_seconds=5)
         try:
             self._post_json(
                 f"http://127.0.0.1:{port_1}/rpc",
@@ -301,7 +305,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport_2 = MCPHTTPTransportServer("127.0.0.1", port_2, server, replay_store_path=replay_path)
         thread_2 = threading.Thread(target=transport_2.start, daemon=True)
         thread_2.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port_2), timeout_seconds=5)
         try:
             status, payload = self._get_json(f"http://127.0.0.1:{port_2}/events?limit=20&since_id=0")
             self.assertEqual(status, 200)
@@ -324,7 +328,7 @@ class MCPHTTPTransportTests(unittest.TestCase):
         transport = MCPHTTPTransportServer("127.0.0.1", port, server)
         thread = threading.Thread(target=transport.start, daemon=True)
         thread.start()
-        time.sleep(0.1)
+        wait_for_tcp_listener("127.0.0.1", int(port), timeout_seconds=5)
         try:
             self._post_json(
                 f"http://127.0.0.1:{port}/rpc",

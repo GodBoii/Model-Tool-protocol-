@@ -6,7 +6,11 @@ import shutil
 import unittest
 from uuid import uuid4
 
+import pytest
+
 from tests.conformance.run_conformance import main as conformance_main
+
+pytestmark = pytest.mark.integration
 
 
 class MCPConformanceTests(unittest.TestCase):
