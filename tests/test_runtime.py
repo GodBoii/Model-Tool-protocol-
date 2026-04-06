@@ -4,6 +4,7 @@ import asyncio
 import pathlib
 import sys
 import time
+import threading
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
@@ -206,6 +207,56 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ExecutionCancelledError):
             await reg.execute_plan(plan, cancel_checker=lambda: True)
+
+    async def test_in_flight_cancellation_async_tool(self) -> None:
+        reg = ToolRegistry()
+
+        async def slow() -> str:
+            await asyncio.sleep(2)
+            return "done"
+
+        reg.register_tool(ToolSpec(name="t.slow", description=""), slow)
+        plan = ExecutionPlan(batches=[ToolBatch(mode="sequential", calls=[ToolCall(id="s1", name="t.slow")])])
+
+        start = time.perf_counter()
+        cancel_flag = {"stop": False}
+
+        async def flip_cancel() -> None:
+            await asyncio.sleep(0.1)
+            cancel_flag["stop"] = True
+
+        flipper = asyncio.create_task(flip_cancel())
+        with self.assertRaises(ExecutionCancelledError):
+            await reg.execute_plan(plan, cancel_checker=lambda: cancel_flag["stop"])
+        await flipper
+        elapsed = time.perf_counter() - start
+        self.assertLess(elapsed, 1.0)
+
+    async def test_in_flight_cancellation_sync_cooperative_tool(self) -> None:
+        reg = ToolRegistry()
+
+        def cooperative(cancel_event: threading.Event | None = None) -> str:
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    return "cancelled"
+                time.sleep(0.01)
+
+        reg.register_tool(ToolSpec(name="t.coop", description=""), cooperative)
+        plan = ExecutionPlan(batches=[ToolBatch(mode="sequential", calls=[ToolCall(id="c1", name="t.coop")])])
+
+        start = time.perf_counter()
+        cancel_flag = {"stop": False}
+
+        async def flip_cancel() -> None:
+            await asyncio.sleep(0.1)
+            cancel_flag["stop"] = True
+
+        flipper = asyncio.create_task(flip_cancel())
+        with self.assertRaises(ExecutionCancelledError):
+            await reg.execute_plan(plan, cancel_checker=lambda: cancel_flag["stop"])
+        await flipper
+        elapsed = time.perf_counter() - start
+        self.assertLess(elapsed, 1.0)
 
 
 if __name__ == "__main__":
