@@ -45,6 +45,9 @@ from .toolkits import (
     register_local_toolkits,
 )
 from .transport import HTTPTransportServer, run_stdio_transport
+from .mcp import MCPJsonRpcServer, MCPServerInfo, run_mcp_stdio
+
+__version__ = "0.1.0"
 
 # Convenience aliases for minimal import style:
 # from mtp import Agent
@@ -69,6 +72,7 @@ Agent.register_local_toolkits = staticmethod(register_local_toolkits)
 Agent.load_dotenv_if_available = staticmethod(load_dotenv_if_available)
 
 __all__ = [
+    "__version__",
     "Agent",
     "AgentAction",
     "RunOutput",
@@ -117,6 +121,9 @@ __all__ = [
     "register_local_toolkits",
     "HTTPTransportServer",
     "run_stdio_transport",
+    "MCPJsonRpcServer",
+    "MCPServerInfo",
+    "run_mcp_stdio",
     "StrictViolation",
     "validate_strict_dependencies",
     "load_dotenv_if_available",
