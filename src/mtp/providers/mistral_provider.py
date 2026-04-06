@@ -8,6 +8,9 @@ from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .common import (
+    ProviderCapabilities,
+    STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    USAGE_METRICS_BASIC,
     calls_to_dependency_batches,
     extract_refs,
     extract_usage_metrics,
@@ -200,6 +203,21 @@ class MistralToolCallingProvider(ProviderAdapter):
         self._last_finalize_usage = self._extract_mistral_usage(response) or None
         message = response.choices[0].message
         return getattr(message, "content", "") or "Done."
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider="mistral",
+            supports_tool_calling=True,
+            supports_parallel_tool_calls=False,
+            input_modalities=["text"],
+            supports_tool_media_output=False,
+            supports_finalize_streaming=False,
+            usage_metrics_quality=USAGE_METRICS_BASIC,
+            supports_reasoning_metadata=False,
+            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            supports_native_async=False,
+            allow_finalize_stream_fallback=True,
+        )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)

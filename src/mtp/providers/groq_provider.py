@@ -9,7 +9,13 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolResult, ToolSpec
-from .common import extract_usage_metrics, format_openai_like_message
+from .common import (
+    ProviderCapabilities,
+    STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    USAGE_METRICS_RICH,
+    extract_usage_metrics,
+    format_openai_like_message,
+)
 
 
 class GroqToolCallingProvider(ProviderAdapter):
@@ -328,6 +334,21 @@ class GroqToolCallingProvider(ProviderAdapter):
             content = getattr(delta, "content", None)
             if content:
                 yield content
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider="groq",
+            supports_tool_calling=True,
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
+            input_modalities=["text", "image"],
+            supports_tool_media_output=True,
+            supports_finalize_streaming=True,
+            usage_metrics_quality=USAGE_METRICS_RICH,
+            supports_reasoning_metadata=True,
+            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            supports_native_async=False,
+            allow_finalize_stream_fallback=True,
+        )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)
