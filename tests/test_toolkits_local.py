@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import sys
-import tempfile
 import unittest
+from tests.harness_utils import safe_rmtree, workspace_tempdir
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -24,7 +24,8 @@ class LocalToolkitsTests(unittest.TestCase):
         self.assertIn("shell.run_command", tool_names)
 
     def test_calculator_and_file_tools_execute(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        tmp = workspace_tempdir(prefix="toolkits_local")
+        try:
             reg = ToolRegistry()
             register_local_toolkits(registry=reg, base_dir=tmp)
 
@@ -64,6 +65,8 @@ class LocalToolkitsTests(unittest.TestCase):
             )
             self.assertFalse(shell_result.success)
             self.assertIn("not allowed", shell_result.error or "")
+        finally:
+            safe_rmtree(tmp)
 
 
 if __name__ == "__main__":

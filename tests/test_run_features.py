@@ -121,8 +121,12 @@ class RunFeaturesTests(unittest.TestCase):
             )
         )
         thread.start()
-        time.sleep(0.03)
-        cancelled = agent.cancel_run(run_id)
+        cancelled = False
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not cancelled:
+            cancelled = agent.cancel_run(run_id)
+            if not cancelled:
+                time.sleep(0.01)
         thread.join(timeout=2)
 
         self.assertTrue(cancelled)
