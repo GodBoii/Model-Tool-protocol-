@@ -45,7 +45,14 @@ from .toolkits import (
     register_local_toolkits,
 )
 from .transport import HTTPTransportServer, run_stdio_transport
-from .mcp import MCPJsonRpcServer, MCPServerInfo, run_mcp_stdio
+from .mcp import (
+    MCPJsonRpcServer,
+    MCPPrompt,
+    MCPPromptArgument,
+    MCPResource,
+    MCPServerInfo,
+    run_mcp_stdio,
+)
 
 __version__ = "0.1.3"
 
@@ -122,6 +129,9 @@ __all__ = [
     "HTTPTransportServer",
     "run_stdio_transport",
     "MCPJsonRpcServer",
+    "MCPResource",
+    "MCPPromptArgument",
+    "MCPPrompt",
     "MCPServerInfo",
     "run_mcp_stdio",
     "StrictViolation",
