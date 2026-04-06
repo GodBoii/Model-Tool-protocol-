@@ -1,5 +1,9 @@
 # MTP Roadmap (Python)
 
+Direction alignment:
+- Roadmap items should be evaluated against the protocol-vs-SDK boundaries in
+  [Project Direction](/c:/Users/prajw/Downloads/MTP/docs/PROJECT_DIRECTION.md).
+
 ## Current implementation snapshot (2026-04-06)
 
 Implemented in codebase:
@@ -12,6 +16,7 @@ Implemented in codebase:
 - MCP compatibility adapter for `initialize`, `ping`, `tools/list`, `tools/call`.
 - MCP adapter coverage now also includes resources/prompts/progress/cancellation surfaces.
 - MCP dedicated transports now include HTTP and WebSocket adapters with session/auth semantics and progress delivery hooks.
+- MCP auth now supports pluggable provider hooks with structured OAuth-style challenge metadata.
 - Provider adapters: Groq, OpenAI, OpenRouter, Gemini, Anthropic, SambaNova, Cerebras, DeepSeek, Mistral, Cohere, TogetherAI, FireworksAI.
 - Local toolkits and optional web/scrape toolkits.
 - Delegation/orchestration mode (`mode="delegator"`/`"orchestration"` with member agents as tools).
@@ -19,13 +24,15 @@ Implemented in codebase:
 - Runtime in-flight cancellation checks for running tool execution (async direct, sync cooperative).
 
 Still missing from roadmap goals:
-- MCP production auth standards (OAuth discovery, scope negotiation, refresh lifecycle).
-- External MCP client compatibility matrix automation and broader conformance harness.
-- WebSocket or resumable stream transport layer beyond current stdio/HTTP.
-- Provider capability matrix and deeper per-provider structured-output feature parity.
+- MCP auth ecosystem integrations beyond auth-provider hook level (OAuth discovery endpoints, scope negotiation standards, refresh lifecycle workflows).
+- External MCP client compatibility matrix automation and broader conformance harness (real third-party client runs in CI).
+- Resumable stream transport semantics and SSE-style server push endpoints (WebSocket exists, resumability does not).
+- Provider capability matrix and deeper per-provider structured-output feature parity guarantees.
 - First-party CLI scaffolding (`mtp new`) and template generation.
 - Centralized tracing/analytics query APIs over persisted run data.
 - Broader integration matrix/benchmarks across optional provider SDKs.
+- Packaging ergonomics (extras groups for provider/toolkit/database optional dependencies).
+- Test harness hardening for mixed local environments (ignoring transient `tmp/` dirs during discovery, sandbox-aware temp path strategy).
 
 ## Phase 0 (current)
 - Protocol objects for tools, calls, results, and plans.
@@ -83,6 +90,7 @@ Still missing from roadmap goals:
   - richer per-provider feature flags
   - native structured output modes where available
   - advanced token/usage/trace metadata
+  - explicit capability metadata contract (what each provider guarantees: tools, multimodal input/output, streaming finalize, structured output strictness)
 - Planner modes:
   - direct model-native tool calls
   - model-generated MTP plan mode
@@ -94,6 +102,7 @@ Still missing from roadmap goals:
 - Advanced transport and remote execution:
   - remote tool servers and cross-process execution patterns
   - streamable transport upgrades (for long-running workflows and resumability)
+  - SSE endpoint option for MCP and non-MCP transport consumers
   - pluggable transport expansion beyond current stdio/HTTP envelope primitives
 - Unified tracing events for all tool calls.
 - Rich analytics/query APIs on top of persisted session data.
@@ -104,3 +113,4 @@ Still missing from roadmap goals:
   - tool decorator package (`@mtp_tool`)
   - docs site with runnable examples and cookbook
   - integration test matrix across providers
+  - published provider/toolkit capability matrix and conformance badges

@@ -52,6 +52,9 @@ except Exception:
     WebSocketTransportServer = None  # type: ignore[assignment]
     run_ws_transport = None  # type: ignore[assignment]
 from .mcp import (
+    MCPAuthContext,
+    MCPAuthDecision,
+    MCPAuthProvider,
     MCPJsonRpcServer,
     MCPPrompt,
     MCPPromptArgument,
@@ -138,6 +141,9 @@ __all__ = [
     "WebSocketTransportServer",
     "run_ws_transport",
     "MCPJsonRpcServer",
+    "MCPAuthProvider",
+    "MCPAuthContext",
+    "MCPAuthDecision",
     "MCPResource",
     "MCPPromptArgument",
     "MCPPrompt",
