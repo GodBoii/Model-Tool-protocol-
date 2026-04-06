@@ -1,217 +1,223 @@
-# MCP Interoperability Adapter (Experimental)
+# MCP Interoperability Adapter
 
-This document explains how MCP is wrapped inside MTP today, what is implemented now, and what still needs to be added for broader interoperability.
+This document explains how MCP is implemented in MTP today, what is fully supported, and what still remains for broader production interoperability.
 
 ## Why this exists
 
-MTP is the runtime/orchestration core.  
-MCP is a protocol boundary for interoperability.
+MTP stays the runtime/orchestration core.  
+MCP stays the protocol boundary.
 
-The adapter in `src/mtp/mcp.py` keeps this split:
+The adapter in `src/mtp/mcp.py` translates JSON-RPC requests into MTP runtime operations without duplicating tool execution logic.
 
-1. `MTP runtime` remains the source of truth for tool registry, policy, and execution.
-2. `MCP adapter` translates JSON-RPC messages into MTP tool operations.
-3. Results and errors are translated back into JSON-RPC responses.
+## What is implemented now
 
-This avoids rewriting existing runtime logic while enabling protocol-level integration.
-
-## Implemented now
-
-`MCPJsonRpcServer` (in `src/mtp/mcp.py`) currently supports:
+`MCPJsonRpcServer` supports:
 
 1. JSON-RPC 2.0 request validation and error envelopes.
-2. Lifecycle gates:
+2. Lifecycle:
 - `initialize`
-- `notifications/initialized` (notification-only)
-3. Basic capability negotiation payload returned from `initialize`:
-- `tools` capability with `listChanged=false`
-4. Methods:
+- `notifications/initialized`
+3. Capability negotiation response with:
+- `tools`
+- `resources`
+- `prompts`
+- `experimental.progressNotifications`
+- `experimental.requestCancellation`
+4. Tool methods:
 - `ping`
 - `tools/list`
 - `tools/call`
-5. Optional request-level auth:
+5. Resource methods:
+- `resources/list`
+- `resources/read`
+6. Prompt methods:
+- `prompts/list`
+- `prompts/get`
+7. Cancellation:
+- `$/cancelRequest`
+- `notifications/cancelled`
+8. Progress:
+- `notifications/progress` ingestion
+- optional outbound progress hook during `tools/call` (when `progressToken` is provided)
+9. Optional auth:
 - static token (`auth_token`)
-- or custom validator callback (`auth_validator`)
-6. Stdio loop utility:
-- `run_mcp_stdio(server)` for one-line JSON request/response operation.
+- custom validator (`auth_validator`)
+10. Stdio loop helper:
+- `run_mcp_stdio(server)`
 
-## Not implemented yet
+## Best-effort semantics (important)
 
-This adapter is intentionally thin. The following are not yet implemented:
+Cancellation is currently best-effort in this sync adapter:
+- cancellation is checked before dispatch and before tool execution starts
+- in-flight synchronous tool execution cannot be force-interrupted mid-call
 
-1. MCP resources/prompts APIs.
-2. Streaming chunks/progress/cancellation semantics.
-3. HTTP transport adapter specialized for MCP headers/session semantics.
-4. Rich capability matrix negotiation beyond the minimal tools capability.
-5. Production-grade auth stacks (OAuth discovery, scope negotiation, refresh lifecycle).
-6. Cross-session resumability model standardized to MCP expectations.
+Progress support is adapter-level:
+- inbound progress notifications are recorded
+- outbound progress events are emitted through `progress_handler` when `progressToken` is provided
 
-## Step-by-step request flow
-
-### 1) Lifecycle setup
-
-Client sends `initialize`.
-
-Server stores:
-- `clientInfo`
-- `capabilities`
-- initialization timestamp
-
-Server responds with:
-- `protocolVersion` (echoed from client when provided, else server default)
-- `serverInfo`
-- supported capabilities
-- human instructions text
-
-### 2) Client ready notification
-
-Client sends `notifications/initialized` as a JSON-RPC notification (no `id`).
-
-Server marks client as ready and returns no response body.
-
-### 3) Tool discovery
-
-Client sends `tools/list`.
-
-Server maps each `ToolSpec` from `ToolRegistry.list_tools()` into MCP-facing fields:
-- `name`
-- `description`
-- `inputSchema`
-- `annotations` (risk/cost/side-effect hints derived from MTP metadata)
-
-### 4) Tool invocation
-
-Client sends `tools/call` with:
-- `name`
-- optional `arguments`
-- optional `callId`
-
-Server converts to MTP `ToolCall`, executes via `ToolRegistry.execute_call(...)`, and returns:
-- `content` text block for model-facing usage
-- `isError` flag
-- detailed result metadata under `result`
-
-## Method contracts (current adapter)
-
-## `initialize`
-
-Request params:
-- `protocolVersion` (optional string)
-- `clientInfo` (optional object)
-- `capabilities` (optional object)
-
-Response result:
-- `protocolVersion`
-- `serverInfo` (`name`, `version`)
-- `capabilities` (`tools.listChanged`)
-- `instructions`
-
-## `notifications/initialized`
-
-Request:
-- notification (no `id`)
-
-Response:
-- none
-
-## `ping`
-
-Response result:
-- `ok: true`
-- `timestamp` (ISO datetime)
-
-## `tools/list`
-
-Response result:
-- `tools: [...]`
-
-Each tool contains:
-- `name`
-- `description`
-- `inputSchema`
-- `annotations` (`title`, `riskLevel`, `costHint`, `sideEffects`)
-
-## `tools/call`
-
-Request params:
-- `name` (required)
-- `arguments` (optional object, defaults to `{}`)
-- `callId` (optional)
-
-Response result:
-- `isError`
-- `content: [{type: "text", text: "..."}]`
-- `result`:
-  - `callId`
-  - `toolName`
-  - `success`
-  - `error`
-  - `cached`
-  - `approval`
-  - `skipped`
-  - `output`
-
-## Error handling model
-
-Adapter emits JSON-RPC shaped errors:
-
-- `-32700`: parse error
-- `-32600`: invalid request
-- `-32602`: invalid params / method usage issues
-- `-32000`: internal server error
-- `-32001`: unauthorized
-- `-32002`: server not initialized
-
-## Auth model (current)
-
-Auth is request-level and transport-agnostic.
-
-Token sources accepted:
-1. `request.meta.authToken`
-2. `request.params.auth_token`
-
-Validation options:
-1. Static token check via `auth_token`.
-2. Custom logic via `auth_validator(token, request)`.
-
-Important:
-- This is a practical local/integration guard, not a complete production auth stack.
-- For internet-facing deployments, add transport-specific auth hardening before use.
-
-## Usage example
-
-Minimal stdio server:
+## Server setup example
 
 ```python
-from mtp import MCPJsonRpcServer, ToolRegistry, ToolSpec, run_mcp_stdio
+from mtp import MCPJsonRpcServer, MCPPrompt, MCPPromptArgument, MCPResource
+from mtp import ToolRegistry, ToolSpec, run_mcp_stdio
 
 tools = ToolRegistry()
 tools.register_tool(ToolSpec(name="calc.add", description="Add"), lambda a, b: a + b)
 
-server = MCPJsonRpcServer(tools=tools)
+resources = [
+    MCPResource(
+        uri="memory://docs/quickstart",
+        name="Quickstart",
+        description="In-memory guide",
+        mime_type="text/markdown",
+    )
+]
+
+prompts = [
+    MCPPrompt(
+        name="explain_math",
+        description="Explain arithmetic",
+        arguments=[MCPPromptArgument(name="expression", required=True)],
+        template="Explain this expression clearly: {expression}",
+    )
+]
+
+def read_resource(uri: str) -> str:
+    if uri == "memory://docs/quickstart":
+        return "# Quickstart\nUse tools/list then tools/call."
+    return ""
+
+server = MCPJsonRpcServer(
+    tools=tools,
+    resources=resources,
+    resource_reader=read_resource,
+    prompts=prompts,
+)
 run_mcp_stdio(server)
 ```
 
 Repository example:
 - [mcp_stdio_server.py](/c:/Users/prajw/Downloads/MTP/examples/mcp_stdio_server.py)
 
+## Request flow (simple)
+
+1. `initialize`
+2. `notifications/initialized`
+3. Discover capabilities (`tools/list`, `resources/list`, `prompts/list`)
+4. Invoke `tools/call` / `resources/read` / `prompts/get`
+5. Optionally send `$/cancelRequest` before a request executes
+
+## Method contracts
+
+## `initialize`
+
+Request params:
+- `protocolVersion` (optional)
+- `clientInfo` (optional)
+- `capabilities` (optional)
+
+Response result:
+- `protocolVersion`
+- `serverInfo`
+- `capabilities`:
+  - `tools.listChanged`
+  - `resources.listChanged`
+  - `prompts.listChanged`
+  - `experimental.progressNotifications`
+  - `experimental.requestCancellation`
+- `instructions`
+
+## `tools/list`
+
+Response:
+- `tools: [{name, description, inputSchema, annotations}]`
+
+## `tools/call`
+
+Request params:
+- `name` (required)
+- `arguments` (optional object)
+- `callId` (optional)
+- `progressToken` (optional; enables progress emission through `progress_handler`)
+
+Response:
+- `isError`
+- `content`
+- `result` (`callId`, `toolName`, `success`, `error`, `cached`, `approval`, `skipped`, `output`)
+
+## `resources/list`
+
+Response:
+- `resources: [{uri, name, description, mimeType}]`
+
+## `resources/read`
+
+Request params:
+- `uri` (required)
+
+Response:
+- `contents: [{uri, mimeType, text|blob}]`
+
+## `prompts/list`
+
+Response:
+- `prompts: [{name, description, arguments}]`
+
+## `prompts/get`
+
+Request params:
+- `name` (required)
+- `arguments` (optional object)
+
+Response:
+- renderer-defined object, or default:
+  - `description`
+  - `messages` (single text message from template rendering)
+
+## Cancellation notifications
+
+Accepted notifications:
+- `$/cancelRequest` with `{id}` or `{requestId}`
+- `notifications/cancelled` with `{id}` or `{requestId}` or `{callId}`
+
+Cancelled requests return JSON-RPC error code:
+- `-32800` (`Request cancelled`)
+
+## Progress notifications
+
+- Inbound `notifications/progress` is accepted and stored in server progress history.
+- Outbound progress events are emitted to `progress_handler` if `progressToken` is supplied in `tools/call`.
+
+## Error handling
+
+Current error codes:
+- `-32700`: parse error
+- `-32600`: invalid request
+- `-32602`: invalid params / method usage error
+- `-32000`: internal server error
+- `-32001`: unauthorized
+- `-32002`: server not initialized
+- `-32800`: request cancelled
+
 ## Testing coverage
 
-Current test coverage in:
+Tests:
 - [test_mcp_adapter.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_adapter.py)
 
-Covered behaviors:
-- lifecycle enforcement before/after initialize
-- tool listing and invocation mapping
-- auth denial path
-- notification no-response behavior
-- success/error shape validation for tool calls
+Covered:
+- lifecycle gating
+- tool listing + call success/error
+- auth path
+- notification handling
+- extended capability payload
+- resources list/read
+- prompts list/get
+- cancellation behavior
+- progress event capture
 
-## Practical roadmap for full interoperability
+## What is still pending for full ecosystem depth
 
-1. Add MCP resources/prompts endpoints mapped to MTP abstractions.
-2. Add structured progress notifications and cancellation.
-3. Add HTTP MCP transport adapter with hardened auth and session handling.
-4. Add compatibility tests against external MCP clients.
-5. Publish explicit version support matrix in docs.
-
+1. Streaming chunk transport specialized for MCP over HTTP/WebSocket.
+2. Robust in-flight cancellation for long-running tool execution.
+3. Production auth standards (OAuth discovery, scopes, refresh lifecycle).
+4. External MCP client compatibility matrix and conformance suite.

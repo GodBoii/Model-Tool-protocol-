@@ -102,7 +102,12 @@ Cross-provider configuration note:
 11. `mtp.mcp`
 - Experimental MCP-compatible JSON-RPC adapter over `ToolRegistry`.
 - Handles JSON-RPC request validation, initialize lifecycle, and tool method mapping.
-- Current method scope: `ping`, `tools/list`, `tools/call`, `notifications/initialized`.
+- Current method scope:
+  - lifecycle: `initialize`, `notifications/initialized`
+  - tools: `ping`, `tools/list`, `tools/call`
+  - resources: `resources/list`, `resources/read`
+  - prompts: `prompts/list`, `prompts/get`
+  - notifications: `notifications/progress`, `notifications/cancelled`, `$/cancelRequest`
 - Provides optional request-level auth hooks.
 
 ## Module boundaries
@@ -160,7 +165,7 @@ Next steps:
 - Transport abstraction (stdio/http/ws).
 - Streaming result chunks for long-running tools.
 - Provider capability matrix and richer per-provider options.
-- Expanded MCP feature coverage (resources/prompts/progress/cancellation).
+- Expanded MCP production depth (streaming transport semantics, stronger in-flight cancellation, broader client compatibility matrix).
 
 See:
 - [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
