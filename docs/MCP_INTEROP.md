@@ -142,6 +142,25 @@ Important:
   - emits `id: <event_id>` + `event: progress` + JSON `data: ...`
   - supports replay from cursor using query params or `Last-Event-ID`
   - includes keepalive comments for long-lived connections
+  - event visibility is scoped by request context:
+    - `MCP-Session-Id`
+    - `Authorization: Bearer ...` (via auth fingerprint)
+
+Reconnect patterns:
+
+1. Polling resume:
+   - call `/events?since_id=<last_seen>&limit=...`
+   - read `next_resume_token` from response
+   - store it client-side as checkpoint
+
+2. SSE resume:
+   - call `/events/stream` with `Last-Event-ID: <last_seen>` (or `?since_id=<id>`)
+   - on reconnect, resend that cursor
+   - continue consuming `id:` values from stream
+
+3. Session-scoped clients:
+   - include same `MCP-Session-Id` and bearer token on reconnect
+   - this keeps replay visibility bound to that session/auth scope
 
 Example:
 
@@ -158,6 +177,7 @@ transport.start()
 
 Repository example:
 - [mcp_http_server.py](/c:/Users/prajw/Downloads/MTP/examples/mcp_http_server.py)
+- [mcp_http_resume_client.py](/c:/Users/prajw/Downloads/MTP/examples/mcp_http_resume_client.py)
 
 ## MCP-specific WebSocket transport
 
@@ -168,6 +188,12 @@ Repository example:
 - sends standard JSON-RPC responses
 - broadcasts progress as JSON-RPC notifications:
   - `method: "notifications/progress"`
+- supports replay parity with HTTP:
+  - connect with `?since_id=<id>` to receive replay on connect
+  - call JSON-RPC method `events/replay` with:
+    - params: `since_id`, `limit`
+    - result: `events`, `next_resume_token`, `latest_event_id`
+  - replay/broadcast visibility is scope-aware by session/auth context
 
 Example:
 
@@ -177,6 +203,23 @@ from mtp import MCPWebSocketTransportServer, MCPJsonRpcServer
 ws_server = MCPWebSocketTransportServer("127.0.0.1", 8766, MCPJsonRpcServer(tools=tools))
 await ws_server.start()
 await ws_server.serve_forever()
+```
+
+Repository example:
+- [mcp_ws_replay_client.py](/c:/Users/prajw/Downloads/MTP/examples/mcp_ws_replay_client.py)
+
+WebSocket replay request example:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "replay-1",
+  "method": "events/replay",
+  "params": {
+    "since_id": 120,
+    "limit": 50
+  }
+}
 ```
 
 ## Error model
