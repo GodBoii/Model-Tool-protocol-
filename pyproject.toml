@@ -28,6 +28,70 @@ dependencies = []
 [project.scripts]
 mtp = "mtp.cli.main:main"
 
+[project.optional-dependencies]
+dotenv = ["python-dotenv"]
+websocket = ["websockets"]
+
+# Provider SDK extras.
+openai = ["openai"]
+groq = ["groq"]
+anthropic = ["anthropic"]
+gemini = ["google-genai"]
+cohere = ["cohere"]
+mistral = ["mistralai"]
+openrouter = ["openai"]
+sambanova = ["openai"]
+cerebras = ["openai"]
+deepseek = ["openai"]
+togetherai = ["openai"]
+fireworksai = ["openai"]
+
+# Toolkit extras.
+toolkits-web = [
+    "requests",
+    "beautifulsoup4",
+    "wikipedia",
+    "newspaper3k",
+    "newspaper4k",
+    "lxml_html_clean",
+    "crawl4ai",
+]
+
+# Session store extras.
+store-postgres = ["psycopg"]
+store-mysql = ["pymysql", "mysql-connector-python"]
+stores-db = ["psycopg", "pymysql", "mysql-connector-python"]
+
+# Convenience aggregate extras.
+providers = [
+    "openai",
+    "groq",
+    "anthropic",
+    "google-genai",
+    "cohere",
+    "mistralai",
+]
+all = [
+    "python-dotenv",
+    "websockets",
+    "openai",
+    "groq",
+    "anthropic",
+    "google-genai",
+    "cohere",
+    "mistralai",
+    "requests",
+    "beautifulsoup4",
+    "wikipedia",
+    "newspaper3k",
+    "newspaper4k",
+    "lxml_html_clean",
+    "crawl4ai",
+    "psycopg",
+    "pymysql",
+    "mysql-connector-python",
+]
+
 [project.urls]
 Homepage = "https://github.com/GodBoii/Model-Tool-protocol-"
 Documentation = "https://github.com/GodBoii/Model-Tool-protocol-/tree/main/docs"
