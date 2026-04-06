@@ -1,223 +1,171 @@
 # MCP Interoperability Adapter
 
-This document explains how MCP is implemented in MTP today, what is fully supported, and what still remains for broader production interoperability.
+This document explains MCP support in MTP, including sync and async server modes, dedicated MCP HTTP/WebSocket transport adapters, cancellation semantics, and compatibility coverage.
 
-## Why this exists
+## Overview
 
-MTP stays the runtime/orchestration core.  
-MCP stays the protocol boundary.
+MTP keeps orchestration/runtime logic in core modules.
+MCP support is provided by protocol adapters around that runtime.
 
-The adapter in `src/mtp/mcp.py` translates JSON-RPC requests into MTP runtime operations without duplicating tool execution logic.
+Main components:
 
-## What is implemented now
+- `MCPJsonRpcServer` in `src/mtp/mcp.py`
+- `MCPHTTPTransportServer` in `src/mtp/mcp_transport.py`
+- `MCPWebSocketTransportServer` in `src/mtp/mcp_transport.py`
 
-`MCPJsonRpcServer` supports:
+## Implemented MCP method coverage
 
-1. JSON-RPC 2.0 request validation and error envelopes.
-2. Lifecycle:
+Lifecycle:
 - `initialize`
 - `notifications/initialized`
-3. Capability negotiation response with:
-- `tools`
-- `resources`
-- `prompts`
-- `experimental.progressNotifications`
-- `experimental.requestCancellation`
-4. Tool methods:
+
+Core:
 - `ping`
 - `tools/list`
 - `tools/call`
-5. Resource methods:
+
+Resources:
 - `resources/list`
 - `resources/read`
-6. Prompt methods:
+
+Prompts:
 - `prompts/list`
 - `prompts/get`
-7. Cancellation:
+
+Progress/Cancellation:
+- `notifications/progress`
 - `$/cancelRequest`
 - `notifications/cancelled`
-8. Progress:
-- `notifications/progress` ingestion
-- optional outbound progress hook during `tools/call` (when `progressToken` is provided)
-9. Optional auth:
-- static token (`auth_token`)
-- custom validator (`auth_validator`)
-10. Stdio loop helper:
-- `run_mcp_stdio(server)`
 
-## Best-effort semantics (important)
+## Capability negotiation
 
-Cancellation is currently best-effort in this sync adapter:
-- cancellation is checked before dispatch and before tool execution starts
-- in-flight synchronous tool execution cannot be force-interrupted mid-call
+`initialize` returns:
 
-Progress support is adapter-level:
-- inbound progress notifications are recorded
-- outbound progress events are emitted through `progress_handler` when `progressToken` is provided
+- `tools.listChanged`
+- `resources.listChanged`
+- `prompts.listChanged`
+- `experimental.progressNotifications`
+- `experimental.requestCancellation`
 
-## Server setup example
+## Sync vs async request handling
+
+`MCPJsonRpcServer` supports:
+
+- sync:
+  - `handle_request(...)`
+  - `handle_json(...)`
+- async:
+  - `ahandle_request(...)`
+  - `ahandle_json(...)`
+
+Use async handlers when you need stronger in-flight cancellation for long-running async tool calls.
+
+## In-flight cancellation semantics
+
+Cancellation model:
+
+1. Client sends `$/cancelRequest` or `notifications/cancelled`.
+2. Request id is marked as cancelled.
+3. Async call tasks (if active) are cancelled immediately.
+4. Cancelled requests return JSON-RPC error `-32800`.
+
+Important:
+
+- Async tool calls support true in-flight cancellation.
+- Synchronous tool handlers are still cooperative at runtime level (`cancel_event`/`cancel_checker`).
+
+## Progress semantics
+
+- inbound `notifications/progress` is accepted and recorded
+- outbound progress events are emitted from `tools/call` when `progressToken` is set
+- progress events are available via:
+  - `MCPJsonRpcServer.progress_events`
+  - `progress_handler`
+  - registered progress listeners (used by MCP HTTP/WebSocket transport)
+
+## MCP-specific HTTP transport
+
+`MCPHTTPTransportServer(host, port, server)` adds MCP-aware HTTP behavior:
+
+- POST JSON-RPC endpoint: `/rpc` (also `/`)
+- batch JSON-RPC request support (array payload)
+- session header propagation:
+  - request/response header: `MCP-Session-Id`
+- bearer token propagation:
+  - `Authorization: Bearer <token>` -> `params.auth_token`
+- progress event polling endpoint:
+  - `GET /events?limit=20`
+
+Example:
 
 ```python
-from mtp import MCPJsonRpcServer, MCPPrompt, MCPPromptArgument, MCPResource
-from mtp import ToolRegistry, ToolSpec, run_mcp_stdio
+from mtp import MCPHTTPTransportServer, MCPJsonRpcServer, ToolRegistry, ToolSpec
 
 tools = ToolRegistry()
 tools.register_tool(ToolSpec(name="calc.add", description="Add"), lambda a, b: a + b)
 
-resources = [
-    MCPResource(
-        uri="memory://docs/quickstart",
-        name="Quickstart",
-        description="In-memory guide",
-        mime_type="text/markdown",
-    )
-]
-
-prompts = [
-    MCPPrompt(
-        name="explain_math",
-        description="Explain arithmetic",
-        arguments=[MCPPromptArgument(name="expression", required=True)],
-        template="Explain this expression clearly: {expression}",
-    )
-]
-
-def read_resource(uri: str) -> str:
-    if uri == "memory://docs/quickstart":
-        return "# Quickstart\nUse tools/list then tools/call."
-    return ""
-
-server = MCPJsonRpcServer(
-    tools=tools,
-    resources=resources,
-    resource_reader=read_resource,
-    prompts=prompts,
-)
-run_mcp_stdio(server)
+server = MCPJsonRpcServer(tools=tools)
+transport = MCPHTTPTransportServer("127.0.0.1", 8081, server)
+transport.start()
 ```
 
 Repository example:
-- [mcp_stdio_server.py](/c:/Users/prajw/Downloads/MTP/examples/mcp_stdio_server.py)
+- [mcp_http_server.py](/c:/Users/prajw/Downloads/MTP/examples/mcp_http_server.py)
 
-## Request flow (simple)
+## MCP-specific WebSocket transport
 
-1. `initialize`
-2. `notifications/initialized`
-3. Discover capabilities (`tools/list`, `resources/list`, `prompts/list`)
-4. Invoke `tools/call` / `resources/read` / `prompts/get`
-5. Optionally send `$/cancelRequest` before a request executes
+`MCPWebSocketTransportServer(host, port, server)`:
 
-## Method contracts
+- receives JSON-RPC requests over websocket
+- uses async request handling (`ahandle_request`)
+- sends standard JSON-RPC responses
+- broadcasts progress as JSON-RPC notifications:
+  - `method: "notifications/progress"`
 
-## `initialize`
+Example:
 
-Request params:
-- `protocolVersion` (optional)
-- `clientInfo` (optional)
-- `capabilities` (optional)
+```python
+from mtp import MCPWebSocketTransportServer, MCPJsonRpcServer
 
-Response result:
-- `protocolVersion`
-- `serverInfo`
-- `capabilities`:
-  - `tools.listChanged`
-  - `resources.listChanged`
-  - `prompts.listChanged`
-  - `experimental.progressNotifications`
-  - `experimental.requestCancellation`
-- `instructions`
+ws_server = MCPWebSocketTransportServer("127.0.0.1", 8766, MCPJsonRpcServer(tools=tools))
+await ws_server.start()
+await ws_server.serve_forever()
+```
 
-## `tools/list`
+## Error model
 
-Response:
-- `tools: [{name, description, inputSchema, annotations}]`
+Returned error codes:
 
-## `tools/call`
-
-Request params:
-- `name` (required)
-- `arguments` (optional object)
-- `callId` (optional)
-- `progressToken` (optional; enables progress emission through `progress_handler`)
-
-Response:
-- `isError`
-- `content`
-- `result` (`callId`, `toolName`, `success`, `error`, `cached`, `approval`, `skipped`, `output`)
-
-## `resources/list`
-
-Response:
-- `resources: [{uri, name, description, mimeType}]`
-
-## `resources/read`
-
-Request params:
-- `uri` (required)
-
-Response:
-- `contents: [{uri, mimeType, text|blob}]`
-
-## `prompts/list`
-
-Response:
-- `prompts: [{name, description, arguments}]`
-
-## `prompts/get`
-
-Request params:
-- `name` (required)
-- `arguments` (optional object)
-
-Response:
-- renderer-defined object, or default:
-  - `description`
-  - `messages` (single text message from template rendering)
-
-## Cancellation notifications
-
-Accepted notifications:
-- `$/cancelRequest` with `{id}` or `{requestId}`
-- `notifications/cancelled` with `{id}` or `{requestId}` or `{callId}`
-
-Cancelled requests return JSON-RPC error code:
-- `-32800` (`Request cancelled`)
-
-## Progress notifications
-
-- Inbound `notifications/progress` is accepted and stored in server progress history.
-- Outbound progress events are emitted to `progress_handler` if `progressToken` is supplied in `tools/call`.
-
-## Error handling
-
-Current error codes:
 - `-32700`: parse error
 - `-32600`: invalid request
-- `-32602`: invalid params / method usage error
+- `-32602`: invalid params
 - `-32000`: internal server error
 - `-32001`: unauthorized
 - `-32002`: server not initialized
 - `-32800`: request cancelled
 
-## Testing coverage
+## Compatibility/conformance matrix
 
-Tests:
+Current matrix in this repo:
+
+- JSON-RPC request validation: covered
+- initialize lifecycle gate: covered
+- tools list/call mapping: covered
+- resources list/read: covered
+- prompts list/get: covered
+- auth denial path: covered
+- cancellation handling: covered
+- progress event capture: covered
+- async in-flight cancellation: covered
+- MCP HTTP adapter semantics (session/auth headers, batch, events): covered
+
+## Test coverage
+
 - [test_mcp_adapter.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_adapter.py)
+- [test_mcp_transport.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_transport.py)
 
-Covered:
-- lifecycle gating
-- tool listing + call success/error
-- auth path
-- notification handling
-- extended capability payload
-- resources list/read
-- prompts list/get
-- cancellation behavior
-- progress event capture
+## Remaining MCP work
 
-## What is still pending for full ecosystem depth
-
-1. Streaming chunk transport specialized for MCP over HTTP/WebSocket.
-2. Robust in-flight cancellation for long-running tool execution.
-3. Production auth standards (OAuth discovery, scopes, refresh lifecycle).
-4. External MCP client compatibility matrix and conformance suite.
+1. Production-grade auth standards (OAuth discovery, scope negotiation, refresh flows).
+2. External client interoperability matrix against third-party MCP clients.
+3. Optional SSE/streaming endpoint variants for broader client preference beyond current `/events` polling and websocket notifications.

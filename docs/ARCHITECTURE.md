@@ -104,6 +104,7 @@ Cross-provider configuration note:
 11. `mtp.mcp`
 - Experimental MCP-compatible JSON-RPC adapter over `ToolRegistry`.
 - Handles JSON-RPC request validation, initialize lifecycle, and tool method mapping.
+- Includes sync and async request handling paths (`handle_request` / `ahandle_request`).
 - Current method scope:
   - lifecycle: `initialize`, `notifications/initialized`
   - tools: `ping`, `tools/list`, `tools/call`
@@ -111,6 +112,9 @@ Cross-provider configuration note:
   - prompts: `prompts/list`, `prompts/get`
   - notifications: `notifications/progress`, `notifications/cancelled`, `$/cancelRequest`
 - Provides optional request-level auth hooks.
+- Dedicated MCP transports available in `mtp.mcp_transport`:
+  - `MCPHTTPTransportServer` (session/auth headers, batch JSON-RPC, progress event polling)
+  - `MCPWebSocketTransportServer` (async handling + progress notifications)
 
 ## Module boundaries
 
