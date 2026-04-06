@@ -16,6 +16,7 @@ Implemented in codebase:
 - MCP compatibility adapter for `initialize`, `ping`, `tools/list`, `tools/call`.
 - MCP adapter coverage now also includes resources/prompts/progress/cancellation surfaces.
 - MCP dedicated transports now include HTTP and WebSocket adapters with session/auth semantics and progress delivery hooks.
+- MCP HTTP transport now supports resumable progress replay (`event_id`/`resume_token` cursor) and SSE (`/events/stream`, `/events/sse`) for browser/server streaming clients.
 - MCP auth now supports pluggable provider hooks with structured OAuth-style challenge metadata.
 - Provider adapters: Groq, OpenAI, OpenRouter, Gemini, Anthropic, SambaNova, Cerebras, DeepSeek, Mistral, Cohere, TogetherAI, FireworksAI.
 - Local toolkits and optional web/scrape toolkits.
@@ -26,7 +27,7 @@ Implemented in codebase:
 Still missing from roadmap goals:
 - MCP auth ecosystem integrations beyond auth-provider hook level (OAuth discovery endpoints, scope negotiation standards, refresh lifecycle workflows).
 - External MCP client compatibility matrix automation and broader conformance harness (real third-party client runs in CI).
-- Resumable stream transport semantics and SSE-style server push endpoints (WebSocket exists, resumability does not).
+- Durable resumability beyond in-memory replay window (for example restart-safe event stores and larger replay retention policies).
 - Provider capability matrix and deeper per-provider structured-output feature parity guarantees.
 - First-party CLI scaffolding (`mtp new`) and template generation.
 - Centralized tracing/analytics query APIs over persisted run data.

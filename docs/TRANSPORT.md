@@ -121,7 +121,8 @@ def long_task(cancel_event=None):
 
 - In-flight cancellation is strongest for async handlers.
 - For sync handlers, cancellation is cooperative (handler must check `cancel_event` / `cancel_checker`).
-- Production concerns like auth hardening, retries, tracing propagation, and resumable streams are still evolving.
+- Production concerns like auth hardening, retries, and tracing propagation are still evolving.
+- MCP HTTP transport now includes resumable progress event delivery (event IDs + replay cursor) and SSE (`/events/stream`).
 - MCP-specific behavior is documented in:
   - [MCP Interop Adapter](/c:/Users/prajw/Downloads/MTP/docs/MCP_INTEROP.md)
 
