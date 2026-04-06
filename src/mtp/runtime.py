@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Protocol
@@ -162,36 +163,85 @@ class ToolRegistry:
         handler: ToolHandler,
         args: dict[str, Any],
         media_context: dict[str, Any] | None,
+        *,
+        cancel_checker: CancelChecker | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> dict[str, Any]:
-        if media_context is None:
-            return args
+        call_args = dict(args)
         try:
             signature = inspect.signature(handler)
         except Exception:
-            return args
+            return call_args
 
-        call_args = dict(args)
-        if "images" in signature.parameters and "images" not in call_args:
-            call_args["images"] = media_context.get("images")
-        if "videos" in signature.parameters and "videos" not in call_args:
-            call_args["videos"] = media_context.get("videos")
-        if "audios" in signature.parameters and "audios" not in call_args:
-            call_args["audios"] = media_context.get("audios")
-        if "files" in signature.parameters and "files" not in call_args:
-            call_args["files"] = media_context.get("files")
+        if media_context is not None:
+            if "images" in signature.parameters and "images" not in call_args:
+                call_args["images"] = media_context.get("images")
+            if "videos" in signature.parameters and "videos" not in call_args:
+                call_args["videos"] = media_context.get("videos")
+            if "audios" in signature.parameters and "audios" not in call_args:
+                call_args["audios"] = media_context.get("audios")
+            if "files" in signature.parameters and "files" not in call_args:
+                call_args["files"] = media_context.get("files")
+        if cancel_checker is not None and "cancel_checker" in signature.parameters and "cancel_checker" not in call_args:
+            call_args["cancel_checker"] = cancel_checker
+        if cancel_event is not None and "cancel_event" in signature.parameters and "cancel_event" not in call_args:
+            call_args["cancel_event"] = cancel_event
         return call_args
+
+    async def _await_with_cancellation(
+        self,
+        task: asyncio.Task[Any],
+        *,
+        cancel_checker: CancelChecker | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> Any:
+        while True:
+            done, _pending = await asyncio.wait({task}, timeout=0.05)
+            if task in done:
+                return await task
+            if cancel_checker is not None and cancel_checker():
+                if cancel_event is not None:
+                    cancel_event.set()
+                task.cancel()
+                raise ExecutionCancelledError("Execution cancelled during in-flight tool execution.")
 
     async def _invoke(
         self,
         handler: ToolHandler,
         args: dict[str, Any],
         media_context: dict[str, Any] | None = None,
+        *,
+        cancel_checker: CancelChecker | None = None,
     ) -> Any:
-        call_args = self._inject_media_args(handler, args, media_context)
-        result = handler(**call_args)
-        if inspect.isawaitable(result):
-            return await result
-        return result
+        if cancel_checker is not None and cancel_checker():
+            raise ExecutionCancelledError("Execution cancelled before tool invocation.")
+
+        cancel_event = threading.Event()
+        call_args = self._inject_media_args(
+            handler,
+            args,
+            media_context,
+            cancel_checker=cancel_checker,
+            cancel_event=cancel_event,
+        )
+
+        # Async handlers can be cancelled directly via task cancellation.
+        if inspect.iscoroutinefunction(handler):
+            task = asyncio.create_task(handler(**call_args))
+            return await self._await_with_cancellation(
+                task,
+                cancel_checker=cancel_checker,
+                cancel_event=cancel_event,
+            )
+
+        # Sync handlers run in a worker thread. In-flight cancellation is cooperative
+        # via optional `cancel_event` / `cancel_checker` parameters.
+        task = asyncio.create_task(asyncio.to_thread(handler, **call_args))
+        return await self._await_with_cancellation(
+            task,
+            cancel_checker=cancel_checker,
+            cancel_event=cancel_event,
+        )
 
     async def _should_allow_ask(self, spec: ToolSpec, call: ToolCall, args: dict[str, Any]) -> bool:
         if self.approval_handler is None:
@@ -219,7 +269,11 @@ class ToolRegistry:
         prior_results: dict[str, ToolResult],
         *,
         media_context: dict[str, Any] | None = None,
+        cancel_checker: CancelChecker | None = None,
     ) -> ToolResult:
+        if cancel_checker is not None and cancel_checker():
+            raise ExecutionCancelledError("Execution cancelled before tool call execution.")
+
         self.ensure_tools_available([call.name])
         tool = self._tools.get(call.name)
         if tool is None:
@@ -291,7 +345,12 @@ class ToolRegistry:
                 )
 
         try:
-            output = await self._invoke(tool.handler, resolved_args, media_context=media_context)
+            output = await self._invoke(
+                tool.handler,
+                resolved_args,
+                media_context=media_context,
+                cancel_checker=cancel_checker,
+            )
             content = output
             images = None
             videos = None
@@ -340,6 +399,8 @@ class ToolRegistry:
             )
         except asyncio.CancelledError:
             raise
+        except ExecutionCancelledError:
+            raise
         except RetryAgentRun as exc:
             message = str(exc).strip() or "Tool requested a retry."
             raise ToolRetryError(call_id=call.id, tool_name=call.name, message=message) from exc
@@ -380,7 +441,12 @@ class ToolRegistry:
                             raise ValueError(
                                 f"Call {call.id} depends on unresolved calls: {unresolved}"
                             )
-                    result = await self.execute_call(call, results, media_context=media_context)
+                    result = await self.execute_call(
+                        call,
+                        results,
+                        media_context=media_context,
+                        cancel_checker=cancel_checker,
+                    )
                     results[call.id] = result
                     ordered.append(result)
                 continue
@@ -395,7 +461,15 @@ class ToolRegistry:
 
             if cancel_checker is not None and cancel_checker():
                 raise ExecutionCancelledError("Execution plan cancelled before parallel tool execution.")
-            task_calls = [self.execute_call(call, results, media_context=media_context) for call in batch.calls]
+            task_calls = [
+                self.execute_call(
+                    call,
+                    results,
+                    media_context=media_context,
+                    cancel_checker=cancel_checker,
+                )
+                for call in batch.calls
+            ]
             batch_results = await asyncio.gather(*task_calls)
             for call, result in zip(batch.calls, batch_results, strict=True):
                 results[call.id] = result
