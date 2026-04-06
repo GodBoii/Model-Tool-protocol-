@@ -4,27 +4,27 @@ import contextlib
 import io
 import pathlib
 import textwrap
-import shutil
 import unittest
-from uuid import uuid4
 
 import sys
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from mtp.cli.main import main
+from tests.harness_utils import safe_rmtree, workspace_tempdir
 
 
 @contextlib.contextmanager
 def _workspace_tempdir() -> pathlib.Path:
-    root = pathlib.Path("tmp")
-    root.mkdir(parents=True, exist_ok=True)
-    temp_path = root / f"cli_test_{uuid4().hex}"
-    temp_path.mkdir(parents=True, exist_ok=True)
+    temp_path = workspace_tempdir(prefix="cli_test")
     try:
         yield temp_path
     finally:
-        shutil.rmtree(temp_path, ignore_errors=True)
+        safe_rmtree(temp_path)
+
+
+pytestmark = pytest.mark.integration
 
 
 class CLITests(unittest.TestCase):

@@ -4,8 +4,8 @@ import asyncio
 import os
 import pathlib
 import sys
-import tempfile
 import unittest
+from uuid import uuid4
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -13,6 +13,7 @@ from mtp.config import load_dotenv_if_available
 from mtp.policy import PolicyDecision, RiskPolicy
 from mtp.protocol import ToolCall, ToolRiskLevel, ToolSpec
 from mtp.runtime import ToolRegistry
+from tests.harness_utils import safe_rmtree
 
 
 class ConfigRuntimePolicyTests(unittest.TestCase):
@@ -36,14 +37,16 @@ class ConfigRuntimePolicyTests(unittest.TestCase):
 
     def test_load_dotenv_from_explicit_path(self) -> None:
         old_value = os.environ.get("MTP_TEST_KEY")
+        tmp = pathlib.Path("tmp") / f"config_test_{uuid4().hex}"
         try:
-            with tempfile.TemporaryDirectory() as tmp:
-                dotenv_path = pathlib.Path(tmp) / ".env.example"
-                dotenv_path.write_text("MTP_TEST_KEY=hello\n", encoding="utf-8")
-                loaded = load_dotenv_if_available(str(dotenv_path))
-                self.assertTrue(loaded)
-                self.assertEqual(os.getenv("MTP_TEST_KEY"), "hello")
+            tmp.mkdir(parents=True, exist_ok=True)
+            dotenv_path = tmp / ".env.example"
+            dotenv_path.write_text("MTP_TEST_KEY=hello\n", encoding="utf-8")
+            loaded = load_dotenv_if_available(str(dotenv_path))
+            self.assertTrue(loaded)
+            self.assertEqual(os.getenv("MTP_TEST_KEY"), "hello")
         finally:
+            safe_rmtree(tmp)
             if old_value is None:
                 os.environ.pop("MTP_TEST_KEY", None)
             else:
