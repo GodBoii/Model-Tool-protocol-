@@ -123,6 +123,10 @@ def long_task(cancel_event=None):
 - For sync handlers, cancellation is cooperative (handler must check `cancel_event` / `cancel_checker`).
 - Production concerns like auth hardening, retries, and tracing propagation are still evolving.
 - MCP HTTP transport now includes resumable progress event delivery (event IDs + replay cursor) and SSE (`/events/stream`).
+- MCP transport replay now supports:
+  - size/time bounded retention (`replay_window`, `replay_ttl_seconds`)
+  - optional durable replay persistence (`replay_store_path`) across process restarts
+  - session/auth scoped replay visibility to avoid cross-session event leakage
 - MCP-specific behavior is documented in:
   - [MCP Interop Adapter](/c:/Users/prajw/Downloads/MTP/docs/MCP_INTEROP.md)
 

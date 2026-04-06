@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import sys
 from dataclasses import dataclass
@@ -530,6 +531,8 @@ class MCPJsonRpcServer:
             raise ValueError("Request cancelled")
 
         progress_token = params.get("progressToken")
+        session_id = params.get("sessionId")
+        auth_fingerprint = self._token_fingerprint(params.get("auth_token"))
         if self.support_progress:
             self._emit_progress(
                 progress_token=progress_token,
@@ -537,6 +540,8 @@ class MCPJsonRpcServer:
                 total=1,
                 message=f"Starting tool call: {name}",
                 call_id=call_id,
+                session_id=session_id,
+                auth_fingerprint=auth_fingerprint,
             )
 
         call = ToolCall(id=call_id, name=name, arguments=arguments)
@@ -548,6 +553,8 @@ class MCPJsonRpcServer:
                 total=1,
                 message=f"Finished tool call: {name}",
                 call_id=call_id,
+                session_id=session_id,
+                auth_fingerprint=auth_fingerprint,
             )
 
         is_error = (not result.success) or bool(result.error)
@@ -587,6 +594,8 @@ class MCPJsonRpcServer:
             raise ValueError("Request cancelled")
 
         progress_token = params.get("progressToken")
+        session_id = params.get("sessionId")
+        auth_fingerprint = self._token_fingerprint(params.get("auth_token"))
         if self.support_progress:
             self._emit_progress(
                 progress_token=progress_token,
@@ -594,6 +603,8 @@ class MCPJsonRpcServer:
                 total=1,
                 message=f"Starting tool call: {name}",
                 call_id=call_id,
+                session_id=session_id,
+                auth_fingerprint=auth_fingerprint,
             )
 
         req_key = str(request_id) if request_id is not None else None
@@ -632,6 +643,8 @@ class MCPJsonRpcServer:
                 total=1,
                 message=f"Finished tool call: {name}",
                 call_id=call_id,
+                session_id=session_id,
+                auth_fingerprint=auth_fingerprint,
             )
 
         is_error = (not result.success) or bool(result.error)
@@ -792,6 +805,8 @@ class MCPJsonRpcServer:
         total: int,
         message: str,
         call_id: str,
+        session_id: Any = None,
+        auth_fingerprint: str | None = None,
     ) -> None:
         if progress_token is None:
             return
@@ -804,11 +819,24 @@ class MCPJsonRpcServer:
             "message": message,
             "callId": call_id,
         }
+        if isinstance(session_id, str) and session_id.strip():
+            event["sessionId"] = session_id.strip()
+        if isinstance(auth_fingerprint, str) and auth_fingerprint:
+            event["authFingerprint"] = auth_fingerprint
         self._progress_events.append(event)
         if self.progress_handler is not None:
             self.progress_handler(dict(event))
         for listener in self._progress_listeners:
             listener(dict(event))
+
+    def _token_fingerprint(self, token: Any) -> str | None:
+        if not isinstance(token, str):
+            return None
+        normalized = token.strip()
+        if not normalized:
+            return None
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return digest[:16]
 
     def _run_coro_sync(self, coro: Any) -> Any:
         try:
