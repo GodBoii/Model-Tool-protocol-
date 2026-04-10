@@ -36,6 +36,8 @@ class MTPAgent:
         allow_stream_fallback: bool = True,
         autoresearch: bool = False,
         research_instructions: str | None = None,
+        stream_tool_events: bool = True,
+        stream_tool_results: bool = True,
         mode: str = "standalone",
         members: dict[str, Agent] | None = None,
         session_store: SessionStore | None = None,
@@ -59,6 +61,8 @@ class MTPAgent:
             allow_stream_fallback=allow_stream_fallback,
             autoresearch=autoresearch,
             research_instructions=research_instructions,
+            stream_tool_events=stream_tool_events,
+            stream_tool_results=stream_tool_results,
             mode=mode,
             members=members,
             session_store=session_store,
@@ -241,6 +245,8 @@ class MTPAgent:
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
         input_schema: dict[str, Any] | None = None,
+        stream_tool_events: bool | None = None,
+        stream_tool_results: bool | None = None,
     ) -> Iterator[dict[str, Any]]:
         return self._agent.run_loop_events(
             user_input=prompt,
@@ -256,6 +262,8 @@ class MTPAgent:
             metadata=metadata,
             tool_call_limit=tool_call_limit,
             input_schema=input_schema,
+            stream_tool_events=stream_tool_events,
+            stream_tool_results=stream_tool_results,
         )
 
     def arun_events(
@@ -274,6 +282,8 @@ class MTPAgent:
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
         input_schema: dict[str, Any] | None = None,
+        stream_tool_events: bool | None = None,
+        stream_tool_results: bool | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         return self._agent.arun_loop_events(
             user_input=prompt,
@@ -289,6 +299,8 @@ class MTPAgent:
             metadata=metadata,
             tool_call_limit=tool_call_limit,
             input_schema=input_schema,
+            stream_tool_events=stream_tool_events,
+            stream_tool_results=stream_tool_results,
         )
 
     def cancel_run(self, run_id: str) -> bool:
@@ -345,6 +357,8 @@ class MTPAgent:
         metadata: dict[str, Any] | None = None,
         tool_call_limit: int | None = None,
         event_format: str = "pretty",
+        stream_tool_events: bool | None = None,
+        stream_tool_results: bool | None = None,
     ) -> None:
         if stream_events:
             if event_format not in {"pretty", "json"}:
@@ -387,6 +401,8 @@ class MTPAgent:
                 session_id=session_id,
                 metadata=metadata,
                 tool_call_limit=tool_call_limit,
+                stream_tool_events=stream_tool_events,
+                stream_tool_results=stream_tool_results,
             ):
                 if event_format == "json":
                     if not self._should_print_event(event.get("type"), debug_enabled=debug_enabled):
@@ -793,6 +809,9 @@ class MTPAgent:
             depends_on = list(event.get("depends_on", []))
             if depends_on:
                 print(f"  Depends On     : {depends_on}")
+            reasoning = event.get("reasoning")
+            if isinstance(reasoning, str) and reasoning.strip():
+                self._print_wrapped_block("  Reasoning", reasoning.strip(), indent="    ", width=100)
             self._print_json_block("  Arguments", event.get("arguments"), indent="    ", max_chars=600)
             tool_name = str(event.get("tool_name", ""))
             if tool_name.startswith("agent.member."):
@@ -844,6 +863,9 @@ class MTPAgent:
                 f"[MTP TOOL END] status={success_text} tool={event.get('tool_name')} "
                 f"id={event.get('call_id')} cached={event.get('cached')} approval={event.get('approval')}{duration_segment}  {meta}",
             )
+            reasoning = event.get("reasoning")
+            if isinstance(reasoning, str) and reasoning.strip():
+                self._print_wrapped_block("  Reasoning", reasoning.strip(), indent="    ", width=100)
             self._print_json_block("  Result", payload, indent="    ", max_chars=900)
             member_id = context.get("delegated_calls", {}).pop(call_id, None)
             if member_id:

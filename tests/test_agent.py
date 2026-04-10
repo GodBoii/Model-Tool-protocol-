@@ -56,8 +56,9 @@ class _DirectResponseProvider(ProviderAdapter):
 
 
 class _PlanThenRespondProvider(ProviderAdapter):
-    def __init__(self) -> None:
+    def __init__(self, *, reasoning: str | None = None) -> None:
         self._step = 0
+        self.reasoning = reasoning
 
     def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
         if self._step == 0:
@@ -67,7 +68,14 @@ class _PlanThenRespondProvider(ProviderAdapter):
                     batches=[
                         ToolBatch(
                             mode="parallel",
-                            calls=[ToolCall(id="call-1", name="echo.tool", arguments={"text": "hello"})],
+                            calls=[
+                                ToolCall(
+                                    id="call-1",
+                                    name="echo.tool",
+                                    arguments={"text": "hello"},
+                                    reasoning=self.reasoning,
+                                )
+                            ],
                         )
                     ]
                 ),
@@ -80,6 +88,7 @@ class _PlanThenRespondProvider(ProviderAdapter):
                                 "id": "call-1",
                                 "type": "function",
                                 "function": {"name": "echo.tool", "arguments": "{\"text\":\"hello\"}"},
+                                "reasoning": self.reasoning,
                             }
                         ],
                     }
@@ -230,6 +239,46 @@ class AgentTests(unittest.TestCase):
         self.assertIn("[MTP RUN FAILED]", printed)
         self.assertIn("Error:", printed)
         self.assertIn("boom", printed)
+
+    def test_run_events_can_disable_tool_events(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        agent = Agent(provider=_PlanThenRespondProvider(), tools=reg, stream_tool_events=False)
+        event_types = [event["type"] for event in agent.run_loop_events("hello", max_rounds=2, stream_final=False)]
+        self.assertNotIn("assistant_tool_message", event_types)
+        self.assertNotIn("batch_started", event_types)
+        self.assertNotIn("tool_started", event_types)
+        self.assertNotIn("tool_finished", event_types)
+
+    def test_tool_finished_omits_payload_when_stream_tool_results_disabled(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        agent = Agent(
+            provider=_PlanThenRespondProvider(reasoning="Need to run tool first"),
+            tools=reg,
+            stream_tool_events=True,
+            stream_tool_results=False,
+        )
+        events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
+        tool_started = next(event for event in events if event["type"] == "tool_started")
+        self.assertEqual(tool_started.get("reasoning"), "Need to run tool first")
+        tool_finished = next(event for event in events if event["type"] == "tool_finished")
+        self.assertIsNone(tool_finished.get("output"))
+        self.assertIsNone(tool_finished.get("error"))
+        self.assertEqual(tool_finished.get("reasoning"), "Need to run tool first")
+
+    def test_tool_finished_includes_payload_when_stream_tool_results_enabled(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        agent = Agent(
+            provider=_PlanThenRespondProvider(reasoning="Need to run tool first"),
+            tools=reg,
+            stream_tool_events=True,
+            stream_tool_results=True,
+        )
+        events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
+        tool_finished = next(event for event in events if event["type"] == "tool_finished")
+        self.assertEqual(tool_finished.get("output"), "echo:hello")
 
 
 if __name__ == "__main__":
