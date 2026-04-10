@@ -44,7 +44,19 @@ class TUIEventParsingTests(unittest.TestCase):
         self.assertTrue(tool_events)
         self.assertIn("calculator.add: Compute the math part first", tool_events)
 
+    def test_extract_codex_tool_signal_normalizes_shell_command(self) -> None:
+        event = {
+            "type": "item.started",
+            "item": {
+                "type": "exec_command_begin",
+                "command": '"C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Name"',
+                "arguments": {"summary": "Need directory listing before final response"},
+            },
+        }
+        name, reasoning = _extract_codex_tool_signal(event, "item.started")
+        self.assertEqual(name, "shell.run_command")
+        self.assertEqual(reasoning, "Need directory listing before final response")
+
 
 if __name__ == "__main__":
     unittest.main()
-

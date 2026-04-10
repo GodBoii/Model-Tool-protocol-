@@ -100,6 +100,37 @@ class _PlanThenRespondProvider(ProviderAdapter):
         return "done"
 
 
+class _PlanWithReasoningArgProvider(ProviderAdapter):
+    def __init__(self) -> None:
+        self._step = 0
+        self.last_tools: list[ToolSpec] = []
+
+    def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
+        self.last_tools = list(tools)
+        if self._step == 0:
+            self._step += 1
+            return AgentAction(
+                plan=ExecutionPlan(
+                    batches=[
+                        ToolBatch(
+                            mode="parallel",
+                            calls=[
+                                ToolCall(
+                                    id="call-1",
+                                    name="echo.tool",
+                                    arguments={"text": "hello", "reasoning": "Need the echoed value for the reply"},
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+        return AgentAction(response_text="done")
+
+    def finalize(self, messages: list[dict], tool_results: list[ToolResult]) -> str:
+        return "done"
+
+
 class _FailingProvider(ProviderAdapter):
     def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
         raise RuntimeError("boom")
@@ -279,6 +310,30 @@ class AgentTests(unittest.TestCase):
         events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
         tool_finished = next(event for event in events if event["type"] == "tool_finished")
         self.assertEqual(tool_finished.get("output"), "echo:hello")
+
+    def test_reasoning_argument_is_extracted_when_not_in_tool_schema(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        provider = _PlanWithReasoningArgProvider()
+        agent = Agent(provider=provider, tools=reg, stream_tool_events=True, stream_tool_results=True)
+        events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
+        tool_started = next(event for event in events if event["type"] == "tool_started")
+        self.assertEqual(tool_started.get("reasoning"), "Need the echoed value for the reply")
+        tool_finished = next(event for event in events if event["type"] == "tool_finished")
+        self.assertEqual(tool_finished.get("output"), "echo:hello")
+
+    def test_provider_tool_schema_includes_optional_reasoning(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        provider = _PlanWithReasoningArgProvider()
+        agent = Agent(provider=provider, tools=reg)
+        agent.run_loop("hello", max_rounds=2)
+        echo_spec = next(spec for spec in provider.last_tools if spec.name == "echo.tool")
+        schema = echo_spec.input_schema
+        self.assertIsInstance(schema, dict)
+        props = schema.get("properties", {})
+        self.assertIsInstance(props, dict)
+        self.assertIn("reasoning", props)
 
 
 if __name__ == "__main__":
