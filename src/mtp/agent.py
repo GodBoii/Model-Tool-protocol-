@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from datetime import UTC, datetime
 import json
 import re
@@ -91,6 +92,8 @@ _AUTORESEARCH_DEFAULT_MAX_ROUNDS = 100
 
 
 class Agent:
+    _TOOL_REASONING_ARG = "reasoning"
+
     def __init__(
         self,
         provider: ProviderAdapter,
@@ -452,6 +455,81 @@ class Agent:
         if override is None:
             return self.stream_tool_results
         return bool(override)
+
+    def _tool_supports_argument(self, spec: ToolSpec | None, arg_name: str) -> bool:
+        if spec is None:
+            return False
+        schema = spec.input_schema
+        if not isinstance(schema, dict):
+            return False
+        if schema.get("type") != "object":
+            return False
+        properties = schema.get("properties")
+        return isinstance(properties, dict) and arg_name in properties
+
+    def _augment_tool_schema_for_provider(self, spec: ToolSpec) -> ToolSpec:
+        schema = spec.input_schema
+        if not isinstance(schema, dict):
+            return spec
+        schema_base = schema
+        if schema.get("type") != "object":
+            if not schema:
+                schema_base = {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                }
+            else:
+                return spec
+        properties = schema_base.get("properties")
+        if not isinstance(properties, dict):
+            return spec
+        if self._TOOL_REASONING_ARG in properties:
+            return spec
+        schema_copy = copy.deepcopy(schema_base)
+        props_copy = schema_copy.get("properties")
+        if not isinstance(props_copy, dict):
+            return spec
+        props_copy[self._TOOL_REASONING_ARG] = {
+            "type": "string",
+            "description": (
+                "Brief decision summary for this tool call: why it is needed and how the result will be used."
+            ),
+        }
+        required = schema_copy.get("required")
+        if isinstance(required, list):
+            schema_copy["required"] = [item for item in required if item != self._TOOL_REASONING_ARG]
+        return ToolSpec(
+            name=spec.name,
+            description=spec.description,
+            input_schema=schema_copy,
+            tags=list(spec.tags),
+            risk_level=spec.risk_level,
+            cost_hint=spec.cost_hint,
+            side_effects=spec.side_effects,
+            cache_ttl_seconds=spec.cache_ttl_seconds,
+        )
+
+    def _planning_tools(self, tools: list[ToolSpec]) -> list[ToolSpec]:
+        return [self._augment_tool_schema_for_provider(tool) for tool in tools]
+
+    def _normalize_plan_reasoning(self, plan: ExecutionPlan | None, tools: list[ToolSpec]) -> None:
+        if plan is None:
+            return
+        specs_by_name = {tool.name: tool for tool in tools}
+        for batch in plan.batches:
+            for call in batch.calls:
+                if not isinstance(call.arguments, dict):
+                    continue
+                arg_reasoning = call.arguments.get(self._TOOL_REASONING_ARG)
+                if not (isinstance(arg_reasoning, str) and arg_reasoning.strip()):
+                    continue
+                spec = specs_by_name.get(call.name)
+                tool_has_reasoning_arg = self._tool_supports_argument(spec, self._TOOL_REASONING_ARG)
+                if not isinstance(call.reasoning, str) or not call.reasoning.strip():
+                    call.reasoning = arg_reasoning.strip()
+                if not tool_has_reasoning_arg:
+                    call.arguments.pop(self._TOOL_REASONING_ARG, None)
 
     def _reasoning_for_tool_call(self, call: ToolCall, assistant_tool_message: dict[str, Any] | None) -> str | None:
         if isinstance(call.reasoning, str) and call.reasoning.strip():
@@ -890,6 +968,7 @@ class Agent:
             )
             self._debug(f"user_message={user_text!r}")
         tools = self.registry.list_tools()
+        planning_tools = self._planning_tools(tools)
         self._debug(f"tools_available={len(tools)}")
         self._debug(f"tool_names={[tool.name for tool in tools]}")
         last_results: list[ToolResult] = []
@@ -917,7 +996,8 @@ class Agent:
                     ]
                 )
             )
-            action = self.provider.next_action(self.messages, tools)
+            action = self.provider.next_action(self.messages, planning_tools)
+            self._normalize_plan_reasoning(action.plan, tools)
 
             if action.response_text and action.plan is None:
                 self._debug("provider returned direct response (no tool plan)")
@@ -1284,6 +1364,7 @@ class Agent:
                 )
             )
         tools = self.registry.list_tools()
+        planning_tools = self._planning_tools(tools)
         last_results: list[ToolResult] = []
         cancelled = False
         total_tool_calls = 0
@@ -1293,7 +1374,8 @@ class Agent:
             if self._is_cancelled(run_id):
                 cancelled = True
                 break
-            action = await self._anext_action(tools)
+            action = await self._anext_action(planning_tools)
+            self._normalize_plan_reasoning(action.plan, tools)
             if action.response_text and action.plan is None:
                 self._append_message({"role": "assistant", "content": action.response_text})
                 if self.autoresearch:
@@ -1719,6 +1801,7 @@ class Agent:
             )
         )
         tools = self.registry.list_tools()
+        planning_tools = self._planning_tools(tools)
         mode_instruction = self._build_mode_system_instruction()
         system_instructions = [self.system_instructions] if self.system_instructions else []
         user_instructions = [self.instructions] if self.instructions else []
@@ -1762,7 +1845,8 @@ class Agent:
                     return
                 yield events.emit("round_started", round=round_idx)
                 llm_started = perf_counter()
-                action = self.provider.next_action(self.messages, tools)
+                action = self.provider.next_action(self.messages, planning_tools)
+                self._normalize_plan_reasoning(action.plan, tools)
                 llm_duration = perf_counter() - llm_started
                 action_metadata = action.metadata if isinstance(action.metadata, dict) else {}
                 yield events.emit(
@@ -2061,6 +2145,7 @@ class Agent:
             )
         )
         tools = self.registry.list_tools()
+        planning_tools = self._planning_tools(tools)
         mode_instruction = self._build_mode_system_instruction()
         system_instructions = [self.system_instructions] if self.system_instructions else []
         user_instructions = [self.instructions] if self.instructions else []
@@ -2104,7 +2189,8 @@ class Agent:
                     return
                 yield events.emit("round_started", round=round_idx)
                 llm_started = perf_counter()
-                action = await self._anext_action(tools)
+                action = await self._anext_action(planning_tools)
+                self._normalize_plan_reasoning(action.plan, tools)
                 llm_duration = perf_counter() - llm_started
                 action_metadata = action.metadata if isinstance(action.metadata, dict) else {}
                 yield events.emit(

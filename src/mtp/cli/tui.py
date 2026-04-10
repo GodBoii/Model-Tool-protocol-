@@ -1026,8 +1026,52 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
             return text or None
         return None
 
+    def _first_nested_reasoning(container: dict[str, Any]) -> str | None:
+        for key in ("arguments", "args", "input", "payload", "metadata", "details"):
+            nested = container.get(key)
+            if not isinstance(nested, dict):
+                continue
+            for reason_key in ("reasoning", "summary", "thought", "thinking", "description", "message"):
+                value = _get_str(nested.get(reason_key))
+                if value:
+                    return value
+        return None
+
+    def _looks_like_shell_command(value: str | None) -> bool:
+        if not value:
+            return False
+        lowered = value.lower()
+        markers = (
+            "powershell",
+            "cmd.exe",
+            "/bin/sh",
+            "bash -lc",
+            "sh -c",
+            "pwsh",
+        )
+        return any(marker in lowered for marker in markers)
+
+    def _normalize_tool_name(name: str | None, *, item_type: str | None) -> str | None:
+        if name and name.startswith("functions."):
+            name = name[len("functions.") :]
+        normalized_item_type = (item_type or "").lower()
+        if normalized_item_type in {
+            "exec_command",
+            "exec_command_begin",
+            "exec_command_start",
+            "exec_command_end",
+            "shell_call",
+            "terminal_command",
+        }:
+            return "shell.run_command"
+        if _looks_like_shell_command(name):
+            return "shell.run_command"
+        return name
+
     def _from_item(item: dict[str, Any]) -> tuple[str | None, str | None]:
         item_type = _get_str(item.get("type")) or _get_str(item.get("kind")) or ""
+        if item_type in {"message", "assistant_message", "reasoning", "analysis"}:
+            return None, None
         name = (
             _get_str(item.get("name"))
             or _get_str(item.get("tool_name"))
@@ -1036,7 +1080,8 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
         )
         if not name and item_type in {"function_call", "tool_call", "exec_command", "shell_call"}:
             name = item_type
-        if not name:
+        normalized_name = _normalize_tool_name(name, item_type=item_type)
+        if not normalized_name:
             return None, None
         reasoning = (
             _get_str(item.get("reasoning"))
@@ -1046,8 +1091,12 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
             or _get_str(item.get("description"))
             or _get_str(item.get("content"))
             or _get_str(item.get("message"))
+            or _first_nested_reasoning(item)
         )
-        return name, reasoning
+        if not reasoning and _looks_like_shell_command(name):
+            command_preview = _shorten_text(name, 140)
+            reasoning = f"running shell command: {command_preview}"
+        return normalized_name, reasoning
 
     if "tool" in event_type or "exec_command" in event_type or "function_call" in event_type:
         name = (
@@ -1057,6 +1106,7 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
             or _get_str(event.get("command"))
             or event_type
         )
+        name = _normalize_tool_name(name, item_type=_get_str(event.get("type")))
         reasoning = (
             _get_str(event.get("reasoning"))
             or _get_str(event.get("summary"))
@@ -1065,7 +1115,11 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
             or _get_str(event.get("description"))
             or _get_str(event.get("content"))
             or _get_str(event.get("message"))
+            or _first_nested_reasoning(event)
         )
+        if not reasoning and _looks_like_shell_command(_get_str(event.get("command"))):
+            command_preview = _shorten_text(_get_str(event.get("command")) or "", 140)
+            reasoning = f"running shell command: {command_preview}"
         return name, reasoning
 
     item = event.get("item")
