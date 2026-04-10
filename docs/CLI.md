@@ -78,7 +78,7 @@ Output columns:
 
 ## `mtp tui`
 
-Launch the minimal interactive terminal UI.
+Launch the interactive terminal UI.
 
 ```bash
 mtp tui
@@ -100,16 +100,31 @@ mtp tui
 # Start directly in MTP OpenAI backend
 mtp tui --backend mtp-openai --openai-model gpt-4o
 
+# Set initial reasoning effort for codex backend
+mtp tui --reasoning-effort high
+
 # Enable autoresearch in MTP OpenAI backend
 mtp tui --backend mtp-openai --autoresearch --research-instructions "Verify completion before terminating."
 ```
 
 Inside TUI:
+- `/models`
 - `/backend codex|mtp-openai`
-- `/model <name>`
+- `/model <name|1..4|default>`
+- `/reasoning <none|low|medium|high|xhigh>`
 - `/rounds <n>`
 - `/codex-login`
 - `/autoresearch on|off`
 - `/research <text>`
 - `/status`
 - `/exit`
+
+Model shortcuts:
+- `1 -> gpt-5.4`
+- `2 -> gpt-5.4-mini`
+- `3 -> gpt-5.3-codex`
+- `4 -> gpt-5.2`
+
+Prompt UX:
+- Use `@path/to/file.py` directly in your prompt to inject file context into the request.
+- Example: `debug this @src/mtp/cli/tui.py and suggest a fix`
