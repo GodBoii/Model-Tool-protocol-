@@ -40,6 +40,8 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_rate_limits: dict[str, Any] | None = None
+        self._last_finalize_rate_limits: dict[str, Any] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
@@ -80,6 +82,33 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             for tool in tools
         ]
 
+    def _extract_rate_limits(self, headers: Any) -> dict[str, Any] | None:
+        if headers is None:
+            return None
+        try:
+            items = list(headers.items()) if hasattr(headers, "items") else []
+        except Exception:
+            items = []
+        if not items:
+            return None
+        collected: dict[str, Any] = {}
+        for key, value in items:
+            key_s = str(key)
+            lower = key_s.lower()
+            if lower.startswith("x-ratelimit-") or lower == "retry-after":
+                collected[key_s] = value
+        return collected or None
+
+    def _create_with_raw_headers(self, request_args: dict[str, Any]) -> tuple[Any, dict[str, Any] | None]:
+        raw_api = getattr(self._client.chat.completions, "with_raw_response", None)
+        if raw_api is None or not hasattr(raw_api, "create"):
+            response = self._client.chat.completions.create(**request_args)
+            return response, None
+        raw_response = raw_api.create(**request_args)
+        parsed = raw_response.parse() if hasattr(raw_response, "parse") else raw_response
+        headers = getattr(raw_response, "headers", None)
+        return parsed, self._extract_rate_limits(headers)
+
     def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         openai_messages = self._to_openai_messages(messages)
         openai_tools = self._to_openai_tools(tools)
@@ -94,13 +123,16 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             request_args["tool_choice"] = self.tool_choice
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
 
-        response = self._client.chat.completions.create(**request_args)
+        response, rate_limits = self._create_with_raw_headers(request_args)
+        self._last_rate_limits = rate_limits
         message = response.choices[0].message
         tool_calls = getattr(message, "tool_calls", None)
         usage = extract_usage_metrics(response)
         action_meta: dict[str, Any] = {"provider": "openai", "model": self.model}
         if usage:
             action_meta["usage"] = usage
+        if rate_limits:
+            action_meta["rate_limits"] = rate_limits
 
         if tool_calls:
             mtp_calls: list[ToolCall] = []
@@ -149,12 +181,15 @@ class OpenAIToolCallingProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         openai_messages = self._to_openai_messages(messages)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=openai_messages,
-            temperature=self.temperature,
+        response, rate_limits = self._create_with_raw_headers(
+            {
+                "model": self.model,
+                "messages": openai_messages,
+                "temperature": self.temperature,
+            }
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
+        self._last_finalize_rate_limits = rate_limits
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
             return "Model requested an additional tool round; rerun with a larger max_rounds."

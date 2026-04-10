@@ -92,6 +92,13 @@ class ToolRegistry:
     def add_tool(self, tool: RegisteredTool) -> None:
         self.register_tool(tool.spec, tool.handler)
 
+    def unregister_tool(self, name: str) -> bool:
+        removed = self._tools.pop(name, None)
+        if removed is None:
+            return False
+        self._tool_specs_cache = None
+        return True
+
     def set_tools(self, tools: list[RegisteredTool]) -> None:
         self._tools = {tool.spec.name: tool for tool in tools}
         # Replace semantics: clear any previously attached toolkit loaders/previews.
