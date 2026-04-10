@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import threading
 import time
 from typing import Any
@@ -371,6 +372,7 @@ def _print_banner(state: TUIState) -> None:
     print(_box_line(cmd_header, w))
     cmds = [
         (f"{C_CMD}/help{RESET}", "Show full command reference"),
+        (f"{C_CMD}/compose{RESET}", "Multi-line prompt mode"),
         (f"{C_CMD}/new{RESET}", "Start a new chat"),
         (f"{C_CMD}/history{RESET}", "Show recent turns"),
         (f"{C_CMD}/model{RESET}", "Switch model"),
@@ -443,6 +445,7 @@ def _print_help() -> None:
         ("Navigation", [
             ("/help", "Show this command reference"),
             ("/exit", "Exit TUI"),
+            ("/compose", "Open multi-line compose mode"),
             ("/status", "Show current session state"),
             ("/new [label]", "Start a fresh chat session"),
             ("/load <session_id>", "Load a saved chat session"),
@@ -954,6 +957,68 @@ def _parse_codex_json_events(stdout_text: str, active_model: str | None) -> tupl
     return final_text, tool_events, warnings, usage_lines
 
 
+def _shorten_text(text: str, limit: int = 160) -> str:
+    compact = " ".join(text.strip().split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3] + "..."
+
+
+def _emit_live_event(kind: str, message: str) -> None:
+    color = C_DIM
+    label = "event"
+    if kind == "tool":
+        color = C_LABEL
+        label = "tool"
+    elif kind == "warn":
+        color = C_WARNING
+        label = "warn"
+    elif kind == "status":
+        color = C_ACCENT
+        label = "status"
+    elif kind == "step":
+        color = C_VALUE
+        label = "step"
+    print(f"  {color}[{label}]{RESET} {C_TEXT}{message}{RESET}")
+
+
+def _emit_codex_live_line(raw_line: str, emitted: dict[str, bool]) -> None:
+    line = raw_line.strip()
+    if not line:
+        return
+    if line.startswith("ERROR:"):
+        _emit_live_event("warn", line)
+        return
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    event_type = str(event.get("type", "")).strip().lower()
+    if event_type in {"response.output_text.delta", "response.output_text"}:
+        if not emitted.get("assistant_started"):
+            emitted["assistant_started"] = True
+            _emit_live_event("status", "assistant is drafting the response")
+        return
+    if "tool" in event_type or "exec_command" in event_type:
+        name = str(event.get("name") or event.get("tool_name") or event_type)
+        detail = str(event.get("summary") or event.get("command") or "").strip()
+        if detail:
+            _emit_live_event("tool", f"{name}: {_shorten_text(detail, 180)}")
+        else:
+            _emit_live_event("tool", name)
+        return
+    if event_type.endswith("started") or event_type in {"run_started", "round_started", "plan_received"}:
+        round_id = event.get("round")
+        if round_id is not None:
+            _emit_live_event("step", f"{event_type} (round {round_id})")
+        else:
+            _emit_live_event("step", event_type)
+        return
+    if event_type.endswith("failed") or event_type in {"error"}:
+        detail = str(event.get("error") or event.get("message") or event_type)
+        _emit_live_event("warn", _shorten_text(detail, 220))
+
+
 def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
     codex_bin = state.codex_bin or _detect_codex_bin()
     state.codex_bin = codex_bin
@@ -988,7 +1053,23 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
     if state.reasoning_effort in _REASONING_EFFORTS and state.reasoning_effort != "none":
         cmd.extend(["-c", f'reasoning_effort="{state.reasoning_effort}"'])
     cmd.append(prompt)
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    stdout_lines: list[str] = []
+    emitted: dict[str, bool] = {}
+    if proc.stdout is not None:
+        for line in proc.stdout:
+            stdout_lines.append(line)
+            _emit_codex_live_line(line, emitted)
+    return_code = proc.wait()
+    stdout_text = "".join(stdout_lines)
     text = ""
     try:
         if output_path.exists():
@@ -999,24 +1080,21 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
         except Exception:
             pass
 
-    parsed_text, tool_events, parse_warnings, usage_lines = _parse_codex_json_events(
-        proc.stdout or "",
-        state.codex_model,
-    )
+    parsed_text, tool_events, parse_warnings, usage_lines = _parse_codex_json_events(stdout_text, state.codex_model)
 
-    if proc.returncode != 0:
-        details = (proc.stderr or proc.stdout or "").strip()
+    if return_code != 0:
+        details = stdout_text.strip()
         hint = "Try: codex login"
         if details:
             return ChatResult(
-                text=f"Codex exec failed (exit {proc.returncode}).\n{details}\n{hint}",
+                text=f"Codex exec failed (exit {return_code}).\n{details}\n{hint}",
                 tool_events=tool_events,
                 attachments=[],
                 warnings=parse_warnings,
                 usage_lines=usage_lines,
             )
         return ChatResult(
-            text=f"Codex exec failed (exit {proc.returncode}).\n{hint}",
+            text=f"Codex exec failed (exit {return_code}).\n{hint}",
             tool_events=tool_events,
             attachments=[],
             warnings=parse_warnings,
@@ -1027,8 +1105,8 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
         final_text = text
     elif parsed_text:
         final_text = parsed_text
-    elif proc.stdout.strip():
-        final_text = proc.stdout.strip()
+    elif stdout_text.strip():
+        final_text = stdout_text.strip()
     else:
         final_text = "(Codex returned no final text.)"
     return ChatResult(
@@ -1068,6 +1146,14 @@ def _run_openai_prompt(state: TUIState, prompt: str) -> ChatResult:
         user_id=state.user_id,
     ):
         event_type = str(event.get("type", ""))
+        if event_type == "run_started":
+            _emit_live_event("status", "run started")
+        elif event_type == "round_started":
+            _emit_live_event("step", f"round {event.get('round')} started")
+        elif event_type == "plan_received":
+            batches = event.get("batches")
+            batch_count = len(batches) if isinstance(batches, list) else "?"
+            _emit_live_event("step", f"execution plan ready ({batch_count} batches)")
         if event_type == "llm_response":
             usage = event.get("usage")
             if isinstance(usage, dict):
@@ -1087,20 +1173,32 @@ def _run_openai_prompt(state: TUIState, prompt: str) -> ChatResult:
             rate_limits = event.get("rate_limits")
             if isinstance(rate_limits, dict):
                 latest_rate_limits = rate_limits
+            stage = str(event.get("stage") or "main")
+            _emit_live_event("status", f"llm response received ({stage})")
         elif event_type == "tool_started":
             tool_name = str(event.get("tool_name") or "tool")
             call_id = str(event.get("call_id") or "")
             if call_id:
                 tool_events.append(f"{tool_name} ({call_id})")
+                _emit_live_event("tool", f"started {tool_name} ({call_id})")
             else:
                 tool_events.append(tool_name)
+                _emit_live_event("tool", f"started {tool_name}")
         elif event_type == "tool_finished":
+            tool_name = str(event.get("tool_name") or "tool")
             if not bool(event.get("success", True)):
-                tool_name = str(event.get("tool_name") or "tool")
                 err = str(event.get("error") or "unknown tool error")
                 warnings.append(f"{tool_name} failed: {err}")
+                _emit_live_event("warn", f"{tool_name} failed: {_shorten_text(err, 180)}")
+            else:
+                output = str(event.get("output") or "")
+                if output:
+                    _emit_live_event("tool", f"finished {tool_name}: {_shorten_text(output, 160)}")
+                else:
+                    _emit_live_event("tool", f"finished {tool_name}")
         elif event_type == "run_completed":
             final_text = str(event.get("final_text") or "")
+            _emit_live_event("status", "run completed")
 
     usage_lines = [
         "tokens(in/out/total/reasoning)="
@@ -1272,6 +1370,8 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
     if cmd == "/help":
         _print_help()
         return None
+    if cmd == "/compose":
+        return "__compose__"
     if cmd == "/exit":
         return "__exit__"
     if cmd in {"/new", "/reset"}:
@@ -1391,6 +1491,7 @@ def _normalize_input(raw: str) -> str:
     command_heads = {
         "help",
         "exit",
+        "compose",
         "new",
         "reset",
         "clear",
@@ -1563,9 +1664,45 @@ def _render_prompt_and_response(result: ChatResult) -> None:
     print(f"  {C_RESPONSE}{'─' * 3} Assistant {C_BORDER}{'─' * (w - 18)}{RESET}")
     print()
 
-    # Indent the response body
-    for line in result.text.splitlines():
-        print(f"  {C_TEXT}{line}{RESET}")
+    # Indent and wrap markdown-ish response text for terminal readability.
+    in_code = False
+    body_width = max(30, w - 6)
+    for raw_line in result.text.splitlines():
+        stripped = raw_line.rstrip("\n")
+        if stripped.strip().startswith("```"):
+            in_code = not in_code
+            fence = stripped.strip() or "```"
+            print(f"  {C_VALUE}{fence}{RESET}")
+            continue
+        if in_code:
+            print(f"  {C_VALUE}{stripped}{RESET}")
+            continue
+        if not stripped.strip():
+            print()
+            continue
+        text = stripped.strip()
+        if text.startswith("#"):
+            heading = text.lstrip("#").strip()
+            for part in textwrap.wrap(heading, width=body_width):
+                print(f"  {C_BRAND_BOLD}{part}{RESET}")
+            continue
+        bullet_prefix = ""
+        bullet_match = re.match(r"^(\d+\.\s+|[-*]\s+)(.+)$", text)
+        if bullet_match:
+            bullet_prefix = bullet_match.group(1).strip() + " "
+            text = bullet_match.group(2).strip()
+        wrapped = textwrap.wrap(
+            text,
+            width=body_width - len(bullet_prefix),
+            break_long_words=False,
+            replace_whitespace=False,
+        )
+        if not wrapped:
+            print()
+            continue
+        for i, part in enumerate(wrapped):
+            prefix = bullet_prefix if i == 0 else " " * len(bullet_prefix)
+            print(f"  {C_TEXT}{prefix}{part}{RESET}")
 
     print()
     print(f"  {C_BORDER}{'─' * (w - 4)}{RESET}")
@@ -1588,6 +1725,40 @@ def _build_prompt_prefix(state: TUIState) -> str:
         f"{C_VALUE}{session_short}{RESET}"
         f" {C_PROMPT_ARROW}❯{RESET} "
     )
+
+
+def _sanitize_paste_artifacts(raw: str) -> str:
+    # Some terminals may include bracketed-paste control markers in input.
+    return raw.replace("\x1b[200~", "").replace("\x1b[201~", "")
+
+
+def _confirm_large_input(raw: str) -> bool:
+    if len(raw) < 280:
+        return True
+    preview = _shorten_text(raw, 180)
+    print(f"  {C_WARNING}Large pasted input detected.{RESET}")
+    print(f"  {C_DIM}Preview:{RESET} {C_TEXT}{preview}{RESET}")
+    decision = input(f"  {C_DIM}Press Enter to send, or type 'cancel' to abort:{RESET} ").strip().lower()
+    return decision not in {"cancel", "c", "no", "n"}
+
+
+def _compose_multiline_prompt() -> str | None:
+    print(f"  {C_DIM}Compose mode: paste/type multiple lines.{RESET}")
+    print(f"  {C_DIM}Type /send on a new line to submit, or /cancel to abort.{RESET}")
+    lines: list[str] = []
+    while True:
+        try:
+            line = input(f"  {C_ACCENT_DIM}...{RESET} ")
+        except (EOFError, KeyboardInterrupt):
+            return None
+        marker = line.strip().lower()
+        if marker == "/cancel":
+            return None
+        if marker == "/send":
+            break
+        lines.append(line)
+    composed = "\n".join(lines).strip()
+    return composed or None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1623,21 +1794,39 @@ def run_tui(args) -> int:
     while True:
         try:
             prompt_prefix = _build_prompt_prefix(state)
-            raw = input(prompt_prefix).strip()
+            raw = input(prompt_prefix)
         except (EOFError, KeyboardInterrupt):
             print(f"\n{C_DIM}Exiting TUI. Goodbye!{RESET}")
             return 0
+        raw = _sanitize_paste_artifacts(raw).strip()
         if not raw:
+            continue
+        if raw.lower() in {"/compose", "compose"}:
+            composed = _compose_multiline_prompt()
+            if not composed:
+                print(f"  {C_WARNING}Compose cancelled.{RESET}")
+                continue
+            raw = composed
+        if not raw.startswith("/") and not _confirm_large_input(raw):
+            print(f"  {C_WARNING}Input cancelled.{RESET}")
             continue
         raw = _normalize_input(raw)
         if raw.startswith("/"):
             out = _handle_command(state, raw)
-            if out == "__exit__":
-                print(f"\n{C_BRAND}Goodbye!{RESET} ✨\n")
-                return 0
-            if out:
-                print(f"  {out}")
-            continue
+            if out == "__compose__":
+                composed = _compose_multiline_prompt()
+                if not composed:
+                    print(f"  {C_WARNING}Compose cancelled.{RESET}")
+                    continue
+                raw = composed
+                # Continue as regular prompt below.
+            else:
+                if out == "__exit__":
+                    print(f"\n{C_BRAND}Goodbye!{RESET} ✨\n")
+                    return 0
+                if out:
+                    print(f"  {out}")
+                continue
 
         expanded_prompt, attachments, attachment_warnings = _collect_prompt_attachments(raw, state.cwd)
         active_model = (
@@ -1646,11 +1835,9 @@ def run_tui(args) -> int:
             else state.openai_model
         )
 
-        # Show running status with spinner
-        spinner = _Spinner(
-            f"Running on {state.backend}  ·  model={active_model}  ·  reasoning={state.reasoning_effort}"
+        print(
+            f"  {C_DIM}Running on {state.backend} · model={active_model} · reasoning={state.reasoning_effort}{RESET}"
         )
-        spinner.start()
         try:
             if state.backend == "codex":
                 result = _run_codex_prompt(state, expanded_prompt)
@@ -1661,9 +1848,7 @@ def run_tui(args) -> int:
                 result.attachments = attachments
                 result.warnings = [*attachment_warnings, *result.warnings]
         except Exception as exc:  # noqa: BLE001
-            spinner.stop()
             print(f"  {C_ERROR}✗ Error:{RESET} {exc}")
             continue
-        spinner.stop()
         _record_turn(state, raw, result)
         _render_prompt_and_response(result)
