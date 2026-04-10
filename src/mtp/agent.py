@@ -146,7 +146,7 @@ class Agent:
         self._paused_runs: dict[str, RunOutput] = {}
         for name, member in (members or {}).items():
             self.add_member(name, member)
-        self._ensure_autoresearch_tool_registered()
+        self._sync_autoresearch_state()
 
     def _get_provider_capabilities(self) -> ProviderCapabilities | None:
         if not self.enforce_provider_capabilities:
@@ -279,6 +279,29 @@ class Agent:
             tags=["agent", "autoresearch", "termination"],
         )
         self.registry.add_tool(RegisteredTool(spec=spec, handler=self._autoresearch_terminate))
+
+    def _is_autoresearch_system_message(self, message: dict[str, Any]) -> bool:
+        if message.get("role") != "system":
+            return False
+        content = message.get("content")
+        if not isinstance(content, str):
+            return False
+        return DEFAULT_AUTORESEARCH_SYSTEM_INSTRUCTIONS in content
+
+    def _sync_autoresearch_state(self) -> None:
+        tool_name = self._autoresearch_terminate_tool_name()
+        if self.autoresearch:
+            self._ensure_autoresearch_tool_registered()
+        else:
+            unregister = getattr(self.registry, "unregister_tool", None)
+            if callable(unregister):
+                unregister(tool_name)
+        if self.messages:
+            self.messages = [msg for msg in self.messages if not self._is_autoresearch_system_message(msg)]
+        if self.autoresearch and self._system_seeded:
+            instruction = self._build_autoresearch_system_instruction()
+            if instruction:
+                self._append_message({"role": "system", "content": instruction})
 
     def _autoresearch_terminate(self, reason: str, summary: str) -> str:
         payload = {
@@ -760,6 +783,7 @@ class Agent:
             return
         self.messages = [dict(message) for message in stored.messages]
         self._system_seeded = any(msg.get("role") == "system" for msg in self.messages)
+        self._sync_autoresearch_state()
 
     def _save_session_history(
         self,
@@ -814,6 +838,7 @@ class Agent:
         videos: list[Video] | None = None,
         files: list[File] | None = None,
     ) -> tuple[list[ToolResult], str | None, bool, int, bool, str | None]:
+        self._sync_autoresearch_state()
         self._seed_system_messages_if_needed()
         media_context = self._coerce_media_context(images=images, audios=audios, videos=videos, files=files)
         if append_user_message and user_text is not None:
@@ -1208,6 +1233,7 @@ class Agent:
         videos: list[Video] | None = None,
         files: list[File] | None = None,
     ) -> tuple[list[ToolResult], str | None, bool, int, bool, str | None]:
+        self._sync_autoresearch_state()
         self._seed_system_messages_if_needed()
         media_context = self._coerce_media_context(images=images, audios=audios, videos=videos, files=files)
         if append_user_message and user_text is not None:
@@ -1640,6 +1666,7 @@ class Agent:
         resolved_run_id = run_id or str(uuid4())
         self._register_run(resolved_run_id)
         events = EventStreamContext(run_id=resolved_run_id)
+        self._sync_autoresearch_state()
         self._seed_system_messages_if_needed()
         self._append_message(
             self._build_user_message(
@@ -1701,6 +1728,7 @@ class Agent:
                     provider=action_metadata.get("provider"),
                     model=action_metadata.get("model"),
                     usage=action_metadata.get("usage"),
+                    rate_limits=action_metadata.get("rate_limits"),
                     duration_seconds=llm_duration,
                     has_plan=action.plan is not None,
                     has_response=bool(action.response_text),
@@ -1893,6 +1921,9 @@ class Agent:
             finalize_usage = getattr(self.provider, "_last_stream_usage", None)
             if not isinstance(finalize_usage, dict):
                 finalize_usage = getattr(self.provider, "_last_finalize_usage", None)
+            finalize_rate_limits = getattr(self.provider, "_last_stream_rate_limits", None)
+            if not isinstance(finalize_rate_limits, dict):
+                finalize_rate_limits = getattr(self.provider, "_last_finalize_rate_limits", None)
             model_name = getattr(self.provider, "model", None) or getattr(self.provider, "model_name", None)
             yield events.emit(
                 "llm_response",
@@ -1901,6 +1932,7 @@ class Agent:
                 provider=type(self.provider).__name__,
                 model=model_name,
                 usage=finalize_usage if isinstance(finalize_usage, dict) else None,
+                rate_limits=finalize_rate_limits if isinstance(finalize_rate_limits, dict) else None,
                 duration_seconds=finalize_duration,
                 has_plan=False,
                 has_response=True,
@@ -1955,6 +1987,7 @@ class Agent:
         resolved_run_id = run_id or str(uuid4())
         self._register_run(resolved_run_id)
         events = EventStreamContext(run_id=resolved_run_id)
+        self._sync_autoresearch_state()
         self._seed_system_messages_if_needed()
         self._append_message(
             self._build_user_message(
@@ -2016,6 +2049,7 @@ class Agent:
                     provider=action_metadata.get("provider"),
                     model=action_metadata.get("model"),
                     usage=action_metadata.get("usage"),
+                    rate_limits=action_metadata.get("rate_limits"),
                     duration_seconds=llm_duration,
                     has_plan=action.plan is not None,
                     has_response=bool(action.response_text),
@@ -2207,6 +2241,9 @@ class Agent:
             finalize_usage = getattr(self.provider, "_last_stream_usage", None)
             if not isinstance(finalize_usage, dict):
                 finalize_usage = getattr(self.provider, "_last_finalize_usage", None)
+            finalize_rate_limits = getattr(self.provider, "_last_stream_rate_limits", None)
+            if not isinstance(finalize_rate_limits, dict):
+                finalize_rate_limits = getattr(self.provider, "_last_finalize_rate_limits", None)
             model_name = getattr(self.provider, "model", None) or getattr(self.provider, "model_name", None)
             yield events.emit(
                 "llm_response",
@@ -2215,6 +2252,7 @@ class Agent:
                 provider=type(self.provider).__name__,
                 model=model_name,
                 usage=finalize_usage if isinstance(finalize_usage, dict) else None,
+                rate_limits=finalize_rate_limits if isinstance(finalize_rate_limits, dict) else None,
                 duration_seconds=finalize_duration,
                 has_plan=False,
                 has_response=True,

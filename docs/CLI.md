@@ -91,6 +91,11 @@ Backends:
 - `codex`: bridges to official Codex CLI (`codex exec`) and uses your Codex login session.
 - `mtp-openai`: uses MTP SDK with `OpenAI` provider and local toolkits.
 
+Default TUI model settings:
+- codex backend model: `gpt-5.3-codex`
+- mtp-openai backend model: `gpt-5.4-mini`
+- default reasoning effort: `medium`
+
 Examples:
 
 ```bash
@@ -98,7 +103,7 @@ Examples:
 mtp tui
 
 # Start directly in MTP OpenAI backend
-mtp tui --backend mtp-openai --openai-model gpt-4o
+mtp tui --backend mtp-openai --openai-model gpt-5.4-mini
 
 # Set initial reasoning effort for codex backend
 mtp tui --reasoning-effort high
@@ -128,3 +133,8 @@ Model shortcuts:
 Prompt UX:
 - Use `@path/to/file.py` directly in your prompt to inject file context into the request.
 - Example: `debug this @src/mtp/cli/tui.py and suggest a fix`
+
+Usage visibility:
+- After each response, TUI prints a `Usage` block with token totals and context-window usage (when model window is known).
+- `/status` includes the latest captured usage snapshot.
+- Rate-limit remaining is shown as best-effort for codex backend and header-backed for `mtp-openai` when OpenAI rate-limit headers are returned.
