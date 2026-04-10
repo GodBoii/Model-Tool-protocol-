@@ -191,10 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tui_cmd.add_argument(
         "--codex-model",
-        default=None,
-        help="Model for Codex backend. Omit to use Codex CLI default (recommended for ChatGPT-login sessions).",
+        default="gpt-5.3-codex",
+        help="Model for Codex backend.",
     )
-    tui_cmd.add_argument("--openai-model", default="gpt-4o", help="Model for mtp-openai backend.")
+    tui_cmd.add_argument("--openai-model", default="gpt-5.4-mini", help="Model for mtp-openai backend.")
     tui_cmd.add_argument("--max-rounds", type=int, default=6, help="max_rounds for mtp-openai backend.")
     tui_cmd.add_argument("--cwd", default=".", help="Working directory used by tools and Codex backend.")
     tui_cmd.add_argument(

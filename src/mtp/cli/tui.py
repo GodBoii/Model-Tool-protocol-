@@ -50,6 +50,13 @@ _REASONING_NOTES = {
     "gpt-5.3-codex": "low, medium, high, xhigh",
 }
 
+_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "gpt-5.4": 400_000,
+    "gpt-5.4-mini": 400_000,
+    "gpt-5.2": 400_000,
+    "gpt-4o": 128_000,
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ANSI / Styling Helpers (zero-dependency)
@@ -249,6 +256,7 @@ class ChatResult:
     tool_events: list[str]
     attachments: list[str]
     warnings: list[str]
+    usage_lines: list[str]
 
 
 @dataclass
@@ -261,6 +269,7 @@ class TUIState:
     autoresearch: bool
     research_instructions: str | None
     reasoning_effort: str
+    last_usage_lines: list[str]
     agent: Agent.MTPAgent | None = None
     codex_bin: str | None = None
 
@@ -519,11 +528,88 @@ def _ensure_openai_agent(state: TUIState) -> Agent.MTPAgent:
     return state.agent
 
 
-def _parse_codex_json_events(stdout_text: str) -> tuple[str, list[str], list[str]]:
+def _format_int(n: int | None) -> str:
+    if n is None:
+        return "unknown"
+    return f"{n:,}"
+
+
+def _format_pct(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return f"{value:.2f}%"
+
+
+def _context_usage_line(model: str, input_tokens: int | None) -> str:
+    window = _MODEL_CONTEXT_WINDOWS.get(model)
+    if window is None:
+        return f"context={_format_int(input_tokens)} tokens / window=unknown"
+    if input_tokens is None:
+        return f"context=unknown / window={window:,}"
+    pct = (float(input_tokens) / float(window)) * 100.0
+    return f"context={input_tokens:,}/{window:,} ({_format_pct(pct)})"
+
+
+def _merge_usage_metrics(total: dict[str, int], usage: dict[str, Any]) -> None:
+    for key in ("input_tokens", "output_tokens", "total_tokens", "reasoning_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int):
+            total[key] = total.get(key, 0) + value
+
+
+def _extract_rate_values(payload: Any, found: dict[str, Any]) -> None:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            key_l = str(key).lower()
+            if "rate" in key_l and "remaining" in key_l:
+                found[str(key)] = value
+            elif key_l in {
+                "x-ratelimit-remaining-requests",
+                "x-ratelimit-remaining-tokens",
+                "remaining_requests",
+                "remaining_tokens",
+                "remaining",
+            }:
+                found[str(key)] = value
+            _extract_rate_values(value, found)
+    elif isinstance(payload, list):
+        for item in payload:
+            _extract_rate_values(item, found)
+
+
+def _format_rate_line(rate_fields: dict[str, Any] | None) -> str:
+    if not rate_fields:
+        return "rate_remaining=unknown"
+    normalized = {str(k).lower(): v for k, v in rate_fields.items()}
+    req = normalized.get("x-ratelimit-remaining-requests") or normalized.get("remaining_requests")
+    tok = normalized.get("x-ratelimit-remaining-tokens") or normalized.get("remaining_tokens")
+    reset = (
+        normalized.get("x-ratelimit-reset-requests")
+        or normalized.get("x-ratelimit-reset-tokens")
+        or normalized.get("retry-after")
+    )
+    pieces: list[str] = []
+    if req is not None:
+        pieces.append(f"requests={req}")
+    if tok is not None:
+        pieces.append(f"tokens={tok}")
+    if reset is not None:
+        pieces.append(f"reset={reset}")
+    if pieces:
+        return "rate_remaining=" + ", ".join(pieces)
+    compact = ", ".join(f"{k}={v}" for k, v in sorted(rate_fields.items())[:4])
+    return f"rate_remaining={compact}"
+
+
+def _parse_codex_json_events(stdout_text: str, active_model: str | None) -> tuple[str, list[str], list[str], list[str]]:
     tool_events: list[str] = []
     warnings: list[str] = []
+    usage_lines: list[str] = []
     final_text = ""
     assistant_chunks: list[str] = []
+    total_usage: dict[str, int] = {}
+    peak_input_tokens: int | None = None
+    rate_fields: dict[str, Any] = {}
     for raw_line in stdout_text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -536,6 +622,13 @@ def _parse_codex_json_events(stdout_text: str) -> tuple[str, list[str], list[str
         except json.JSONDecodeError:
             warnings.append(line)
             continue
+        usage = event.get("usage")
+        if isinstance(usage, dict):
+            _merge_usage_metrics(total_usage, usage)
+            input_tokens = usage.get("input_tokens")
+            if isinstance(input_tokens, int):
+                peak_input_tokens = max(peak_input_tokens or 0, input_tokens)
+        _extract_rate_values(event, rate_fields)
         event_type = str(event.get("type", "")).strip().lower()
         if event_type in {"response.output_text.delta", "response.output_text"}:
             delta = event.get("delta") or event.get("text") or ""
@@ -557,7 +650,37 @@ def _parse_codex_json_events(stdout_text: str) -> tuple[str, list[str], list[str
             continue
     if assistant_chunks:
         final_text = "".join(assistant_chunks).strip() or final_text
-    return final_text, tool_events, warnings
+    usage_lines.append(
+        "tokens(in/out/total/reasoning)="
+        f"{_format_int(total_usage.get('input_tokens'))}/"
+        f"{_format_int(total_usage.get('output_tokens'))}/"
+        f"{_format_int(total_usage.get('total_tokens'))}/"
+        f"{_format_int(total_usage.get('reasoning_tokens'))}"
+    )
+    model_name = (active_model or "").strip().lower()
+    if "gpt-5.4-mini" in model_name:
+        usage_lines.append(_context_usage_line("gpt-5.4-mini", peak_input_tokens))
+    elif "gpt-5.4" in model_name:
+        usage_lines.append(_context_usage_line("gpt-5.4", peak_input_tokens))
+    elif "gpt-5.2" in model_name:
+        usage_lines.append(_context_usage_line("gpt-5.2", peak_input_tokens))
+    elif "gpt-4o" in model_name:
+        usage_lines.append(_context_usage_line("gpt-4o", peak_input_tokens))
+    else:
+        usage_lines.append(_context_usage_line("unknown", peak_input_tokens))
+
+    remaining_pct: str | None = None
+    for chunk in (stdout_text, "\n".join(warnings)):
+        match = re.search(r"(\d{1,3})%\s+left", chunk, re.IGNORECASE)
+        if match:
+            remaining_pct = match.group(1) + "%"
+            break
+    if remaining_pct is not None:
+        usage_lines.append(f"rate_remaining={remaining_pct}")
+    else:
+        usage_lines.append(_format_rate_line(rate_fields))
+
+    return final_text, tool_events, warnings, usage_lines
 
 
 def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
@@ -573,6 +696,7 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
             tool_events=[],
             attachments=[],
             warnings=[],
+            usage_lines=[],
         )
 
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as tmp:
@@ -604,7 +728,10 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
         except Exception:
             pass
 
-    parsed_text, tool_events, parse_warnings = _parse_codex_json_events(proc.stdout or "")
+    parsed_text, tool_events, parse_warnings, usage_lines = _parse_codex_json_events(
+        proc.stdout or "",
+        state.codex_model,
+    )
 
     if proc.returncode != 0:
         details = (proc.stderr or proc.stdout or "").strip()
@@ -615,12 +742,14 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
                 tool_events=tool_events,
                 attachments=[],
                 warnings=parse_warnings,
+                usage_lines=usage_lines,
             )
         return ChatResult(
             text=f"Codex exec failed (exit {proc.returncode}).\n{hint}",
             tool_events=tool_events,
             attachments=[],
             warnings=parse_warnings,
+            usage_lines=usage_lines,
         )
 
     if text:
@@ -636,6 +765,7 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
         tool_events=tool_events,
         attachments=[],
         warnings=parse_warnings,
+        usage_lines=usage_lines,
     )
 
 
@@ -650,11 +780,66 @@ def _run_codex_login(state: TUIState) -> str:
     return f"{C_ERROR}✗ Codex login exited with code {proc.returncode}.{RESET}"
 
 
+def _run_openai_prompt(state: TUIState, prompt: str) -> ChatResult:
+    agent = _ensure_openai_agent(state)
+    final_text = ""
+    tool_events: list[str] = []
+    warnings: list[str] = []
+    totals: dict[str, int] = {}
+    peak_input_tokens: int | None = None
+    latest_rate_limits: dict[str, Any] | None = None
+
+    for event in agent.run_events(prompt, max_rounds=state.max_rounds, stream_final=False):
+        event_type = str(event.get("type", ""))
+        if event_type == "llm_response":
+            usage = event.get("usage")
+            if isinstance(usage, dict):
+                _merge_usage_metrics(totals, usage)
+                input_tokens = usage.get("input_tokens")
+                if isinstance(input_tokens, int):
+                    peak_input_tokens = max(peak_input_tokens or 0, input_tokens)
+            rate_limits = event.get("rate_limits")
+            if isinstance(rate_limits, dict):
+                latest_rate_limits = rate_limits
+        elif event_type == "tool_started":
+            tool_name = str(event.get("tool_name") or "tool")
+            call_id = str(event.get("call_id") or "")
+            if call_id:
+                tool_events.append(f"{tool_name} ({call_id})")
+            else:
+                tool_events.append(tool_name)
+        elif event_type == "tool_finished":
+            if not bool(event.get("success", True)):
+                tool_name = str(event.get("tool_name") or "tool")
+                err = str(event.get("error") or "unknown tool error")
+                warnings.append(f"{tool_name} failed: {err}")
+        elif event_type == "run_completed":
+            final_text = str(event.get("final_text") or "")
+
+    usage_lines = [
+        "tokens(in/out/total/reasoning)="
+        f"{_format_int(totals.get('input_tokens'))}/"
+        f"{_format_int(totals.get('output_tokens'))}/"
+        f"{_format_int(totals.get('total_tokens'))}/"
+        f"{_format_int(totals.get('reasoning_tokens'))}",
+        _context_usage_line(state.openai_model, peak_input_tokens),
+        _format_rate_line(latest_rate_limits),
+    ]
+    return ChatResult(
+        text=final_text or "(No final text returned.)",
+        tool_events=tool_events,
+        attachments=[],
+        warnings=warnings,
+        usage_lines=usage_lines,
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Status Display
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _status_lines(state: TUIState) -> list[str]:
+    last_usage = " | ".join(state.last_usage_lines) if state.last_usage_lines else "(none)"
     return [
         f"backend={state.backend}",
         f"cwd={state.cwd}",
@@ -664,6 +849,7 @@ def _status_lines(state: TUIState) -> list[str]:
         f"autoresearch={state.autoresearch}",
         f"research_instructions={state.research_instructions or '(none)'}",
         f"reasoning_effort={state.reasoning_effort}",
+        f"last_usage={last_usage}",
     ]
 
 
@@ -687,6 +873,11 @@ def _print_status(state: TUIState) -> None:
     ]
     for label, value, color in fields:
         print(_box_line(f"    {C_LABEL}{label:<20}{RESET} {color}{value}{RESET}", w))
+    usage_lines = state.last_usage_lines or ["(none)"]
+    print(_box_line("", w))
+    print(_box_line(f"    {C_LABEL}{'last_usage':<20}{RESET} {C_VALUE}{usage_lines[0]}{RESET}", w))
+    for extra in usage_lines[1:]:
+        print(_box_line(f"    {C_LABEL}{'':<20}{RESET} {C_VALUE}{extra}{RESET}", w))
 
     print(_box_line("", w))
     print(_box_bottom(w))
@@ -962,6 +1153,12 @@ def _render_prompt_and_response(result: ChatResult) -> None:
             connector = "└─" if i == len(result.warnings) - 1 else "├─"
             print(f"     {C_DIM}{connector}{RESET} {C_WARNING}{warning}{RESET}")
 
+    if result.usage_lines:
+        print(f"\n  {C_LABEL}📊 Usage{RESET}")
+        for i, line in enumerate(result.usage_lines):
+            connector = "└─" if i == len(result.usage_lines) - 1 else "├─"
+            print(f"     {C_DIM}{connector}{RESET} {C_VALUE}{line}{RESET}")
+
     # Response
     print()
     print(f"  {C_RESPONSE}{'─' * 3} Assistant {C_BORDER}{'─' * (w - 18)}{RESET}")
@@ -1005,6 +1202,7 @@ def run_tui(args) -> int:
         autoresearch=bool(args.autoresearch),
         research_instructions=args.research_instructions,
         reasoning_effort=str(getattr(args, "reasoning_effort", "medium")),
+        last_usage_lines=[],
     )
     _print_banner(state)
 
@@ -1045,17 +1243,13 @@ def run_tui(args) -> int:
                 result.attachments = attachments
                 result.warnings = [*attachment_warnings, *result.warnings]
             else:
-                agent = _ensure_openai_agent(state)
-                response = agent.run(expanded_prompt, max_rounds=state.max_rounds)
-                result = ChatResult(
-                    text=response,
-                    tool_events=[],
-                    attachments=attachments,
-                    warnings=attachment_warnings,
-                )
+                result = _run_openai_prompt(state, expanded_prompt)
+                result.attachments = attachments
+                result.warnings = [*attachment_warnings, *result.warnings]
         except Exception as exc:  # noqa: BLE001
             spinner.stop()
             print(f"  {C_ERROR}✗ Error:{RESET} {exc}")
             continue
         spinner.stop()
+        state.last_usage_lines = list(result.usage_lines)
         _render_prompt_and_response(result)
