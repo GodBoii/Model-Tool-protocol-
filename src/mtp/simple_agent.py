@@ -34,6 +34,8 @@ class MTPAgent:
         max_history_messages: int = 200,
         enforce_provider_capabilities: bool = True,
         allow_stream_fallback: bool = True,
+        autoresearch: bool = False,
+        research_instructions: str | None = None,
         mode: str = "standalone",
         members: dict[str, Agent] | None = None,
         session_store: SessionStore | None = None,
@@ -55,6 +57,8 @@ class MTPAgent:
             max_history_messages=max_history_messages,
             enforce_provider_capabilities=enforce_provider_capabilities,
             allow_stream_fallback=allow_stream_fallback,
+            autoresearch=autoresearch,
+            research_instructions=research_instructions,
             mode=mode,
             members=members,
             session_store=session_store,
@@ -619,6 +623,7 @@ class MTPAgent:
             "text_chunk",
             "run_completed",
             "run_cancelled",
+            "run_terminated",
             "run_paused",
             "run_failed",
             "tool_retry_requested",
@@ -932,6 +937,14 @@ class MTPAgent:
 
         if event_type == "run_paused":
             self._log_line("INFO", f"[MTP RUN PAUSED] round={event.get('round')} tool_name={event.get('tool_name')}  {meta}")
+            self._print_wrapped_block("Reason", event.get("reason"), indent="  ", width=100)
+            return False
+
+        if event_type == "run_terminated":
+            self._log_line(
+                "INFO",
+                f"[MTP RUN TERMINATED] round={event.get('round')} tool_name={event.get('tool_name')}  {meta}",
+            )
             self._print_wrapped_block("Reason", event.get("reason"), indent="  ", width=100)
             return False
 
