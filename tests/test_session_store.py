@@ -11,6 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from mtp import Agent, JsonSessionStore, ToolRegistry
 from mtp.agent import AgentAction, ProviderAdapter
+from mtp.prompts import DEFAULT_AUTORESEARCH_SYSTEM_INSTRUCTIONS
 from mtp.protocol import ToolResult, ToolSpec
 
 
@@ -21,6 +22,20 @@ class _HistoryEchoProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict], tool_results: list[ToolResult]) -> str:
         return ""
+
+
+class _CaptureProvider(ProviderAdapter):
+    def __init__(self) -> None:
+        self.last_messages: list[dict] = []
+        self.last_tools: list[str] = []
+
+    def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
+        self.last_messages = [dict(message) for message in messages]
+        self.last_tools = [tool.name for tool in tools]
+        return AgentAction(response_text="ok")
+
+    def finalize(self, messages: list[dict], tool_results: list[ToolResult]) -> str:
+        return "ok"
 
 
 class SessionStoreTests(unittest.TestCase):
@@ -65,6 +80,49 @@ class SessionStoreTests(unittest.TestCase):
             second = second_agent.run_output("user2 message", session_id="shared", user_id="u2")
             self.assertNotIn("user1 message", second.final_text)
             self.assertIn("user2 message", second.final_text)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_autoresearch_content_not_reused_when_disabled(self) -> None:
+        tmp_dir = self._workspace_temp_dir()
+        try:
+            store = JsonSessionStore(db_path=tmp_dir, session_table="sessions")
+            tools = ToolRegistry()
+
+            on_provider = _CaptureProvider()
+            on_agent = Agent(
+                provider=on_provider,
+                tools=tools,
+                session_store=store,
+                autoresearch=True,
+            )
+            on_agent.run_output("first run", session_id="s1", user_id="u1")
+            self.assertIn("agent.terminate", on_provider.last_tools)
+            self.assertTrue(
+                any(
+                    DEFAULT_AUTORESEARCH_SYSTEM_INSTRUCTIONS in str(message.get("content", ""))
+                    for message in on_provider.last_messages
+                    if message.get("role") == "system"
+                )
+            )
+
+            off_provider = _CaptureProvider()
+            off_agent = Agent(
+                provider=off_provider,
+                tools=tools,
+                session_store=store,
+                autoresearch=False,
+            )
+            off_agent.run_output("second run", session_id="s1", user_id="u1")
+
+            self.assertNotIn("agent.terminate", off_provider.last_tools)
+            self.assertFalse(
+                any(
+                    DEFAULT_AUTORESEARCH_SYSTEM_INSTRUCTIONS in str(message.get("content", ""))
+                    for message in off_provider.last_messages
+                    if message.get("role") == "system"
+                )
+            )
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
