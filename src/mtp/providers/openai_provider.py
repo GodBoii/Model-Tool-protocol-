@@ -138,6 +138,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             mtp_calls: list[ToolCall] = []
             id_by_index: dict[int, str] = {}
             serialized_tool_calls: list[dict[str, Any]] = []
+            call_reasoning = message.content.strip() if isinstance(message.content, str) and message.content.strip() else None
             for idx, tc in enumerate(tool_calls):
                 call_id = tc.id or f"call_{idx}"
                 id_by_index[idx] = call_id
@@ -150,6 +151,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
                         name=tc.function.name,
                         arguments=normalized_args,
                         depends_on=depends_on,
+                        reasoning=call_reasoning,
                     )
                 )
                 serialized_tool_calls.append(
@@ -157,6 +159,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
                         "id": call_id,
                         "type": "function",
                         "function": {"name": tc.function.name, "arguments": tc.function.arguments or "{}"},
+                        "reasoning": call_reasoning,
                     }
                 )
 
