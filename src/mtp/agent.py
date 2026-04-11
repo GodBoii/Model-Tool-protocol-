@@ -526,8 +526,8 @@ class Agent:
                     continue
                 spec = specs_by_name.get(call.name)
                 tool_has_reasoning_arg = self._tool_supports_argument(spec, self._TOOL_REASONING_ARG)
-                if not isinstance(call.reasoning, str) or not call.reasoning.strip():
-                    call.reasoning = arg_reasoning.strip()
+                # Prefer per-call reasoning passed in arguments over generic message-level reasoning.
+                call.reasoning = arg_reasoning.strip()
                 if not tool_has_reasoning_arg:
                     call.arguments.pop(self._TOOL_REASONING_ARG, None)
 

@@ -887,6 +887,8 @@ def _parse_codex_json_events(stdout_text: str, active_model: str | None) -> tupl
     total_usage: dict[str, int] = {}
     peak_request_tokens: int | None = None
     rate_fields: dict[str, Any] = {}
+    tool_state: dict[str, tuple[str, str | None]] = {}
+    tool_order: list[str] = []
     for raw_line in stdout_text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -916,7 +918,7 @@ def _parse_codex_json_events(stdout_text: str, active_model: str | None) -> tupl
                 peak_request_tokens = max(peak_request_tokens or 0, request_tokens)
         _extract_rate_values(event, rate_fields)
         event_type = str(event.get("type", "")).strip().lower()
-        tool_name, tool_reasoning = _extract_codex_tool_signal(event, event_type)
+        tool_name, tool_reasoning, tool_key, _tool_phase = _extract_codex_tool_signal_details(event, event_type)
         if event_type in {"response.output_text.delta", "response.output_text"}:
             delta = event.get("delta") or event.get("text") or ""
             if isinstance(delta, str) and delta:
@@ -928,11 +930,23 @@ def _parse_codex_json_events(stdout_text: str, active_model: str | None) -> tupl
                 final_text = text.strip()
             continue
         if tool_name:
-            if tool_reasoning:
-                tool_events.append(f"{tool_name}: {tool_reasoning}")
+            key = tool_key or f"{tool_name}::{len(tool_order)}"
+            existing = tool_state.get(key)
+            if existing is None:
+                tool_state[key] = (tool_name, tool_reasoning)
+                tool_order.append(key)
             else:
-                tool_events.append(tool_name)
+                prev_name, prev_reasoning = existing
+                chosen_name = prev_name or tool_name
+                chosen_reasoning = _prefer_tool_reasoning(prev_reasoning, tool_reasoning)
+                tool_state[key] = (chosen_name, chosen_reasoning)
             continue
+    for key in tool_order:
+        name, reasoning = tool_state[key]
+        if reasoning:
+            tool_events.append(f"{name}: {reasoning}")
+        else:
+            tool_events.append(name)
     if assistant_chunks:
         final_text = "".join(assistant_chunks).strip() or final_text
     usage_lines.append(
@@ -983,7 +997,7 @@ def _emit_live_event(kind: str, message: str) -> None:
     print(f"  {color}[{label}]{RESET} {C_TEXT}{message}{RESET}")
 
 
-def _emit_codex_live_line(raw_line: str, emitted: dict[str, bool]) -> None:
+def _emit_codex_live_line(raw_line: str, emitted: dict[str, Any]) -> None:
     line = raw_line.strip()
     if not line:
         return
@@ -995,17 +1009,29 @@ def _emit_codex_live_line(raw_line: str, emitted: dict[str, bool]) -> None:
     except json.JSONDecodeError:
         return
     event_type = str(event.get("type", "")).strip().lower()
-    tool_name, tool_reasoning = _extract_codex_tool_signal(event, event_type)
+    tool_name, tool_reasoning, tool_key, _tool_phase = _extract_codex_tool_signal_details(event, event_type)
     if event_type in {"response.output_text.delta", "response.output_text"}:
         if not emitted.get("assistant_started"):
             emitted["assistant_started"] = True
             _emit_live_event("status", "assistant is drafting the response")
         return
     if tool_name:
-        if tool_reasoning:
-            _emit_live_event("tool", f"{tool_name}: {_shorten_text(tool_reasoning, 180)}")
-        else:
-            _emit_live_event("tool", tool_name)
+        key = tool_key or f"{tool_name}::{event_type}"
+        tool_stream_state = emitted.setdefault("tool_stream_state", {})
+        if not isinstance(tool_stream_state, dict):
+            tool_stream_state = {}
+            emitted["tool_stream_state"] = tool_stream_state
+        prev_reasoning = tool_stream_state.get(key)
+        if not isinstance(prev_reasoning, str):
+            prev_reasoning = None
+        chosen_reasoning = _prefer_tool_reasoning(prev_reasoning, tool_reasoning)
+        # Emit once per tool key; re-emit only when reasoning meaningfully improves.
+        if prev_reasoning is None or chosen_reasoning != prev_reasoning:
+            if chosen_reasoning:
+                _emit_live_event("tool", f"{tool_name}: {_shorten_text(chosen_reasoning, 180)}")
+            else:
+                _emit_live_event("tool", tool_name)
+            tool_stream_state[key] = chosen_reasoning
         return
     if event_type.endswith("started") or event_type in {"run_started", "round_started", "plan_received"}:
         round_id = event.get("round")
@@ -1020,11 +1046,45 @@ def _emit_codex_live_line(raw_line: str, emitted: dict[str, bool]) -> None:
 
 
 def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[str | None, str | None]:
+    name, reasoning, _tool_key, _tool_phase = _extract_codex_tool_signal_details(event, event_type)
+    return name, reasoning
+
+
+def _prefer_tool_reasoning(existing: str | None, incoming: str | None) -> str | None:
+    existing_text = existing.strip() if isinstance(existing, str) and existing.strip() else None
+    incoming_text = incoming.strip() if isinstance(incoming, str) and incoming.strip() else None
+    if incoming_text is None:
+        return existing_text
+    if existing_text is None:
+        return incoming_text
+    existing_is_shell_fallback = existing_text.lower().startswith("running shell command:")
+    incoming_is_shell_fallback = incoming_text.lower().startswith("running shell command:")
+    if existing_is_shell_fallback and not incoming_is_shell_fallback:
+        return incoming_text
+    if not existing_is_shell_fallback and incoming_is_shell_fallback:
+        return existing_text
+    if len(incoming_text) > len(existing_text):
+        return incoming_text
+    return existing_text
+
+
+def _extract_codex_tool_signal_details(
+    event: dict[str, Any],
+    event_type: str,
+) -> tuple[str | None, str | None, str | None, str]:
     def _get_str(value: Any) -> str | None:
         if isinstance(value, str):
             text = value.strip()
             return text or None
         return None
+
+    def _event_phase(event_type_value: str) -> str:
+        lowered = (event_type_value or "").lower()
+        if any(token in lowered for token in ("started", "start", "begin")):
+            return "started"
+        if any(token in lowered for token in ("finished", "complete", "end")):
+            return "finished"
+        return "update"
 
     def _first_nested_reasoning(container: dict[str, Any]) -> str | None:
         for key in ("arguments", "args", "input", "payload", "metadata", "details"):
@@ -1068,10 +1128,40 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
             return "shell.run_command"
         return name
 
-    def _from_item(item: dict[str, Any]) -> tuple[str | None, str | None]:
+    def _tool_key(
+        *,
+        event_obj: dict[str, Any],
+        item_obj: dict[str, Any] | None,
+        normalized_name: str | None,
+        reasoning: str | None,
+    ) -> str | None:
+        for source in (item_obj, event_obj):
+            if not isinstance(source, dict):
+                continue
+            for candidate in ("call_id", "id", "tool_call_id", "invocation_id"):
+                value = _get_str(source.get(candidate))
+                if value:
+                    return value
+        for source in (item_obj, event_obj):
+            if not isinstance(source, dict):
+                continue
+            for container_key in ("payload", "arguments", "args", "metadata", "details"):
+                container = source.get(container_key)
+                if not isinstance(container, dict):
+                    continue
+                for candidate in ("call_id", "id", "tool_call_id", "invocation_id"):
+                    value = _get_str(container.get(candidate))
+                    if value:
+                        return value
+        if normalized_name:
+            reason_basis = reasoning or ""
+            return f"{normalized_name}|{_shorten_text(reason_basis, 80)}"
+        return None
+
+    def _from_item(item: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
         item_type = _get_str(item.get("type")) or _get_str(item.get("kind")) or ""
         if item_type in {"message", "assistant_message", "reasoning", "analysis"}:
-            return None, None
+            return None, None, None
         name = (
             _get_str(item.get("name"))
             or _get_str(item.get("tool_name"))
@@ -1082,7 +1172,7 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
             name = item_type
         normalized_name = _normalize_tool_name(name, item_type=item_type)
         if not normalized_name:
-            return None, None
+            return None, None, None
         reasoning = (
             _get_str(item.get("reasoning"))
             or _get_str(item.get("summary"))
@@ -1096,7 +1186,12 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
         if not reasoning and _looks_like_shell_command(name):
             command_preview = _shorten_text(name, 140)
             reasoning = f"running shell command: {command_preview}"
-        return normalized_name, reasoning
+        return normalized_name, reasoning, _tool_key(
+            event_obj=event,
+            item_obj=item,
+            normalized_name=normalized_name,
+            reasoning=reasoning,
+        )
 
     if "tool" in event_type or "exec_command" in event_type or "function_call" in event_type:
         name = (
@@ -1120,21 +1215,26 @@ def _extract_codex_tool_signal(event: dict[str, Any], event_type: str) -> tuple[
         if not reasoning and _looks_like_shell_command(_get_str(event.get("command"))):
             command_preview = _shorten_text(_get_str(event.get("command")) or "", 140)
             reasoning = f"running shell command: {command_preview}"
-        return name, reasoning
+        return name, reasoning, _tool_key(
+            event_obj=event,
+            item_obj=None,
+            normalized_name=name,
+            reasoning=reasoning,
+        ), _event_phase(event_type)
 
     item = event.get("item")
     if isinstance(item, dict):
-        name, reasoning = _from_item(item)
+        name, reasoning, key = _from_item(item)
         if name:
-            return name, reasoning
+            return name, reasoning, key, _event_phase(event_type)
 
     payload = event.get("payload")
     if isinstance(payload, dict):
-        name, reasoning = _from_item(payload)
+        name, reasoning, key = _from_item(payload)
         if name:
-            return name, reasoning
+            return name, reasoning, key, _event_phase(event_type)
 
-    return None, None
+    return None, None, None, _event_phase(event_type)
 
 
 def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
@@ -1181,7 +1281,7 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
         bufsize=1,
     )
     stdout_lines: list[str] = []
-    emitted: dict[str, bool] = {}
+    emitted: dict[str, Any] = {}
     if proc.stdout is not None:
         for line in proc.stdout:
             stdout_lines.append(line)
