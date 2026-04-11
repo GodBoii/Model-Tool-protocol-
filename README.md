@@ -184,6 +184,11 @@ pip install -e ".[groq,dotenv,ui-streamlit]"
 streamlit run examples/streamlit_groq_agent_chat.py
 ```
 
+```bash
+pip install -e ".[dotenv,ui-streamlit,groq,openai,openrouter]"
+mtp agent-os
+```
+
 ## Docs map
 - [Quickstart](docs/QUICKSTART.md)
 - [Agent API Reference](docs/AGENT_API.md)

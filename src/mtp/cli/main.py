@@ -9,6 +9,7 @@ import sys
 from typing import Iterable
 
 from .doctor import run_doctor
+from ..agent_os import launch as launch_agent_os
 from .providers import get_provider, providers_as_rows
 from .scaffold import VALID_TEMPLATES, scaffold_project
 from .tui import run_tui
@@ -144,6 +145,10 @@ def _cmd_tui(args: argparse.Namespace) -> int:
     return int(run_tui(args))
 
 
+def _cmd_agent_os(_args: argparse.Namespace) -> int:
+    return int(launch_agent_os())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mtp",
@@ -220,6 +225,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Custom research instructions for mtp-openai backend when autoresearch is enabled.",
     )
     tui_cmd.set_defaults(handler=_cmd_tui)
+
+    agent_os_cmd = sub.add_parser("agent-os", help="Launch Streamlit Agent OS UI.")
+    agent_os_cmd.set_defaults(handler=_cmd_agent_os)
 
     return parser
 
