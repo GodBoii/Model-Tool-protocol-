@@ -131,6 +131,36 @@ class _PlanWithReasoningArgProvider(ProviderAdapter):
         return "done"
 
 
+class _PlanWithGenericAndPerCallReasoningProvider(ProviderAdapter):
+    def __init__(self) -> None:
+        self._step = 0
+
+    def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
+        if self._step == 0:
+            self._step += 1
+            return AgentAction(
+                plan=ExecutionPlan(
+                    batches=[
+                        ToolBatch(
+                            mode="parallel",
+                            calls=[
+                                ToolCall(
+                                    id="call-1",
+                                    name="echo.tool",
+                                    arguments={"text": "hello", "reasoning": "Per-call: run echo first"},
+                                    reasoning="Generic: I will solve the task step by step",
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+        return AgentAction(response_text="done")
+
+    def finalize(self, messages: list[dict], tool_results: list[ToolResult]) -> str:
+        return "done"
+
+
 class _FailingProvider(ProviderAdapter):
     def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
         raise RuntimeError("boom")
@@ -334,6 +364,15 @@ class AgentTests(unittest.TestCase):
         props = schema.get("properties", {})
         self.assertIsInstance(props, dict)
         self.assertIn("reasoning", props)
+
+    def test_per_call_reasoning_overrides_generic_reasoning(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        provider = _PlanWithGenericAndPerCallReasoningProvider()
+        agent = Agent(provider=provider, tools=reg, stream_tool_events=True, stream_tool_results=False)
+        events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
+        tool_started = next(event for event in events if event["type"] == "tool_started")
+        self.assertEqual(tool_started.get("reasoning"), "Per-call: run echo first")
 
 
 if __name__ == "__main__":

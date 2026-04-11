@@ -57,6 +57,38 @@ class TUIEventParsingTests(unittest.TestCase):
         self.assertEqual(name, "shell.run_command")
         self.assertEqual(reasoning, "Need directory listing before final response")
 
+    def test_parse_codex_json_events_collapses_duplicate_tool_lifecycle_events(self) -> None:
+        lines = [
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {
+                        "id": "call_1",
+                        "type": "exec_command_begin",
+                        "command": '"C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Name"',
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "call_1",
+                        "type": "exec_command_end",
+                        "command": '"C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Name"',
+                        "arguments": {"summary": "Need directory listing before final response"},
+                    },
+                }
+            ),
+        ]
+        _text, tool_events, warnings, _usage = _parse_codex_json_events("\n".join(lines), "gpt-5.3-codex")
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(tool_events), 1)
+        self.assertEqual(
+            tool_events[0],
+            "shell.run_command: Need directory listing before final response",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
