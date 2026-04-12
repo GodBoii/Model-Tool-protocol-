@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Search } from "lucide-react";
 
 const sidebarGroups = [
   {
@@ -23,7 +22,8 @@ const sidebarGroups = [
   {
     title: "Documentation",
     links: [
-      { name: "Quickstart", href: "/docs" },
+      { name: "Introduction", href: "/docs/introduction" },
+      { name: "Quickstart", href: "/docs/quickstart" },
     ],
   },
 ];
@@ -32,28 +32,14 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-[260px] h-[calc(100vh-64px)] flex-shrink-0 flex flex-col border-r border-white/[0.08] bg-surface overflow-y-auto sticky top-16">
-      <div className="p-4 border-b border-white/[0.05]">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-on-surface-variant opacity-70" />
-          <input 
-            type="text" 
-            placeholder="Search..." 
-            className="w-full bg-surface-container border border-white/[0.1] rounded-md pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:border-tertiary text-on-surface placeholder:text-on-surface-variant/70"
-          />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
-            <kbd className="hidden sm:inline-block border border-white/20 bg-surface-container-high rounded px-1.5 text-[10px] font-mono text-on-surface-variant">⌘K</kbd>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 py-4 px-3 space-y-6">
+    <aside className="w-64 h-screen flex-shrink-0 flex flex-col border-r border-white/[0.06] bg-black overflow-y-auto sticky top-0 pt-16 hide-scrollbar">
+      <div className="flex-1 py-10 px-4 space-y-8">
         {sidebarGroups.map((group) => (
           <div key={group.title}>
-            <h3 className="px-3 mb-2 text-xs font-semibold text-on-surface-variant/80 tracking-wide">
+            <h3 className="px-3 mb-4 text-[11px] font-bold text-white/40 uppercase tracking-widest">
               {group.title}
             </h3>
-            <ul className="space-y-[2px]">
+            <ul className="space-y-1">
               {group.links.map((link) => {
                 const isActive = pathname === link.href;
                 return (
@@ -61,10 +47,10 @@ export function Sidebar() {
                     <Link
                       href={link.href}
                       className={cn(
-                        "block px-3 py-1.5 text-sm rounded-md transition-colors",
+                        "flex items-center px-4 py-2 text-[14px] leading-tight transition-all rounded-md",
                         isActive
-                          ? "bg-surface-container-highest text-on-surface font-medium"
-                          : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                          ? "text-white bg-white/[0.05] border-l-2 border-tertiary font-medium"
+                          : "text-white/40 hover:text-white/70 hover:bg-white/[0.02] border-l-2 border-transparent"
                       )}
                     >
                       {link.name}

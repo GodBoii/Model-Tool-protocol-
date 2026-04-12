@@ -3,41 +3,39 @@ import { PlaySquare, Send, Server, User, Cpu } from "lucide-react";
 
 export default function Playground() {
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-surface flex flex-col text-on-surface">
-      <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 md:p-8 lg:p-16 flex gap-6 xl:gap-12">
+    <div className="min-h-screen bg-black flex flex-col text-white/90">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-12 lg:p-16 flex gap-12">
         
         {/* Sidebar settings */}
-        <aside className="w-64 flex-shrink-0 flex flex-col gap-6">
+        <aside className="w-64 flex-shrink-0 flex flex-col gap-10">
           <div>
-            <h2 className="text-sm font-semibold tracking-wider text-on-surface uppercase mb-4">Configuration</h2>
-            <div className="space-y-4">
+            <h2 className="text-[11px] font-bold tracking-[0.2em] text-white/40 uppercase mb-6">Configuration</h2>
+            <div className="space-y-6">
               <div className="flex flex-col gap-2">
-                <label className="text-xs text-on-surface-variant uppercase tracking-wide">Provider</label>
-                <select className="bg-surface-container-low border border-white/[0.05] rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary">
-                  <option>Groq</option>
-                  <option>OpenRouter</option>
-                  <option>Anthropic</option>
-                  <option>Cohere</option>
+                <label className="text-[11px] font-medium text-white/30 uppercase tracking-widest">Provider</label>
+                <select className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-tertiary transition-all">
+                  <option className="bg-black">Groq</option>
+                  <option className="bg-black">OpenRouter</option>
+                  <option className="bg-black">Anthropic</option>
                 </select>
               </div>
 
               <div className="flex flex-col gap-2">
-                <label className="text-xs text-on-surface-variant uppercase tracking-wide">Model</label>
-                <select className="bg-surface-container-low border border-white/[0.05] rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary">
-                  <option>Llama 3 8B (Groq)</option>
-                  <option>Mixtral 8x7B (Groq)</option>
-                  <option>Claude 3.5 Sonnet</option>
+                <label className="text-[11px] font-medium text-white/30 uppercase tracking-widest">Model</label>
+                <select className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-tertiary transition-all">
+                  <option className="bg-black">Llama 3 8B (Groq)</option>
+                  <option className="bg-black">Claude 3.5 Sonnet</option>
                 </select>
               </div>
             </div>
           </div>
           
           <div>
-            <h2 className="text-sm font-semibold tracking-wider text-on-surface uppercase mb-4">Enabled Tools</h2>
-            <div className="space-y-2">
+            <h2 className="text-[11px] font-bold tracking-[0.2em] text-white/40 uppercase mb-6">Tools</h2>
+            <div className="space-y-3">
               {['search_web', 'read_file', 'run_command', 'get_weather'].map((tool) => (
-                <label key={tool} className="flex items-center gap-3 text-sm text-on-surface-variant cursor-pointer">
-                  <input type="checkbox" defaultChecked className="accent-primary w-4 h-4 rounded-sm border-white/10 bg-surface-container" />
+                <label key={tool} className="flex items-center gap-3 text-[13px] text-white/50 hover:text-white/80 cursor-pointer transition-all">
+                  <input type="checkbox" defaultChecked className="accent-tertiary size-4 rounded bg-white/[0.05] border-white/10" />
                   {tool}
                 </label>
               ))}
@@ -46,50 +44,50 @@ export default function Playground() {
         </aside>
 
         {/* Chat / Playground Area */}
-        <section className="flex-1 flex flex-col min-h-0 bg-surface-container-lowest rounded-xl border border-white/[0.05] overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <section className="flex-1 flex flex-col min-h-0 bg-white/[0.02] rounded-2xl border border-white/[0.06] overflow-hidden shadow-2xl">
+          <div className="flex-1 overflow-y-auto p-8 space-y-8 hide-scrollbar">
             
-            <div className="flex gap-4">
-              <div className="size-8 rounded-full bg-surface-container-high flex items-center justify-center border border-white/10 flex-shrink-0">
-                <User className="size-4 text-primary" />
+            <div className="flex gap-5">
+              <div className="size-9 rounded-xl bg-white/[0.05] flex items-center justify-center border border-white/[0.1] flex-shrink-0">
+                <User className="size-4.5 text-white/60" />
               </div>
-              <div className="flex-1 space-y-2">
-                <p className="text-sm text-on-surface leading-relaxed">
+              <div className="flex-1">
+                <p className="text-[15px] text-white/80 leading-relaxed mt-1.5">
                   Can you check the current weather in Tokyo and then run a quick search for top events happening there this weekend?
                 </p>
               </div>
             </div>
 
-            <div className="flex gap-4">
-              <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 flex-shrink-0">
-                <Cpu className="size-4 text-primary" />
+            <div className="flex gap-5">
+              <div className="size-9 rounded-xl bg-tertiary/10 flex items-center justify-center border border-tertiary/20 flex-shrink-0">
+                <Cpu className="size-4.5 text-tertiary" />
               </div>
-              <div className="flex-1 space-y-4">
-                <p className="text-sm text-on-surface leading-relaxed">
+              <div className="flex-1 space-y-6">
+                <p className="text-[15px] text-white/80 leading-relaxed mt-1.5">
                   I will use my tools to gather that information for you.
                 </p>
                 
-                <AnimatedCard className="p-3 border-l-2 border-l-tertiary bg-surface-container border-y-white/[0.05] border-r-white/[0.05] flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-xs font-mono text-tertiary">
-                    <Server className="size-3" />
+                <div className="p-4 rounded-xl border border-tertiary/20 bg-tertiary/[0.03] flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-tertiary uppercase tracking-widest">
+                    <Server className="size-3.5" />
                     <span>Tool Call: get_weather</span>
                   </div>
-                  <pre className="text-xs text-on-surface-variant font-mono">
+                  <pre className="text-[13px] text-white/60 font-mono bg-black/40 p-3 rounded-lg border border-white/[0.05]">
                     {`{"location": "Tokyo", "unit": "celsius"}`}
                   </pre>
-                </AnimatedCard>
+                </div>
                 
-                <AnimatedCard className="p-3 border-l-2 border-l-tertiary/50 bg-surface-container-low border-y-white/[0.02] border-r-white/[0.02] flex flex-col gap-2">
-                   <div className="flex items-center gap-2 text-xs font-mono text-on-surface-variant">
-                    <Server className="size-3 opacity-50" />
+                <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.01] flex flex-col gap-3">
+                   <div className="flex items-center gap-2 text-[11px] font-bold text-white/30 uppercase tracking-widest">
+                    <Server className="size-3.5" />
                     <span>Result</span>
                   </div>
-                  <p className="text-xs text-on-surface-variant font-mono">
+                  <p className="text-[13px] text-white/60 font-mono">
                     22°C, mostly cloudy.
                   </p>
-                </AnimatedCard>
+                </div>
 
-                <p className="text-sm text-on-surface leading-relaxed">
+                <p className="text-[15px] text-white/80 leading-relaxed">
                   Currently, it is 22°C and mostly cloudy in Tokyo. Now, I will search for the events...
                 </p>
               </div>
@@ -97,18 +95,18 @@ export default function Playground() {
 
           </div>
 
-          <div className="p-4 bg-surface border-t border-white/[0.05]">
-            <div className="relative flex items-center">
+          <div className="p-6 bg-black/40 border-t border-white/[0.06]">
+            <div className="relative flex items-center group">
               <textarea 
-                className="w-full bg-surface-container border border-white/[0.08] rounded-lg pl-4 pr-12 py-3 text-sm text-on-surface focus:outline-none focus:border-primary resize-none placeholder:text-on-surface-variant/50"
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl pl-5 pr-14 py-4 text-[14px] text-white placeholder:text-white/20 focus:outline-none focus:border-tertiary/50 transition-all resize-none shadow-inner"
                 placeholder="Message MTP Agent..."
                 rows={1}
               />
-              <button className="absolute right-2 p-1.5 bg-primary text-on-primary rounded-md hover:bg-primary-fixed transition-colors">
-                <Send className="size-4" />
+              <button className="absolute right-3 size-10 bg-tertiary text-black rounded-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center shadow-lg shadow-tertiary/20">
+                <Send className="size-4.5" />
               </button>
             </div>
-            <p className="text-center text-xs text-on-surface-variant/60 mt-3">
+            <p className="text-center text-[11px] text-white/20 mt-4 tracking-wide">
               MTP Agents can make mistakes. Consider verifying important information.
             </p>
           </div>
