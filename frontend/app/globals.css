@@ -68,6 +68,10 @@
   --radius-lg: var(--border-radius-lg);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -88,4 +92,13 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--surface-container-highest);
+}
+
+/* Hidden scrollbar utility */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
