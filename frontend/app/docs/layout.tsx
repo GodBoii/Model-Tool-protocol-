@@ -72,23 +72,6 @@ export default function DocsLayout({
           </a>
         </nav>
 
-        <div className="ml-auto flex items-center gap-5">
-          {/* Search */}
-          <div className="relative hidden md:block">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4.5 text-white/20" />
-            <input
-              type="text"
-              placeholder="Search..."
-              className="w-64 bg-white/[0.04] border border-white/[0.06] rounded-md pl-10 pr-10 py-2.5 text-[14px] text-white placeholder:text-white/25 focus:outline-none focus:border-white/[0.12] transition-all"
-            />
-            <kbd className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] text-white/15 border border-white/[0.08] rounded px-2 py-0.5 font-mono">
-              ⌘K
-            </kbd>
-          </div>
-          <Link href="/" className="text-[14px] text-white/30 hover:text-white/60 transition-colors">
-            Home
-          </Link>
-        </div>
       </header>
 
       <div className="flex pt-16">

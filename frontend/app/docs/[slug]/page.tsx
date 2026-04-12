@@ -144,8 +144,8 @@ function DocContentRenderer({ blocks }: { blocks: DocContentBlock[] }) {
 
           case "callout": {
             const config = {
-              note: { icon: Info, border: "border-blue-400/20", bg: "bg-blue-500/[0.03]", iconColor: "text-blue-400/70", label: "Note" },
-              tip: { icon: Lightbulb, border: "border-emerald-400/20", bg: "bg-emerald-500/[0.03]", iconColor: "text-emerald-400/70", label: "Tip" },
+              note: { icon: Info, border: "border-tertiary/20", bg: "bg-tertiary/[0.03]", iconColor: "text-tertiary/70", label: "Note" },
+              tip: { icon: Lightbulb, border: "border-tertiary/20", bg: "bg-tertiary/[0.03]", iconColor: "text-tertiary/70", label: "Tip" },
               warning: { icon: AlertTriangle, border: "border-orange-400/20", bg: "bg-orange-500/[0.03]", iconColor: "text-orange-400/70", label: "Warning" },
             }[block.calloutType || "note"]!;
             const Icon = config.icon;
@@ -272,31 +272,32 @@ export default function DocPage({ params }: { params: Promise<{ slug: string }> 
         <DocContentRenderer blocks={content} />
 
         {/* Navigation Footer */}
-        <div className="mt-16 pt-6 border-t border-white/[0.04] flex items-center justify-between">
+        <div className="mt-20 pt-10 border-t border-white/[0.08] flex items-center justify-between gap-6">
           {prev ? (
             <Link
               href={`/docs/${prev.slug}`}
-              className="flex items-center gap-2 text-[13px] text-white/30 hover:text-white/60 transition-colors group"
+              className="flex-1 max-w-[240px] flex items-center gap-4 p-4 rounded-xl border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.04] transition-all group"
             >
-              <ChevronLeft className="size-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              <ChevronLeft className="size-5 text-white/20 group-hover:text-tertiary group-hover:-translate-x-1 transition-all" />
               <div>
-                <div className="text-[9px] uppercase tracking-wider text-white/15 mb-0.5">Previous</div>
-                <div>{prev.title}</div>
+                <div className="text-[10px] uppercase tracking-widest text-white/30 mb-1 font-bold">Previous</div>
+                <div className="text-[15px] font-semibold text-white/80 group-hover:text-white transition-colors">{prev.title}</div>
               </div>
             </Link>
-          ) : <div />}
+          ) : <div className="flex-1" />}
+          
           {next ? (
             <Link
               href={`/docs/${next.slug}`}
-              className="flex items-center gap-2 text-[13px] text-white/30 hover:text-white/60 transition-colors group text-right"
+              className="flex-1 max-w-[240px] flex items-center justify-between p-4 rounded-xl border border-white/[0.04] bg-white/[0.01] hover:bg-white/[0.04] transition-all group text-right"
             >
-              <div>
-                <div className="text-[9px] uppercase tracking-wider text-white/15 mb-0.5">Next</div>
-                <div>{next.title}</div>
+              <div className="flex-1">
+                <div className="text-[10px] uppercase tracking-widest text-white/30 mb-1 font-bold">Next</div>
+                <div className="text-[15px] font-semibold text-white/80 group-hover:text-white transition-colors">{next.title}</div>
               </div>
-              <ChevronRight className="size-3.5 group-hover:translate-x-0.5 transition-transform" />
+              <ChevronRight className="size-5 text-white/20 group-hover:text-tertiary group-hover:translate-x-1 transition-all" />
             </Link>
-          ) : <div />}
+          ) : <div className="flex-1" />}
         </div>
       </div>
     </>
