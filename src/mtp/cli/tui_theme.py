@@ -236,3 +236,28 @@ def shorten_text(text: str, limit: int = 160) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3] + "..."
+
+
+def input_box_top(width: int | None = None, label: str | None = None) -> str:
+    """Render the top border of an input box, optionally with a label.
+    
+    Examples:
+        ╭─────────────────────────────────────────╮
+        ╭─ mtp:cdx:b87744 ─────────────────────────╮
+    """
+    w = (width or get_term_width()) - 2
+    if label:
+        # Calculate space for label with padding
+        label_text = f" {label} "
+        label_len = len(strip_ansi(label_text))
+        if label_len + 4 < w:  # Ensure we have room
+            rule_after = w - label_len - 1
+            return f"{C_BORDER}{SYM_TL}{SYM_RULE}{label_text}{SYM_RULE * rule_after}{SYM_TR}{RESET}"
+    # No label or not enough space
+    return f"{C_BORDER}{SYM_TL}{SYM_RULE * w}{SYM_TR}{RESET}"
+
+
+def input_box_bottom(width: int | None = None) -> str:
+    """Render the bottom border of an input box."""
+    w = (width or get_term_width()) - 2
+    return f"{C_BORDER}{SYM_BL}{SYM_RULE * w}{SYM_BR}{RESET}"
