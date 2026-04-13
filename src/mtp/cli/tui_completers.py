@@ -210,19 +210,35 @@ DARK_THEME_STYLE = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_prompt_prefix_html(state) -> str:
-    """Build prompt prefix using prompt_toolkit HTML formatting."""
+    """Build prompt prefix using prompt_toolkit HTML formatting.
+    
+    Now simplified to just the arrow for use inside input box.
+    """
+    # Simple prompt arrow for inside the box
+    return f'<style fg="#a78bfa">{SYM_PROMPT_ARROW}</style> '
+
+
+def build_prompt_prefix_html_with_box(state) -> tuple[str, str, str]:
+    """Build input box frame and prompt prefix for prompt_toolkit.
+    
+    Returns:
+        (top_border, prompt_html, bottom_border)
+    """
+    from .tui_theme import input_box_top, input_box_bottom, get_term_width
+    
+    # Build session label for box header
     backend_short = "cdx" if state.backend == "codex" else "oai"
     session_short = state.session_id.split("-")[-1][:6]
-    cwd_name = state.cwd.name or str(state.cwd)
-    return (
-        f'<style fg="#646478">{cwd_name}</style>'
-        f' <style fg="#a78bfa" bold="true">mtp</style>'
-        f'<style fg="#646478">:</style>'
-        f'<style fg="#46a0be">{backend_short}</style>'
-        f'<style fg="#646478">:</style>'
-        f'<style fg="#6ee7b7">{session_short}</style>'
-        f' <style fg="#a78bfa">{SYM_PROMPT_ARROW}</style> '
-    )
+    label = f"mtp:{backend_short}:{session_short}"
+    
+    w = get_term_width()
+    top = input_box_top(width=w, label=label)
+    bottom = input_box_bottom(width=w)
+    
+    # Prompt with vertical border
+    prompt_html = f'<style fg="#4b4b64">│</style> <style fg="#a78bfa">{SYM_PROMPT_ARROW}</style> '
+    
+    return (top, prompt_html, bottom)
 
 
 def build_bottom_toolbar(state) -> str:
@@ -294,6 +310,13 @@ def build_prompt_session(state, banner_fn) -> "PromptSession | None":
 
         ptk_style = PTKStyle.from_dict(DARK_THEME_STYLE)
 
+        # Import placeholder support
+        try:
+            from prompt_toolkit.formatted_text import HTML as PTK_HTML
+            placeholder_text = PTK_HTML('<style fg="#646478">Type your message or @file to attach</style>')
+        except ImportError:
+            placeholder_text = None
+
         return PromptSession(
             history=FileHistory(str(history_path)),
             auto_suggest=AutoSuggestFromHistory(),
@@ -302,6 +325,7 @@ def build_prompt_session(state, banner_fn) -> "PromptSession | None":
             key_bindings=kb,
             style=ptk_style,
             mouse_support=False,
+            placeholder=placeholder_text,
         )
     except Exception as exc:
         # Graceful fallback — print a warning and return None

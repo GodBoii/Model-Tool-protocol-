@@ -50,6 +50,8 @@ from .tui_theme import (
     box_bottom as _box_bottom,
     box_separator as _box_separator,
     shorten_text as _shorten_text,
+    input_box_top as _input_box_top,
+    input_box_bottom as _input_box_bottom,
     # Color helpers (used in logo rendering)
     _fg_rgb, _bg_rgb,
 )
@@ -58,6 +60,7 @@ from .tui_completers import (
     HAS_PROMPT_TOOLKIT as _HAS_PROMPT_TOOLKIT,
     build_prompt_session as _build_prompt_session,
     build_prompt_prefix_html as _build_prompt_prefix_html,
+    build_prompt_prefix_html_with_box as _build_prompt_prefix_html_with_box,
     build_bottom_toolbar as _build_bottom_toolbar,
 )
 try:
@@ -1941,20 +1944,31 @@ def _confirm_large_input(raw: str) -> bool:
 
 
 def _compose_multiline_prompt() -> str | None:
-    print(f"  {C_DIM}Compose mode: paste/type multiple lines.{RESET}")
-    print(f"  {C_DIM}Type /send on a new line to submit, or /cancel to abort.{RESET}")
+    """Multi-line compose mode with box UI."""
+    w = _get_term_width()
+    
+    # Draw compose box header
+    print()
+    print(_input_box_top(width=w, label="compose mode"))
+    print(f"{C_BORDER}{_SYM_V}{RESET} {C_DIM}Type multiple lines. Use /send to submit or /cancel to abort.{RESET}")
+    print(_box_separator(width=w))
+    
     lines: list[str] = []
     while True:
         try:
-            line = input(f"  {C_ACCENT_DIM}...{RESET} ")
+            line = input(f"{C_BORDER}{_SYM_V}{RESET} {C_ACCENT_DIM}...{RESET} ")
         except (EOFError, KeyboardInterrupt):
+            print(_input_box_bottom(width=w))
             return None
         marker = line.strip().lower()
         if marker == "/cancel":
+            print(_input_box_bottom(width=w))
             return None
         if marker == "/send":
             break
         lines.append(line)
+    
+    print(_input_box_bottom(width=w))
     composed = "\n".join(lines).strip()
     return composed or None
 
@@ -2002,24 +2016,55 @@ def run_tui(args) -> int:
 
 
     while True:
+        # Track if we need to close the box on exception
+        box_opened = False
+        bottom_border = None
+        
         try:
             if ptk_session is not None:
                 # ── prompt_toolkit input with bottom toolbar & completions ──
+                # Draw input box frame
+                top_border, prompt_html, bottom_border = _build_prompt_prefix_html_with_box(state)
+                print(top_border)
+                box_opened = True
+                
                 toolbar = lambda: HTML(_build_bottom_toolbar(state))
-                prompt_html = HTML(_build_prompt_prefix_html(state))
                 raw = ptk_session.prompt(
-                    prompt_html,
+                    HTML(prompt_html),
                     bottom_toolbar=toolbar,
                 )
+                
+                # Close the box after input
+                print(bottom_border)
+                box_opened = False
             else:
                 # ── Fallback: plain input() ──
-                prompt_prefix = _build_prompt_prefix(state)
+                # Draw input box frame for fallback mode too
+                w = _get_term_width()
+                backend_short = "cdx" if state.backend == "codex" else "oai"
+                session_short = state.session_id.split("-")[-1][:6]
+                label = f"mtp:{backend_short}:{session_short}"
+                
+                top_border = _input_box_top(width=w, label=label)
+                bottom_border = _input_box_bottom(width=w)
+                
+                print(top_border)
+                box_opened = True
+                prompt_prefix = f"{C_BORDER}{_SYM_V}{RESET} {C_PROMPT_ARROW}{_SYM_PROMPT_ARROW}{RESET} "
                 raw = input(prompt_prefix)
+                print(bottom_border)
+                box_opened = False
         except KeyboardInterrupt:
+            # Close box if it was opened
+            if box_opened and bottom_border:
+                print(bottom_border)
             # Ctrl+C at prompt → stay in TUI
             print(f"\n{C_DIM}Interrupted. Type /exit or press Ctrl+D to quit.{RESET}")
             continue
         except EOFError:
+            # Close box if it was opened
+            if box_opened and bottom_border:
+                print(bottom_border)
             # Ctrl+D → exit
             print(f"\n{C_BRAND}Goodbye!{RESET}\n")
             return 0
