@@ -640,6 +640,302 @@ def _list_saved_sessions(store: JsonSessionStore) -> list[SessionRecord]:
     return sessions
 
 
+def _find_codex_session_file(thread_id: str) -> Path | None:
+    """
+    Search for Codex CLI session file by thread ID.
+    
+    Codex stores sessions in ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+    """
+    from datetime import datetime, timedelta
+    
+    codex_home = Path.home() / ".codex" / "sessions"
+    
+    if not codex_home.exists():
+        return None
+    
+    # Search recent sessions (last 30 days)
+    for days_ago in range(30):
+        date = datetime.now() - timedelta(days=days_ago)
+        date_path = codex_home / date.strftime("%Y/%m/%d")
+        
+        if not date_path.exists():
+            continue
+        
+        # Search JSONL files
+        for session_file in date_path.glob("rollout-*.jsonl"):
+            # Check if thread_id is in filename
+            if thread_id in session_file.name:
+                return session_file
+            
+            # Check first few lines of JSONL for thread_id
+            try:
+                with session_file.open("r", encoding="utf-8", errors="ignore") as f:
+                    for i, line in enumerate(f):
+                        if i > 20:  # Only check first 20 lines
+                            break
+                        if thread_id in line:
+                            return session_file
+            except Exception:
+                continue
+    
+    return None
+
+
+def _try_codex_thread_resume(state: TUIState, thread_id: str) -> tuple[bool, str | None]:
+    """
+    Test if a Codex thread ID is valid and resumable.
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    codex_bin = state.codex_bin or codex_backend.detect_codex_bin()
+    if not codex_bin:
+        return False, "Codex CLI not found"
+    
+    # Check if session file exists in Codex's local storage
+    session_file = _find_codex_session_file(thread_id)
+    if session_file is None:
+        return False, "Thread not found in Codex session storage"
+    
+    # File exists, assume thread is valid
+    # We'll verify on actual use
+    return True, None
+
+
+def _find_session_by_partial_id(store: JsonSessionStore, partial_id: str) -> SessionRecord | None:
+    """
+    Find session by partial ID match (fuzzy search).
+    """
+    sessions = _list_saved_sessions(store)
+    
+    # Try exact suffix match first
+    for session in sessions:
+        if session.session_id.endswith(partial_id):
+            return session
+    
+    # Try contains match
+    for session in sessions:
+        if partial_id in session.session_id:
+            return session
+    
+    # Try matching last part after dash
+    for session in sessions:
+        parts = session.session_id.split("-")
+        if len(parts) > 1 and partial_id in parts[-1]:
+            return session
+    
+    return None
+
+
+def _create_mtp_session_from_codex_thread(state: TUIState, thread_id: str) -> SessionRecord | None:
+    """
+    Create an MTP session wrapper for an existing Codex thread.
+    
+    This allows loading Codex threads created outside MTP TUI.
+    """
+    session_file = _find_codex_session_file(thread_id)
+    if session_file is None:
+        return None
+    
+    # Parse Codex session file to extract conversation
+    transcript: list[TranscriptTurn] = []
+    
+    try:
+        with session_file.open("r", encoding="utf-8", errors="ignore") as f:
+            user_msg = None
+            assistant_msg = None
+            
+            for line in f:
+                try:
+                    event = json.loads(line.strip())
+                    event_type = str(event.get("type", "")).lower()
+                    
+                    # Extract user messages
+                    if "user" in event_type or "input" in event_type:
+                        content = event.get("content") or event.get("text") or event.get("message")
+                        if isinstance(content, str) and content.strip():
+                            user_msg = content.strip()
+                    
+                    # Extract assistant messages
+                    if "assistant" in event_type or "response" in event_type or "output" in event_type:
+                        content = event.get("content") or event.get("text") or event.get("message")
+                        if isinstance(content, str) and content.strip():
+                            assistant_msg = content.strip()
+                    
+                    # When we have both, create a turn
+                    if user_msg and assistant_msg:
+                        transcript.append(
+                            TranscriptTurn(
+                                prompt=user_msg,
+                                response=assistant_msg,
+                                backend="codex",
+                                model=state.codex_model or "gpt-5.3-codex",
+                                attachments=[],
+                                warnings=[],
+                                usage_lines=[],
+                                created_at=_now_label(),
+                            )
+                        )
+                        user_msg = None
+                        assistant_msg = None
+                
+                except json.JSONDecodeError:
+                    continue
+    
+    except Exception as e:
+        print(f"Warning: Failed to parse Codex session file: {e}")
+        return None
+    
+    # Create MTP session record
+    new_session_id = _new_session_id()
+    
+    record = SessionRecord(
+        session_id=new_session_id,
+        user_id=state.user_id,
+        metadata={
+            "tui": {
+                "session_label": f"Imported from Codex thread {thread_id[:8]}",
+                "backend": "codex",
+                "cwd": str(state.cwd),
+                "codex_model": state.codex_model,
+                "openai_model": state.openai_model,
+                "codex_session_id": thread_id,
+                "reasoning_effort": state.reasoning_effort,
+                "max_rounds": state.max_rounds,
+                "autoresearch": state.autoresearch,
+                "research_instructions": state.research_instructions,
+                "last_usage_lines": [],
+                "turn_count": len(transcript),
+                "updated_at": _now_label(),
+                "transcript": _serialize_transcript(transcript),
+                "imported_from_codex": True,
+                "original_thread_id": thread_id,
+            }
+        },
+        messages=[],
+        runs=[],
+        created_at=_now_label(),
+        updated_at=_now_label(),
+    )
+    
+    # Save to store
+    state.session_store.upsert_session(record)
+    
+    return record
+
+
+def _load_session_hierarchical(state: TUIState, session_id_input: str) -> str:
+    """
+    Hierarchical session resolution:
+    1. Try as Codex thread ID (check if resumable)
+    2. Try as MTP session ID (exact match)
+    3. Try fuzzy match on MTP sessions
+    4. Try to import from Codex session files
+    5. Show helpful error with suggestions
+    """
+    
+    # Normalize input
+    session_id_input = session_id_input.strip()
+    
+    # STEP 1: Try as Codex thread ID
+    print(f"  {C_DIM}→ Checking if '{session_id_input}' is a Codex thread...{RESET}")
+    
+    # Add common prefixes if missing
+    thread_candidates = [
+        session_id_input,
+        f"thread-{session_id_input}",
+        f"thread_{session_id_input}",
+    ]
+    
+    for thread_id in thread_candidates:
+        is_valid, error_msg = _try_codex_thread_resume(state, thread_id)
+        if is_valid:
+            print(f"  {C_SUCCESS}✓ Found Codex thread: {thread_id}{RESET}")
+            
+            # Check if we already have an MTP session for this thread
+            all_sessions = _list_saved_sessions(state.session_store)
+            for session in all_sessions:
+                tui_meta = session.metadata.get("tui", {}) if isinstance(session.metadata, dict) else {}
+                if isinstance(tui_meta, dict):
+                    stored_thread_id = tui_meta.get("codex_session_id")
+                    if stored_thread_id == thread_id:
+                        print(f"  {C_SUCCESS}✓ Found existing MTP session for this thread{RESET}")
+                        _load_session_into_state(state, session)
+                        return (
+                            f"{C_SUCCESS}{_SYM_OK}{RESET} Loaded session {C_VALUE}{state.session_id}{RESET} "
+                            f"(Codex thread: {C_VALUE}{thread_id[:16]}...{RESET}) "
+                            f"with {C_VALUE}{len(state.transcript)}{RESET} turns."
+                        )
+            
+            # No existing MTP session, create one
+            print(f"  {C_DIM}→ Creating MTP session wrapper for Codex thread...{RESET}")
+            record = _create_mtp_session_from_codex_thread(state, thread_id)
+            if record:
+                _load_session_into_state(state, record)
+                return (
+                    f"{C_SUCCESS}{_SYM_OK}{RESET} Imported Codex thread {C_VALUE}{thread_id[:16]}...{RESET} "
+                    f"as MTP session {C_VALUE}{state.session_id}{RESET} "
+                    f"with {C_VALUE}{len(state.transcript)}{RESET} turns."
+                )
+    
+    print(f"  {C_DIM}✗ Not a valid Codex thread{RESET}")
+    
+    # STEP 2: Try as MTP session ID (exact match)
+    print(f"  {C_DIM}→ Checking MTP sessions (exact match)...{RESET}")
+    record = _load_session_record(state, session_id_input)
+    if record is not None:
+        print(f"  {C_SUCCESS}✓ Found MTP session (exact match){RESET}")
+        _load_session_into_state(state, record)
+        return (
+            f"{C_SUCCESS}{_SYM_OK}{RESET} Loaded session {C_VALUE}{state.session_id}{RESET} "
+            f"with {C_VALUE}{len(state.transcript)}{RESET} turns."
+        )
+    
+    print(f"  {C_DIM}✗ No exact match{RESET}")
+    
+    # STEP 3: Try fuzzy match on MTP sessions
+    print(f"  {C_DIM}→ Trying fuzzy match on MTP sessions...{RESET}")
+    record = _find_session_by_partial_id(state.session_store, session_id_input)
+    if record is not None:
+        print(f"  {C_SUCCESS}✓ Found MTP session (fuzzy match): {record.session_id}{RESET}")
+        _load_session_into_state(state, record)
+        return (
+            f"{C_SUCCESS}{_SYM_OK}{RESET} Loaded session {C_VALUE}{state.session_id}{RESET} "
+            f"(matched '{session_id_input}') "
+            f"with {C_VALUE}{len(state.transcript)}{RESET} turns."
+        )
+    
+    print(f"  {C_DIM}✗ No fuzzy match{RESET}")
+    
+    # STEP 4: Show helpful error with suggestions
+    sessions = _list_saved_sessions(state.session_store)
+    
+    if not sessions:
+        return (
+            f"{C_ERROR}{_SYM_ERR} No sessions found.{RESET}\n"
+            f"  {C_DIM}Session database: {state.session_store.file_path}{RESET}\n"
+            f"  {C_DIM}Codex sessions: ~/.codex/sessions/{RESET}\n"
+            f"  {C_DIM}Try: {C_CMD}/sessions{RESET} {C_DIM}to list available sessions{RESET}"
+        )
+    
+    # Show recent sessions as suggestions
+    recent = sessions[:5]
+    suggestions = []
+    for s in recent:
+        sid_short = s.session_id.split("-")[-1][:8]
+        tui_meta = s.metadata.get("tui", {}) if isinstance(s.metadata, dict) else {}
+        label = tui_meta.get("session_label", "(unnamed)") if isinstance(tui_meta, dict) else "(unnamed)"
+        turn_count = tui_meta.get("turn_count", 0) if isinstance(tui_meta, dict) else 0
+        suggestions.append(f"    {C_VALUE}{sid_short}{RESET} - {C_TEXT}{label}{RESET} ({turn_count} turns)")
+    
+    return (
+        f"{C_ERROR}{_SYM_ERR} Session not found:{RESET} {session_id_input}\n\n"
+        f"  {C_LABEL}Recent sessions:{RESET}\n" +
+        "\n".join(suggestions) +
+        f"\n\n  {C_DIM}Try: {C_CMD}/sessions{RESET} {C_DIM}to see all sessions{RESET}"
+    )
+
+
 def _ensure_openai_agent(state: TUIState) -> Agent.MTPAgent:
     if state.agent is not None:
         return state.agent
@@ -1468,14 +1764,10 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
     if cmd == "/load":
         if not arg:
             return f"{C_WARNING}Usage:{RESET} {C_CMD}/load <session_id>{RESET}"
-        record = _load_session_record(state, arg)
-        if record is None:
-            return f"{C_ERROR}{_SYM_ERR} Session not found:{RESET} {arg}"
-        _load_session_into_state(state, record)
-        return (
-            f"{C_SUCCESS}{_SYM_OK}{RESET} Loaded session {C_VALUE}{state.session_id}{RESET} "
-            f"with {C_VALUE}{len(state.transcript)}{RESET} turns."
-        )
+        
+        # Hierarchical session resolution
+        result = _load_session_hierarchical(state, arg)
+        return result
     if cmd == "/models":
         _print_model_matrix(state)
         return None
