@@ -64,7 +64,7 @@ from .mcp import (
 )
 from .mcp_transport import MCPHTTPTransportServer, MCPWebSocketTransportServer, run_mcp_http, run_mcp_ws
 
-__version__ = "0.1.12"
+__version__ = "0.1.13"
 
 # Convenience aliases for minimal import style:
 # from mtp import Agent
