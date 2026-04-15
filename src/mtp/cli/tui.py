@@ -345,6 +345,7 @@ def _print_help() -> None:
             ("/status", "Show current session state"),
             ("/new [label]", "Start a fresh chat session"),
             ("/load <session_id>", "Load a saved chat session"),
+            ("/open <session_id>", "View a session (read-only, non-destructive)"),
             ("/sessions", "List saved chat sessions"),
             ("/history [n]", "Show recent turns in this chat"),
             ("/clear", "Clear the terminal and redraw the banner"),
@@ -822,6 +823,243 @@ def _create_mtp_session_from_codex_thread(state: TUIState, thread_id: str) -> Se
     state.session_store.upsert_session(record)
     
     return record
+
+
+def _open_session_viewer(state: TUIState, session_id_input: str) -> str:
+    """
+    Open a session in read-only mode for viewing.
+    
+    This is NON-DESTRUCTIVE - current session state is preserved.
+    User can view past conversations without switching sessions.
+    """
+    
+    # Use hierarchical resolution to find session
+    # But we need to do it manually to avoid loading into state
+    
+    session_id_input = session_id_input.strip()
+    found_record: SessionRecord | None = None
+    source_type = "unknown"
+    
+    # STEP 1: Try as Codex thread ID
+    thread_candidates = [
+        session_id_input,
+        f"thread-{session_id_input}",
+        f"thread_{session_id_input}",
+    ]
+    
+    for thread_id in thread_candidates:
+        is_valid, _ = _try_codex_thread_resume(state, thread_id)
+        if is_valid:
+            # Check if we have an MTP session for this thread
+            all_sessions = _list_saved_sessions(state.session_store)
+            for session in all_sessions:
+                tui_meta = session.metadata.get("tui", {}) if isinstance(session.metadata, dict) else {}
+                if isinstance(tui_meta, dict):
+                    stored_thread_id = tui_meta.get("codex_session_id")
+                    if stored_thread_id == thread_id:
+                        found_record = session
+                        source_type = "codex_thread"
+                        break
+            
+            if found_record:
+                break
+            
+            # Create temporary session for viewing
+            found_record = _create_mtp_session_from_codex_thread(state, thread_id)
+            if found_record:
+                source_type = "codex_thread_imported"
+                break
+    
+    # STEP 2: Try as MTP session ID (exact match)
+    if found_record is None:
+        found_record = _load_session_record(state, session_id_input)
+        if found_record:
+            source_type = "mtp_exact"
+    
+    # STEP 3: Try fuzzy match
+    if found_record is None:
+        found_record = _find_session_by_partial_id(state.session_store, session_id_input)
+        if found_record:
+            source_type = "mtp_fuzzy"
+    
+    # STEP 4: Not found
+    if found_record is None:
+        sessions = _list_saved_sessions(state.session_store)
+        if not sessions:
+            return (
+                f"{C_ERROR}{_SYM_ERR} No sessions found.{RESET}\n"
+                f"  {C_DIM}Try: {C_CMD}/sessions{RESET} {C_DIM}to list available sessions{RESET}"
+            )
+        
+        recent = sessions[:5]
+        suggestions = []
+        for s in recent:
+            sid_short = s.session_id.split("-")[-1][:8]
+            tui_meta = s.metadata.get("tui", {}) if isinstance(s.metadata, dict) else {}
+            label = tui_meta.get("session_label", "(unnamed)") if isinstance(tui_meta, dict) else "(unnamed)"
+            turn_count = tui_meta.get("turn_count", 0) if isinstance(tui_meta, dict) else 0
+            suggestions.append(f"    {C_VALUE}{sid_short}{RESET} - {C_TEXT}{label}{RESET} ({turn_count} turns)")
+        
+        return (
+            f"{C_ERROR}{_SYM_ERR} Session not found:{RESET} {session_id_input}\n\n"
+            f"  {C_LABEL}Recent sessions:{RESET}\n" +
+            "\n".join(suggestions) +
+            f"\n\n  {C_DIM}Try: {C_CMD}/sessions{RESET} {C_DIM}to see all sessions{RESET}"
+        )
+    
+    # Found session - display it
+    return _display_session_readonly(state, found_record, source_type)
+
+
+def _display_session_readonly(state: TUIState, record: SessionRecord, source_type: str) -> str:
+    """
+    Display a session in read-only mode.
+    
+    Formats and displays the session transcript without modifying current state.
+    """
+    w = _get_term_width()
+    rule_w = min(80, w - 4)
+    rule_pad = max(0, (w - rule_w) // 2)
+    thin_rule = f"{' ' * rule_pad}{C_BORDER}{_SYM_RULE * rule_w}{RESET}"
+    
+    # Extract session metadata
+    tui_meta = record.metadata.get("tui", {}) if isinstance(record.metadata, dict) else {}
+    tui_meta = tui_meta if isinstance(tui_meta, dict) else {}
+    
+    session_label = tui_meta.get("session_label", "(unnamed)")
+    backend = tui_meta.get("backend", "unknown")
+    codex_model = tui_meta.get("codex_model", "unknown")
+    openai_model = tui_meta.get("openai_model", "unknown")
+    codex_session_id = tui_meta.get("codex_session_id")
+    turn_count = tui_meta.get("turn_count", 0)
+    created_at = record.created_at
+    updated_at = tui_meta.get("updated_at", record.updated_at)
+    
+    # Deserialize transcript
+    transcript = _deserialize_transcript(tui_meta.get("transcript", []))
+    
+    # Build display
+    lines = []
+    lines.append("")
+    lines.append(thin_rule)
+    lines.append(f"  {C_BRAND_BOLD}Session Viewer (Read-Only){RESET}")
+    lines.append(thin_rule)
+    lines.append("")
+    
+    # Session info
+    sid_short = record.session_id.split("-")[-1][:8]
+    lines.append(f"  {C_LABEL}Session ID:{RESET} {C_VALUE}{record.session_id}{RESET} ({C_DIM}{sid_short}{RESET})")
+    lines.append(f"  {C_LABEL}Label:{RESET} {C_TEXT}{session_label}{RESET}")
+    lines.append(f"  {C_LABEL}Backend:{RESET} {C_ACCENT}{backend}{RESET}")
+    
+    if backend == "codex":
+        lines.append(f"  {C_LABEL}Model:{RESET} {C_MODEL}{codex_model}{RESET}")
+        if codex_session_id:
+            lines.append(f"  {C_LABEL}Codex Thread:{RESET} {C_VALUE}{codex_session_id[:24]}...{RESET}")
+    else:
+        lines.append(f"  {C_LABEL}Model:{RESET} {C_MODEL}{openai_model}{RESET}")
+    
+    lines.append(f"  {C_LABEL}Turns:{RESET} {C_VALUE}{len(transcript)}{RESET}")
+    lines.append(f"  {C_LABEL}Created:{RESET} {C_DIM}{created_at}{RESET}")
+    lines.append(f"  {C_LABEL}Updated:{RESET} {C_DIM}{updated_at}{RESET}")
+    
+    if source_type == "codex_thread_imported":
+        lines.append(f"  {C_WARNING}⚠ Imported from Codex thread{RESET}")
+    
+    lines.append("")
+    lines.append(thin_rule)
+    
+    # Display transcript
+    if not transcript:
+        lines.append(f"  {C_DIM}(No conversation history){RESET}")
+        lines.append("")
+    elif len(transcript) <= 10:
+        # Short session - display all turns inline
+        lines.append(f"  {C_LABEL}Conversation:{RESET}")
+        lines.append("")
+        
+        for idx, turn in enumerate(transcript, start=1):
+            # Turn header
+            turn_meta = f"  {C_LABEL}Turn #{idx}{RESET} {C_DIM}({turn.created_at}){RESET}"
+            lines.append(turn_meta)
+            
+            # User message
+            user_lines = turn.prompt.split("\n")
+            for i, line in enumerate(user_lines[:5]):  # Max 5 lines per message
+                prefix = f"  {C_ACCENT}›{RESET} " if i == 0 else "    "
+                lines.append(f"{prefix}{C_TEXT}{line}{RESET}")
+            if len(user_lines) > 5:
+                lines.append(f"    {C_DIM}... ({len(user_lines) - 5} more lines){RESET}")
+            
+            # Assistant message
+            assistant_lines = turn.response.split("\n")
+            for i, line in enumerate(assistant_lines[:5]):  # Max 5 lines per message
+                prefix = f"  {C_SUCCESS}◂{RESET} " if i == 0 else "    "
+                lines.append(f"{prefix}{C_TEXT}{line}{RESET}")
+            if len(assistant_lines) > 5:
+                lines.append(f"    {C_DIM}... ({len(assistant_lines) - 5} more lines){RESET}")
+            
+            # Tool events
+            if turn.usage_lines:
+                usage_summary = turn.usage_lines[0] if turn.usage_lines else ""
+                lines.append(f"    {C_DIM}{usage_summary}{RESET}")
+            
+            lines.append("")
+    else:
+        # Long session - show summary and first/last turns
+        lines.append(f"  {C_LABEL}Conversation Summary:{RESET}")
+        lines.append(f"  {C_DIM}This session has {len(transcript)} turns. Showing first 3 and last 2.{RESET}")
+        lines.append("")
+        
+        # First 3 turns
+        for idx, turn in enumerate(transcript[:3], start=1):
+            turn_meta = f"  {C_LABEL}Turn #{idx}{RESET} {C_DIM}({turn.created_at}){RESET}"
+            lines.append(turn_meta)
+            
+            # Truncate messages
+            user_preview = turn.prompt.replace("\n", " ")[:100]
+            if len(turn.prompt) > 100:
+                user_preview += "..."
+            assistant_preview = turn.response.replace("\n", " ")[:100]
+            if len(turn.response) > 100:
+                assistant_preview += "..."
+            
+            lines.append(f"  {C_ACCENT}›{RESET} {C_TEXT}{user_preview}{RESET}")
+            lines.append(f"  {C_SUCCESS}◂{RESET} {C_TEXT}{assistant_preview}{RESET}")
+            lines.append("")
+        
+        # Middle indicator
+        if len(transcript) > 5:
+            lines.append(f"  {C_DIM}... ({len(transcript) - 5} more turns) ...{RESET}")
+            lines.append("")
+        
+        # Last 2 turns
+        for idx, turn in enumerate(transcript[-2:], start=len(transcript) - 1):
+            turn_meta = f"  {C_LABEL}Turn #{idx}{RESET} {C_DIM}({turn.created_at}){RESET}"
+            lines.append(turn_meta)
+            
+            user_preview = turn.prompt.replace("\n", " ")[:100]
+            if len(turn.prompt) > 100:
+                user_preview += "..."
+            assistant_preview = turn.response.replace("\n", " ")[:100]
+            if len(turn.response) > 100:
+                assistant_preview += "..."
+            
+            lines.append(f"  {C_ACCENT}›{RESET} {C_TEXT}{user_preview}{RESET}")
+            lines.append(f"  {C_SUCCESS}◂{RESET} {C_TEXT}{assistant_preview}{RESET}")
+            lines.append("")
+    
+    lines.append(thin_rule)
+    lines.append(f"  {C_DIM}Current session unchanged: {C_VALUE}{state.session_id}{RESET}")
+    lines.append(f"  {C_DIM}To switch to this session, use: {C_CMD}/load {record.session_id.split('-')[-1][:8]}{RESET}")
+    lines.append(thin_rule)
+    lines.append("")
+    
+    # Print all lines
+    for line in lines:
+        print(line)
+    
+    return None  # Return None to avoid printing additional message
 
 
 def _load_session_hierarchical(state: TUIState, session_id_input: str) -> str:
@@ -1767,6 +2005,13 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
         
         # Hierarchical session resolution
         result = _load_session_hierarchical(state, arg)
+        return result
+    if cmd == "/open":
+        if not arg:
+            return f"{C_WARNING}Usage:{RESET} {C_CMD}/open <session_id>{RESET}"
+        
+        # Open session in read-only mode
+        result = _open_session_viewer(state, arg)
         return result
     if cmd == "/models":
         _print_model_matrix(state)
