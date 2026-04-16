@@ -376,9 +376,9 @@ def _print_help() -> None:
             ("/apikey set <provider> <key>", "Set/update API key for provider"),
             ("/apikey delete <provider>", "Delete API key for provider"),
             ("/apikey show <provider>", "Show full API key (use with caution)"),
-            ("/models", "Show model + reasoning presets"),
+            ("/models", "Show all models for all providers"),
             ("/model <name>", "Switch to model"),
-            ("/model add <name>", "Add custom model to current provider"),
+            ("/model add <provider> <name>", "Add custom model to any provider"),
             ("/reasoning <none|low|...|xhigh>", "Set reasoning effort (codex only)"),
             ("/rounds <n>", "Set max_rounds (MTP providers)"),
             ("/sandbox [mode]", "Set Codex sandbox mode (Ctrl+W) - controls file access permissions"),
@@ -428,25 +428,48 @@ def _print_help() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _print_model_matrix(state: TUIState) -> None:
+    """Display all models organized by provider."""
     w = _get_term_width()
-    rule_w = min(60, w - 4)
+    rule_w = min(70, w - 4)
     rule_pad = max(0, (w - rule_w) // 2)
     thin_rule = f"{' ' * rule_pad}{C_BORDER}{_SYM_RULE * rule_w}{RESET}"
+    
     print()
-    print(f"  {C_BRAND_BOLD}Model Presets{RESET}")
+    print(f"  {C_BRAND_BOLD}Available Models{RESET}")
     print(thin_rule)
-
+    
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    
+    # Get current active model
+    active_model = _active_model_name(state)
+    
+    # Codex models
+    print(f"\n  {C_LABEL}Codex Models{RESET}")
     for idx, (model, note) in enumerate(_MODEL_PRESETS, start=1):
-        selected = model in {state.codex_model, state.openai_model}
-        marker = f"{C_SUCCESS}●{RESET}" if selected else f"{C_DIM}○{RESET}"
+        is_active = (state.backend == "codex" and model == state.codex_model)
+        marker = f"{C_SUCCESS}●{RESET}" if is_active else f"{C_DIM}○{RESET}"
         shortcut = f"{C_KEY}[{idx}]{RESET}"
         model_name = f"{C_MODEL}{model}{RESET}"
         desc = f"{C_DIM}{note}{RESET}"
-        sel_tag = f"  {C_SUCCESS}← active{RESET}" if selected else ""
+        sel_tag = f"  {C_SUCCESS}← active{RESET}" if is_active else ""
         print(f"    {marker} {shortcut} {model_name}  {desc}{sel_tag}")
-
+    
+    # MTP Provider models
+    for provider_name in SUPPORTED_TUI_PROVIDERS:
+        models = get_provider_models(settings, provider_name)
+        current_model = preferred_model_for_provider(settings, provider_name)
+        
+        print(f"\n  {C_LABEL}{provider_name.title()} Models{RESET}")
+        for model in models:
+            is_active = (state.backend == provider_name and model == current_model)
+            marker = f"{C_SUCCESS}●{RESET}" if is_active else f"{C_DIM}○{RESET}"
+            model_name = f"{C_MODEL}{model}{RESET}"
+            sel_tag = f"  {C_SUCCESS}← active{RESET}" if is_active else ""
+            print(f"    {marker} {model_name}{sel_tag}")
+    
     print()
-    print(f"  {C_LABEL}Reasoning Levels{RESET}")
+    print(f"  {C_LABEL}Reasoning Levels{RESET} {C_DIM}(Codex only){RESET}")
     reasoning_items = []
     for num, name in _REASONING_SHORTCUTS.items():
         if name == state.reasoning_effort:
@@ -460,7 +483,10 @@ def _print_model_matrix(state: TUIState) -> None:
     for model_key, notes in _REASONING_NOTES.items():
         print(f"    {C_MODEL}{model_key}{RESET} {C_DIM}→{RESET} {C_VALUE}{notes}{RESET}")
     print()
-    print(f"  {C_DIM}Usage:{RESET} {C_CMD}/model 3{RESET} {C_DIM}and{RESET} {C_CMD}/reasoning high{RESET}  {C_DIM}or{RESET}  {C_CMD}/model gpt-5.4-mini{RESET}")
+    print(f"  {C_DIM}Usage:{RESET}")
+    print(f"    {C_CMD}/model <name>{RESET}              {C_DIM}Switch to model{RESET}")
+    print(f"    {C_CMD}/model add <provider> <name>{RESET}  {C_DIM}Add custom model{RESET}")
+    print(f"    {C_CMD}/reasoning <level>{RESET}          {C_DIM}Set reasoning (Codex only){RESET}")
     print()
 
 
@@ -2073,14 +2099,21 @@ def _print_provider_list(state: TUIState) -> None:
     settings_path = provider_settings_path(state.session_store.file_path)
     settings = load_provider_settings(settings_path)
     
-    # Codex (special case)
-    codex_status = "✓ Ready" if state.codex_bin else "⚠ Not installed"
-    codex_color = C_SUCCESS if state.codex_bin else C_WARNING
+    # Codex (special case) - detect if not already in state
+    codex_bin = state.codex_bin or codex_backend.detect_codex_bin()
+    if codex_bin and not state.codex_bin:
+        state.codex_bin = codex_bin  # Cache the detection
+    
     is_active_codex = state.backend == "codex"
     marker_codex = f"{C_SUCCESS}●{RESET}" if is_active_codex else f"{C_DIM}○{RESET}"
-    model_codex = state.codex_model or "(default)"
+    model_codex = state.codex_model or "gpt-5.4-codex"
     
-    print(f"  {marker_codex} {C_VALUE}codex{RESET:<20} {C_MODEL}{model_codex:<30}{RESET} {codex_color}{codex_status}{RESET}")
+    if codex_bin:
+        codex_status = f"{C_SUCCESS}✓ Ready{RESET}"
+    else:
+        codex_status = f"{C_WARNING}⚠ Not installed{RESET}"
+    
+    print(f"  {marker_codex} {C_VALUE}codex{RESET:<20} {C_MODEL}{model_codex:<30}{RESET} {codex_status}")
     
     # MTP Providers
     for provider_name in SUPPORTED_TUI_PROVIDERS:
@@ -2475,29 +2508,39 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
     if cmd == "/model":
         if not arg:
             _print_model_matrix(state)
-            return f"{C_WARNING}Usage:{RESET} {C_CMD}/model <name|1..4|default|add <name>>{RESET}"
+            return f"{C_WARNING}Usage:{RESET} {C_CMD}/model <name>{RESET} or {C_CMD}/model add <provider> <name>{RESET}"
         
-        # Handle "/model add <model-name>"
+        # Handle "/model add <provider> <model-name>"
         if arg.startswith("add "):
-            model_name = arg[4:].strip()
-            if not model_name:
-                return f"{C_ERROR}Model name required.{RESET}"
+            parts = arg[4:].strip().split(None, 1)
+            if len(parts) < 2:
+                return f"{C_ERROR}Usage:{RESET} {C_CMD}/model add <provider> <model-name>{RESET}"
             
-            # Can't add custom models to Codex
-            if state.backend == "codex":
+            provider_name = parts[0].lower()
+            model_name = parts[1].strip()
+            
+            # Validate provider
+            if provider_name == "codex":
                 return f"{C_WARNING}Cannot add custom models to Codex backend.{RESET}"
+            
+            if provider_name not in SUPPORTED_TUI_PROVIDERS:
+                available = ", ".join(sorted(SUPPORTED_TUI_PROVIDERS))
+                return (
+                    f"{C_ERROR}Unknown provider: {provider_name}{RESET}\n"
+                    f"  {C_DIM}Available: {available}{RESET}"
+                )
             
             # Add to provider's model list
             settings_path = provider_settings_path(state.session_store.file_path)
             settings = load_provider_settings(settings_path)
             
-            added = add_custom_model(settings, state.backend, model_name)
+            added = add_custom_model(settings, provider_name, model_name)
             save_provider_settings(settings_path, settings)
             
             if added:
-                return f"{C_SUCCESS}✓{RESET} Added model {C_VALUE}{model_name}{RESET} to {state.backend}."
+                return f"{C_SUCCESS}✓{RESET} Added model {C_VALUE}{model_name}{RESET} to {provider_name}."
             else:
-                return f"{C_WARNING}Model {C_VALUE}{model_name}{RESET} already exists.{RESET}"
+                return f"{C_WARNING}Model {C_VALUE}{model_name}{RESET} already exists in {provider_name}.{RESET}"
         
         # Handle "/model <name>" (switch model)
         resolved = _resolve_model(arg)
