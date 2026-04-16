@@ -17,6 +17,22 @@ from mtp import Agent, JsonSessionStore, SessionRecord
 from mtp.providers import OpenAI
 from mtp.toolkits.local import register_local_toolkits
 from . import tui_codex_backend as codex_backend
+from . import tui_mtp_backend as mtp_backend
+from .tui_provider_factory import ProviderSelection, build_tui_provider, SUPPORTED_TUI_PROVIDERS
+from .tui_settings import (
+    provider_settings_path,
+    load_provider_settings,
+    save_provider_settings,
+    ensure_provider_entry,
+    is_provider_configured,
+    add_custom_model,
+    get_provider_models,
+    preferred_model_for_provider,
+    set_provider_api_key,
+    delete_provider_api_key,
+    list_configured_providers,
+    DEFAULT_PROVIDER_MODELS,
+)
 
 # ── Modular imports (theme, toast, completers) ───────────────────────────────
 from .tui_theme import (
@@ -69,7 +85,7 @@ except ImportError:
     HTML = None  # type: ignore[assignment, misc]
 
 
-_BACKENDS = {"codex", "mtp-openai"}
+_BACKENDS = {"codex", "openai", "groq", "claude", "gemini", "openrouter", "mistral", "cohere", "sambanova", "cerebras", "deepseek", "togetherai", "fireworksai"}
 _REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 _MAX_ATTACHMENTS = 8
 _MAX_ATTACHMENT_CHARS = 16000
@@ -354,15 +370,21 @@ def _print_help() -> None:
             ("/tools", "Show all tool calls from the last turn"),
         ]),
         ("Backend & Model", [
-            ("/backend codex|mtp-openai", "Switch active backend"),
+            ("/backend", "List all available providers"),
+            ("/backend <provider>", "Switch to provider (codex, openai, groq, claude, etc.)"),
+            ("/apikey", "List all API keys (masked)"),
+            ("/apikey set <provider> <key>", "Set/update API key for provider"),
+            ("/apikey delete <provider>", "Delete API key for provider"),
+            ("/apikey show <provider>", "Show full API key (use with caution)"),
             ("/models", "Show model + reasoning presets"),
-            ("/model <name|1..4|default>", "Set model for active backend"),
-            ("/reasoning <none|low|...|xhigh>", "Set reasoning effort (codex)"),
-            ("/rounds <n>", "Set max_rounds (mtp-openai)"),
+            ("/model <name>", "Switch to model"),
+            ("/model add <name>", "Add custom model to current provider"),
+            ("/reasoning <none|low|...|xhigh>", "Set reasoning effort (codex only)"),
+            ("/rounds <n>", "Set max_rounds (MTP providers)"),
             ("/sandbox [mode]", "Set Codex sandbox mode (Ctrl+W) - controls file access permissions"),
         ]),
         ("Research & Auth", [
-            ("/autoresearch on|off", "Toggle autoresearch (mtp-openai)"),
+            ("/autoresearch on|off", "Toggle autoresearch (MTP providers)"),
             ("/research <text>", "Set research instructions"),
             ("/codex-login", "Run official codex login flow"),
         ]),
@@ -465,7 +487,11 @@ def _now_label() -> str:
 def _active_model_name(state: TUIState) -> str:
     if state.backend == "codex":
         return state.codex_model or "(codex-default)"
-    return state.openai_model
+    
+    # MTP Provider
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    return preferred_model_for_provider(settings, state.backend)
 
 
 def _serialize_transcript(turns: list[TranscriptTurn]) -> list[dict[str, Any]]:
@@ -1742,6 +1768,48 @@ def _run_codex_login(state: TUIState) -> str:
     return f"{C_ERROR}{_SYM_ERR} Codex login exited with code {return_code}.{RESET}"
 
 
+def _run_mtp_prompt(state: TUIState, prompt: str) -> ChatResult:
+    """Execute a prompt using MTP provider backend."""
+    # Ensure agent is initialized
+    if state.agent is None:
+        # Try to initialize agent
+        switch_result = _switch_backend(state, state.backend)
+        if "Failed" in switch_result or "Error" in switch_result:
+            return ChatResult(
+                text=switch_result,
+                tool_events=[],
+                attachments=[],
+                warnings=["Agent initialization failed"],
+                usage_lines=[],
+            )
+    
+    try:
+        # Run MTP agent
+        mtp_result = mtp_backend.run_mtp_prompt(
+            agent=state.agent,
+            prompt=prompt,
+            max_rounds=state.max_rounds,
+            emit_live=_emit_live_event,
+        )
+        
+        return ChatResult(
+            text=mtp_result.text,
+            tool_events=mtp_result.tool_events,
+            attachments=[],
+            warnings=mtp_result.warnings,
+            usage_lines=mtp_result.usage_lines,
+        )
+    
+    except Exception as exc:
+        return ChatResult(
+            text=f"Error executing MTP provider: {exc}",
+            tool_events=[],
+            attachments=[],
+            warnings=[str(exc)],
+            usage_lines=[],
+        )
+
+
 def _run_openai_prompt(state: TUIState, prompt: str) -> ChatResult:
     agent = _ensure_openai_agent(state)
     final_text = ""
@@ -1988,6 +2056,351 @@ def _resolve_reasoning(arg: str) -> str | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Provider Management Functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _print_provider_list(state: TUIState) -> None:
+    """Display all available providers with their configuration status."""
+    w = _get_term_width()
+    rule_w = min(70, w - 4)
+    rule_pad = max(0, (w - rule_w) // 2)
+    thin_rule = f"{' ' * rule_pad}{C_BORDER}{_SYM_RULE * rule_w}{RESET}"
+    
+    print()
+    print(f"  {C_BRAND_BOLD}Available Providers{RESET}")
+    print(thin_rule)
+    
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    
+    # Codex (special case)
+    codex_status = "✓ Ready" if state.codex_bin else "⚠ Not installed"
+    codex_color = C_SUCCESS if state.codex_bin else C_WARNING
+    is_active_codex = state.backend == "codex"
+    marker_codex = f"{C_SUCCESS}●{RESET}" if is_active_codex else f"{C_DIM}○{RESET}"
+    model_codex = state.codex_model or "(default)"
+    
+    print(f"  {marker_codex} {C_VALUE}codex{RESET:<20} {C_MODEL}{model_codex:<30}{RESET} {codex_color}{codex_status}{RESET}")
+    
+    # MTP Providers
+    for provider_name in SUPPORTED_TUI_PROVIDERS:
+        is_configured = is_provider_configured(settings, provider_name)
+        is_active = state.backend == provider_name
+        
+        marker = f"{C_SUCCESS}●{RESET}" if is_active else f"{C_DIM}○{RESET}"
+        
+        if is_configured:
+            model = preferred_model_for_provider(settings, provider_name)
+            status = f"{C_SUCCESS}✓ Ready{RESET}"
+        else:
+            model = "(not configured)"
+            status = f"{C_WARNING}⚠ Setup needed{RESET}"
+        
+        print(f"  {marker} {C_VALUE}{provider_name:<20}{RESET} {C_MODEL}{model:<30}{RESET} {status}")
+    
+    print()
+    print(f"  {C_DIM}Usage:{RESET} {C_CMD}/backend <provider>{RESET}")
+    print()
+
+
+def _setup_provider_interactive(state: TUIState, provider_name: str) -> tuple[bool, str]:
+    """
+    Interactive setup flow for a new provider.
+    
+    Returns:
+        (success, message) tuple
+    """
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    entry = ensure_provider_entry(settings, provider_name)
+    
+    print()
+    print(f"  {C_BRAND_BOLD}Setup {provider_name}{RESET}")
+    print(f"  {C_DIM}{'─' * 60}{RESET}")
+    
+    # Step 1: API Key
+    if not entry.get("api_key"):
+        print(f"\n  {C_LABEL}Step 1: API Key{RESET}")
+        print(f"  {C_DIM}Please provide your API key for {provider_name}.{RESET}")
+        print(f"  {C_WARNING}⚠ Enter the FULL API key (not a masked version){RESET}")
+        
+        try:
+            api_key = input(f"  {C_PROMPT_ARROW}API Key:{RESET} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False, f"{C_WARNING}Setup cancelled.{RESET}"
+        
+        if not api_key:
+            return False, f"{C_WARNING}Setup cancelled (no API key provided).{RESET}"
+        
+        # Warn if key looks truncated/masked
+        if "..." in api_key or "*" in api_key or len(api_key) < 20:
+            print(f"\n  {C_WARNING}⚠ Warning: This looks like a masked/truncated key.{RESET}")
+            print(f"  {C_DIM}Please enter the FULL API key from your provider dashboard.{RESET}")
+            confirm = input(f"  {C_PROMPT_ARROW}Continue anyway? (y/N):{RESET} ").strip().lower()
+            if confirm not in ("y", "yes"):
+                return False, f"{C_WARNING}Setup cancelled.{RESET}"
+        
+        entry["api_key"] = api_key
+    else:
+        print(f"\n  {C_SUCCESS}✓{RESET} API key already configured")
+    
+    # Step 2: Model Selection
+    default_model = DEFAULT_PROVIDER_MODELS.get(provider_name, "default")
+    print(f"\n  {C_LABEL}Step 2: Model Selection{RESET}")
+    print(f"  {C_DIM}Default: {C_MODEL}{default_model}{RESET}")
+    
+    try:
+        model = input(f"  {C_PROMPT_ARROW}Model (press Enter for default):{RESET} ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False, f"{C_WARNING}Setup cancelled.{RESET}"
+    
+    if not model:
+        model = default_model
+    
+    entry["model"] = model
+    
+    # Step 3: Save
+    save_provider_settings(settings_path, settings)
+    
+    print()
+    print(f"  {C_SUCCESS}✓ Provider {C_VALUE}{provider_name}{RESET} configured successfully!{RESET}")
+    print()
+    
+    return True, ""
+
+
+def _switch_backend(state: TUIState, provider_name: str) -> str:
+    """
+    Switch to a different provider backend.
+    
+    Handles both Codex (external binary) and MTP providers (SDK).
+    """
+    provider_name = provider_name.lower().strip()
+    
+    # Special case: Codex
+    if provider_name == "codex":
+        if not state.codex_bin:
+            codex_bin = codex_backend.detect_codex_bin()
+            if not codex_bin:
+                return (
+                    f"{C_ERROR}Codex CLI not found.{RESET}\n"
+                    f"  {C_DIM}Install from: https://openai.com/codex{RESET}"
+                )
+            state.codex_bin = codex_bin
+        
+        state.backend = "codex"
+        state.agent = None  # Clear MTP agent
+        _save_tui_session(state)
+        return f"{C_SUCCESS}✓{RESET} Switched to {C_VALUE}Codex{RESET} backend."
+    
+    # Validate provider
+    if provider_name not in SUPPORTED_TUI_PROVIDERS:
+        available = ", ".join(sorted(SUPPORTED_TUI_PROVIDERS))
+        return (
+            f"{C_ERROR}Unknown provider: {provider_name}{RESET}\n"
+            f"  {C_DIM}Available: {available}{RESET}"
+        )
+    
+    # Check configuration
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    
+    if not is_provider_configured(settings, provider_name):
+        # Run interactive setup
+        success, message = _setup_provider_interactive(state, provider_name)
+        if not success:
+            return message
+        
+        # Reload settings after setup
+        settings = load_provider_settings(settings_path)
+    
+    # Get provider configuration
+    entry = ensure_provider_entry(settings, provider_name)
+    model = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(provider_name, "default")
+    api_key = entry.get("api_key")
+    
+    # Build provider
+    try:
+        selection = ProviderSelection(
+            provider_name=provider_name,
+            model_name=model,
+            api_key=api_key,
+        )
+        provider = build_tui_provider(selection)
+    except Exception as e:
+        return f"{C_ERROR}Failed to initialize provider: {e}{RESET}"
+    
+    # Build MTP agent
+    try:
+        # Get or create tool registry
+        if state.agent and hasattr(state.agent, 'tools'):
+            tools = state.agent.tools
+        else:
+            tools = Agent.ToolRegistry()
+            register_local_toolkits(tools, base_dir=str(state.cwd))
+        
+        agent = mtp_backend.build_mtp_agent(
+            provider=provider,
+            tools=tools,
+            cwd=state.cwd,
+            max_rounds=state.max_rounds,
+            autoresearch=state.autoresearch,
+            research_instructions=state.research_instructions,
+            debug_mode=False,  # Can be made configurable
+        )
+        
+        state.agent = agent
+        state.backend = provider_name
+        _save_tui_session(state)
+        
+        return (
+            f"{C_SUCCESS}✓{RESET} Switched to {C_VALUE}{provider_name}{RESET} "
+            f"with model {C_MODEL}{model}{RESET}."
+        )
+    
+    except Exception as e:
+        return f"{C_ERROR}Failed to create agent: {e}{RESET}"
+
+
+def _print_apikey_list(state: TUIState) -> None:
+    """Display all API keys with masked values."""
+    w = _get_term_width()
+    rule_w = min(70, w - 4)
+    rule_pad = max(0, (w - rule_w) // 2)
+    thin_rule = f"{' ' * rule_pad}{C_BORDER}{_SYM_RULE * rule_w}{RESET}"
+    
+    print()
+    print(f"  {C_BRAND_BOLD}API Key Management{RESET}")
+    print(thin_rule)
+    
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    
+    configured_providers = list_configured_providers(settings)
+    
+    # Count configured
+    total = len(configured_providers)
+    configured_count = sum(1 for _, has_key in configured_providers if has_key)
+    
+    print(f"  {C_LABEL}Status:{RESET} {C_VALUE}{configured_count}/{total}{RESET} providers configured")
+    print()
+    
+    for provider_name, has_key in configured_providers:
+        entry = ensure_provider_entry(settings, provider_name)
+        api_key = entry.get("api_key")
+        
+        if has_key and api_key:
+            # Mask the API key
+            masked = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "*" * len(api_key)
+            status = f"{C_SUCCESS}✓{RESET} {C_VALUE}{masked}{RESET}"
+        else:
+            status = f"{C_DIM}(not set){RESET}"
+        
+        print(f"  {C_LABEL}{provider_name:<15}{RESET} {status}")
+    
+    print()
+    print(f"  {C_DIM}Commands:{RESET}")
+    print(f"    {C_CMD}/apikey set <provider> <key>{RESET}     {C_DIM}Set/update API key{RESET}")
+    print(f"    {C_CMD}/apikey delete <provider>{RESET}        {C_DIM}Delete API key{RESET}")
+    print(f"    {C_CMD}/apikey show <provider>{RESET}          {C_DIM}Show full API key{RESET}")
+    print()
+
+
+def _handle_apikey_command(state: TUIState, arg: str) -> str:
+    """Handle /apikey subcommands."""
+    if not arg:
+        # List all API keys
+        _print_apikey_list(state)
+        return ""
+    
+    parts = arg.split(None, 2)
+    subcommand = parts[0].lower()
+    
+    settings_path = provider_settings_path(state.session_store.file_path)
+    settings = load_provider_settings(settings_path)
+    
+    # /apikey set <provider> <key>
+    if subcommand == "set":
+        if len(parts) < 3:
+            return f"{C_ERROR}Usage:{RESET} {C_CMD}/apikey set <provider> <key>{RESET}"
+        
+        provider_name = parts[1].lower()
+        api_key = parts[2]
+        
+        if provider_name not in SUPPORTED_TUI_PROVIDERS:
+            return f"{C_ERROR}Unknown provider: {provider_name}{RESET}"
+        
+        # Warn if key looks truncated/masked
+        if "..." in api_key or "*" in api_key or len(api_key) < 20:
+            return (
+                f"{C_WARNING}⚠ Warning: This looks like a masked/truncated key.{RESET}\n"
+                f"  {C_DIM}Please enter the FULL API key from your provider dashboard.{RESET}\n"
+                f"  {C_DIM}Example: gsk_1234567890abcdefghijklmnopqrstuvwxyz{RESET}"
+            )
+        
+        set_provider_api_key(settings, provider_name, api_key)
+        save_provider_settings(settings_path, settings)
+        
+        # Force agent rebuild if this is the active provider
+        if state.backend == provider_name:
+            state.agent = None
+        
+        masked = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "*" * len(api_key)
+        return f"{C_SUCCESS}✓{RESET} API key for {C_VALUE}{provider_name}{RESET} set to {C_VALUE}{masked}{RESET}"
+    
+    # /apikey delete <provider>
+    elif subcommand == "delete":
+        if len(parts) < 2:
+            return f"{C_ERROR}Usage:{RESET} {C_CMD}/apikey delete <provider>{RESET}"
+        
+        provider_name = parts[1].lower()
+        
+        if provider_name not in SUPPORTED_TUI_PROVIDERS:
+            return f"{C_ERROR}Unknown provider: {provider_name}{RESET}"
+        
+        deleted = delete_provider_api_key(settings, provider_name)
+        save_provider_settings(settings_path, settings)
+        
+        # Force agent rebuild if this is the active provider
+        if state.backend == provider_name:
+            state.agent = None
+        
+        if deleted:
+            return f"{C_SUCCESS}✓{RESET} API key for {C_VALUE}{provider_name}{RESET} deleted"
+        else:
+            return f"{C_WARNING}No API key was set for {C_VALUE}{provider_name}{RESET}"
+    
+    # /apikey show <provider>
+    elif subcommand == "show":
+        if len(parts) < 2:
+            return f"{C_ERROR}Usage:{RESET} {C_CMD}/apikey show <provider>{RESET}"
+        
+        provider_name = parts[1].lower()
+        
+        if provider_name not in SUPPORTED_TUI_PROVIDERS:
+            return f"{C_ERROR}Unknown provider: {provider_name}{RESET}"
+        
+        entry = ensure_provider_entry(settings, provider_name)
+        api_key = entry.get("api_key")
+        
+        if api_key:
+            return (
+                f"{C_LABEL}{provider_name}:{RESET} {C_VALUE}{api_key}{RESET}\n"
+                f"  {C_WARNING}⚠ Keep this key secure!{RESET}"
+            )
+        else:
+            return f"{C_WARNING}No API key set for {C_VALUE}{provider_name}{RESET}"
+    
+    else:
+        return (
+            f"{C_ERROR}Unknown subcommand: {subcommand}{RESET}\n"
+            f"  {C_DIM}Available: set, delete, show{RESET}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Command Handler
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2046,17 +2459,51 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
         _print_model_matrix(state)
         return None
     if cmd == "/backend":
-        if arg not in _BACKENDS:
-            return f"{C_WARNING}Usage:{RESET} {C_CMD}/backend codex|mtp-openai{RESET}"
-        state.backend = arg
-        _save_tui_session(state)
-        return f"{C_SUCCESS}{_SYM_OK}{RESET} Switched backend to {C_VALUE}{arg}{RESET}."
+        if not arg:
+            # List all providers
+            _print_provider_list(state)
+            return None
+        
+        # Switch to provider
+        return _switch_backend(state, arg)
+    
+    if cmd == "/apikey":
+        # API key management
+        result = _handle_apikey_command(state, arg)
+        return result if result else None
+    
     if cmd == "/model":
         if not arg:
             _print_model_matrix(state)
-            return f"{C_WARNING}Usage:{RESET} {C_CMD}/model <name|1..4|default>{RESET}"
+            return f"{C_WARNING}Usage:{RESET} {C_CMD}/model <name|1..4|default|add <name>>{RESET}"
+        
+        # Handle "/model add <model-name>"
+        if arg.startswith("add "):
+            model_name = arg[4:].strip()
+            if not model_name:
+                return f"{C_ERROR}Model name required.{RESET}"
+            
+            # Can't add custom models to Codex
+            if state.backend == "codex":
+                return f"{C_WARNING}Cannot add custom models to Codex backend.{RESET}"
+            
+            # Add to provider's model list
+            settings_path = provider_settings_path(state.session_store.file_path)
+            settings = load_provider_settings(settings_path)
+            
+            added = add_custom_model(settings, state.backend, model_name)
+            save_provider_settings(settings_path, settings)
+            
+            if added:
+                return f"{C_SUCCESS}✓{RESET} Added model {C_VALUE}{model_name}{RESET} to {state.backend}."
+            else:
+                return f"{C_WARNING}Model {C_VALUE}{model_name}{RESET} already exists.{RESET}"
+        
+        # Handle "/model <name>" (switch model)
         resolved = _resolve_model(arg)
+        
         if state.backend == "codex":
+            # Codex backend
             if resolved.lower() in {"default", "auto"}:
                 state.codex_model = None
                 _save_tui_session(state)
@@ -2064,10 +2511,21 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
             state.codex_model = resolved
             _save_tui_session(state)
             return f"{C_SUCCESS}{_SYM_OK}{RESET} Codex model set to {C_MODEL}{resolved}{RESET}."
-        state.openai_model = resolved
-        state.agent = None
-        _save_tui_session(state)
-        return f"{C_SUCCESS}{_SYM_OK}{RESET} OpenAI model set to {C_MODEL}{resolved}{RESET}. Agent reloaded."
+        else:
+            # MTP Provider backend
+            settings_path = provider_settings_path(state.session_store.file_path)
+            settings = load_provider_settings(settings_path)
+            entry = ensure_provider_entry(settings, state.backend)
+            
+            entry["model"] = resolved
+            save_provider_settings(settings_path, settings)
+            
+            # Force agent rebuild on next chat
+            state.agent = None
+            _save_tui_session(state)
+            
+            return f"{C_SUCCESS}{_SYM_OK}{RESET} {state.backend} model set to {C_MODEL}{resolved}{RESET}. Agent will reload."
+
     if cmd == "/reasoning":
         if not arg:
             return f"{C_WARNING}Usage:{RESET} {C_CMD}/reasoning <none|low|medium|high|xhigh>{RESET}"
@@ -2183,6 +2641,7 @@ def _normalize_input(raw: str) -> str:
         "sessions",
         "load",
         "backend",
+        "apikey",
         "models",
         "model",
         "reasoning",
@@ -2664,7 +3123,12 @@ def run_tui(args) -> int:
                 # ── Fallback: plain input() ──
                 # Draw input box frame for fallback mode too
                 w = _get_term_width()
-                backend_short = "cdx" if state.backend == "codex" else "oai"
+                # Use 3-letter abbreviation for backend
+                if state.backend == "codex":
+                    backend_short = "cdx"
+                else:
+                    # For MTP providers, use first 3 letters or full name if shorter
+                    backend_short = state.backend[:3] if len(state.backend) > 3 else state.backend
                 session_short = state.session_id.split("-")[-1][:6]
                 label = f"mtp:{backend_short}:{session_short}"
                 
@@ -2726,27 +3190,33 @@ def run_tui(args) -> int:
                 continue
 
         expanded_prompt, attachments, attachment_warnings = _collect_prompt_attachments(raw, state.cwd)
-        active_model = (
-            state.codex_model or "(codex-default)"
-            if state.backend == "codex"
-            else state.openai_model
-        )
+        active_model = _active_model_name(state)
 
-        print(
-            f"  {C_DIM}> {state.backend} {_SYM_DOT} {active_model} "
-            f"{_SYM_DOT} reasoning={state.reasoning_effort}{RESET}"
-        )
+        # Build status line
+        if state.backend == "codex":
+            # Codex shows reasoning
+            status_line = (
+                f"  {C_DIM}> {state.backend} {_SYM_DOT} {active_model} "
+                f"{_SYM_DOT} reasoning={state.reasoning_effort}{RESET}"
+            )
+        else:
+            # MTP providers don't show reasoning
+            status_line = f"  {C_DIM}> {state.backend} {_SYM_DOT} {active_model}{RESET}"
+
+        print(status_line)
         spinner_preset = "reasoning" if state.reasoning_effort in ("high", "xhigh") else "default"
         spinner = _Spinner(label="Thinking", preset=spinner_preset)
         spinner.start()
         _interrupt_requested.clear()
         try:
             if state.backend == "codex":
+                # Codex backend (external binary)
                 result = _run_codex_prompt(state, expanded_prompt)
                 result.attachments = attachments
                 result.warnings = [*attachment_warnings, *result.warnings]
             else:
-                result = _run_openai_prompt(state, expanded_prompt)
+                # MTP Provider backend (SDK)
+                result = _run_mtp_prompt(state, expanded_prompt)
                 result.attachments = attachments
                 result.warnings = [*attachment_warnings, *result.warnings]
         except KeyboardInterrupt:

@@ -227,7 +227,12 @@ def build_prompt_prefix_html_with_box(state) -> tuple[str, str, str]:
     from .tui_theme import input_box_top, input_box_bottom, get_term_width
     
     # Build session label for box header
-    backend_short = "cdx" if state.backend == "codex" else "oai"
+    # Use 3-letter abbreviation for backend
+    if state.backend == "codex":
+        backend_short = "cdx"
+    else:
+        # For MTP providers, use first 3 letters or full name if shorter
+        backend_short = state.backend[:3] if len(state.backend) > 3 else state.backend
     session_short = state.session_id.split("-")[-1][:6]
     label = f"mtp:{backend_short}:{session_short}"
     
