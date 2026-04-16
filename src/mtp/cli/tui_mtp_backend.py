@@ -155,7 +155,12 @@ def run_mtp_prompt(
                     tool_events.append(f"  ✓ {tool_name} completed")
                 else:
                     tool_events.append(f"  ✗ {tool_name} failed")
-            
+            elif event_type == "reasoning_chunk":
+                chunk = event.get("chunk", "")
+                thinking_chunks.append(chunk)
+                if emit_live:
+                    emit_live("reasoning", chunk)
+
             # Handle text chunks
             elif event_type == "text_chunk":
                 # Track token generation timing
