@@ -366,6 +366,15 @@ def build_prompt_session(state, banner_fn) -> "PromptSession | None":
             print(f"\n  {color}Codex sandbox: {state.codex_sandbox_mode.upper()} {icon}{RESET}")
             print(f"  {C_DIM}{desc}{RESET}\n")
 
+        @kb.add("<any>")
+        def _(event):
+            try:
+                from . import tui_cat
+                tui_cat.set_cat_state("wakeup")
+            except Exception:
+                pass
+            event.app.current_buffer.insert_text(event.data)
+
         completer = MergedCompleter([
             CommandCompleter(),
             AtFileCompleter(cwd_fn=lambda: state.cwd),

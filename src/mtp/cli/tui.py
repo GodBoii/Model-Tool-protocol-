@@ -3233,6 +3233,11 @@ _interrupt_requested = threading.Event()
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_tui(args) -> int:
+    try:
+        from . import tui_cat
+        tui_cat.start_cat_ui()
+    except Exception:
+        pass
     session_store = JsonSessionStore(db_path=args.session_db)
     initial_session_id = args.session_id or _new_session_id()
     state = TUIState(
@@ -3265,6 +3270,11 @@ def run_tui(args) -> int:
 
 
     while True:
+        try:
+            from . import tui_cat
+            tui_cat.set_cat_state("idle")
+        except Exception:
+            pass
         # Track if we need to close the box on exception
         box_opened = False
         bottom_border = None
@@ -3374,6 +3384,11 @@ def run_tui(args) -> int:
         spinner_preset = "reasoning" if state.reasoning_effort in ("high", "xhigh") else "default"
         spinner = _Spinner(label="Thinking", preset=spinner_preset)
         spinner.start()
+        try:
+            from . import tui_cat
+            tui_cat.set_cat_state("thinking")
+        except Exception:
+            pass
         _interrupt_requested.clear()
         try:
             if state.backend == "codex":
@@ -3393,8 +3408,18 @@ def run_tui(args) -> int:
             continue
         except Exception as exc:  # noqa: BLE001
             spinner.stop()
+            try:
+                from . import tui_cat
+                tui_cat.set_cat_state("error")
+            except Exception:
+                pass
             print(f"  {C_ERROR}{_SYM_ERR} Error:{RESET} {exc}")
             continue
         spinner.stop()
         _record_turn(state, raw, result)
+        try:
+            from . import tui_cat
+            tui_cat.set_cat_state("response")
+        except Exception:
+            pass
         _render_prompt_and_response(result, state=state)
