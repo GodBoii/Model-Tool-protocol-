@@ -54,6 +54,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
         self.think = think
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
+        self._last_stream_thinking: str | None = None  # Track thinking from stream
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
@@ -276,12 +277,19 @@ class OllamaToolCallingProvider(ProviderAdapter):
     def finalize_stream(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> Iterator[str]:
         ollama_messages = self._to_ollama_messages(messages)
         self._last_stream_usage = None
+        self._last_stream_thinking = None  # Track thinking from stream
         stream = self._client.chat(messages=ollama_messages, **self._request_kwargs(stream=True))
         for chunk in stream:
             usage = self._extract_usage_metrics(chunk)
             if usage:
                 self._last_stream_usage = usage
+            
+            # Extract thinking tokens from stream chunks
             message = _read_value(chunk, "message") or {}
+            thinking = _read_value(message, "thinking")
+            if thinking and isinstance(thinking, str):
+                self._last_stream_thinking = thinking
+            
             content = _read_value(message, "content")
             if content:
                 yield content

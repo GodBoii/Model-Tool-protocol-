@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable
 
 from mtp import Agent
@@ -88,6 +89,11 @@ def run_mtp_prompt(
     llm_calls = 0
     total_duration = 0.0
     
+    # Token generation speed tracking
+    first_token_time = None
+    last_token_time = None
+    generation_start_time = None
+    
     try:
         if emit_live:
             emit_live("status", "Sending request to provider...")
@@ -104,6 +110,10 @@ def run_mtp_prompt(
             
             # Handle LLM response events to capture metrics
             if event_type == "llm_response":
+                # Mark generation start
+                if generation_start_time is None:
+                    generation_start_time = perf_counter()
+                
                 usage = event.get("usage", {})
                 if isinstance(usage, dict):
                     total_input_tokens += usage.get("input_tokens", 0)
@@ -120,8 +130,7 @@ def run_mtp_prompt(
                 reasoning_text = event.get("reasoning")
                 if reasoning_text and isinstance(reasoning_text, str):
                     thinking_chunks.append(reasoning_text)
-                    if emit_live:
-                        emit_live("thinking", f"💭 {reasoning_text[:100]}...")
+                    # Don't emit live thinking previews - will show full thinking at the end
                 
                 duration = event.get("duration_seconds", 0.0)
                 if duration:
@@ -149,6 +158,12 @@ def run_mtp_prompt(
             
             # Handle text chunks
             elif event_type == "text_chunk":
+                # Track token generation timing
+                current_time = perf_counter()
+                if first_token_time is None:
+                    first_token_time = current_time
+                last_token_time = current_time
+                
                 chunk = event.get("chunk", "")
                 final_text_chunks.append(chunk)
                 if emit_live:
@@ -169,8 +184,23 @@ def run_mtp_prompt(
         # Format usage metrics
         usage_lines = []
         if llm_calls > 0:
-            # Calculate tokens per second
-            tokens_per_sec = (total_tokens / total_duration) if total_duration > 0 else 0
+            # Calculate token generation speed
+            # Use actual generation time if available (time between first and last token)
+            generation_duration = 0.0
+            if first_token_time is not None and last_token_time is not None:
+                generation_duration = last_token_time - first_token_time
+            
+            # Fallback to total duration if generation timing not available
+            if generation_duration <= 0:
+                generation_duration = total_duration
+            
+            # Calculate tokens per second (output tokens / generation time)
+            tokens_per_sec = 0.0
+            if generation_duration > 0 and total_output_tokens > 0:
+                tokens_per_sec = total_output_tokens / generation_duration
+            elif total_duration > 0 and total_tokens > 0:
+                # Fallback: use total tokens / total duration
+                tokens_per_sec = total_tokens / total_duration
             
             # Get context window for this model
             context_window, source = get_context_window(provider_name, model_name)
@@ -184,12 +214,10 @@ def run_mtp_prompt(
                 f"tokens(in/out/total/reasoning)={total_input_tokens}/{total_output_tokens}/{total_tokens}/{reasoning_tokens}"
             )
             
-            # Thinking tokens (if any)
+            # Thinking tokens (if any) - show full text, not truncated
             if thinking_chunks:
                 thinking_text = " | ".join(thinking_chunks)
-                # Truncate if too long
-                if len(thinking_text) > 200:
-                    thinking_text = thinking_text[:197] + "..."
+                # Don't truncate - show full thinking process
                 usage_lines.append(f"thinking={thinking_text}")
             
             # Cache tokens (only if any cache tokens exist)
@@ -203,6 +231,12 @@ def run_mtp_prompt(
             usage_lines.append(f"duration={total_duration:.2f}s")
             if tokens_per_sec > 0:
                 usage_lines.append(f"speed={tokens_per_sec:.1f} tokens/s")
+            
+            # Time to first token (TTFT) - important for perceived latency
+            if generation_start_time is not None and first_token_time is not None:
+                ttft = first_token_time - generation_start_time
+                if ttft > 0:
+                    usage_lines.append(f"ttft={ttft:.2f}s")
         else:
             # Fallback if no metrics captured
             usage_lines.append("tokens(in/out/total/reasoning)=unknown/unknown/unknown/unknown")
