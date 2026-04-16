@@ -263,6 +263,105 @@ class OllamaToolCallingProvider(ProviderAdapter):
 
         return AgentAction(response_text=content, metadata=action_meta)
 
+    def stream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Iterator[AgentAction | dict[str, Any]]:
+        ollama_messages = self._to_ollama_messages(messages)
+        stream = self._client.chat(
+            messages=ollama_messages,
+            **self._request_kwargs(tools, stream=True),
+        )
+
+        content_acc = ""
+        reasoning_acc = ""
+        tool_calls: list[dict[str, Any]] | None = None
+        usage: dict[str, int] | None = None
+
+        for chunk in stream:
+            message = _read_value(chunk, "message") or {}
+            chunk_content = _read_value(message, "content")
+            chunk_reasoning = _read_value(message, "thinking")
+            chunk_tool_calls = _read_value(message, "tool_calls")
+            
+            chunk_usage = self._extract_usage_metrics(chunk)
+            if chunk_usage:
+                usage = chunk_usage
+
+            if chunk_reasoning and isinstance(chunk_reasoning, str):
+                yield {"type": "reasoning_chunk", "chunk": chunk_reasoning}
+                reasoning_acc += chunk_reasoning
+                
+            if chunk_content and isinstance(chunk_content, str):
+                yield {"type": "text_chunk", "chunk": chunk_content}
+                content_acc += chunk_content
+                
+            if isinstance(chunk_tool_calls, list) and chunk_tool_calls:
+                tool_calls = chunk_tool_calls
+
+        action_meta: dict[str, Any] = {"provider": "ollama", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if reasoning_acc.strip():
+            action_meta["reasoning"] = reasoning_acc.strip()
+
+        if isinstance(tool_calls, list) and tool_calls:
+            mtp_calls: list[ToolCall] = []
+            serialized_tool_calls: list[dict[str, Any]] = []
+            id_by_index: dict[int, str] = {}
+            call_reasoning = reasoning_acc.strip() if reasoning_acc.strip() else None
+            for idx, tc in enumerate(tool_calls):
+                function = _read_value(tc, "function") or {}
+                call_id = _read_value(tc, "id") or f"call_{idx}"
+                id_by_index[idx] = call_id
+                arguments = _read_value(function, "arguments")
+                if isinstance(arguments, dict):
+                    parsed_args = arguments
+                elif isinstance(arguments, str):
+                    try:
+                        parsed_args = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        parsed_args = {"_raw_arguments": arguments}
+                else:
+                    parsed_args = {}
+                normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
+                depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
+                tool_name = _read_value(function, "name") or ""
+                mtp_calls.append(
+                    ToolCall(
+                        id=call_id,
+                        name=tool_name,
+                        arguments=normalized_args,
+                        depends_on=depends_on,
+                        reasoning=call_reasoning,
+                    )
+                )
+                serialized_tool_calls.append(
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool_name, "arguments": json.dumps(parsed_args)},
+                        "reasoning": call_reasoning,
+                    }
+                )
+
+            plan = ExecutionPlan(
+                batches=calls_to_dependency_batches(mtp_calls),
+                metadata={"provider": "ollama", "model": self.model},
+            )
+            yield AgentAction(
+                plan=plan,
+                metadata={
+                    **action_meta,
+                    "assistant_tool_message": {
+                        "role": "assistant",
+                        "content": content_acc,
+                        "tool_calls": serialized_tool_calls,
+                        "reasoning": reasoning_acc,
+                    },
+                },
+            )
+            return
+
+        yield AgentAction(response_text=content_acc, metadata=action_meta)
+
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         ollama_messages = self._to_ollama_messages(messages)
         response = self._client.chat(messages=ollama_messages, **self._request_kwargs())
@@ -311,6 +410,15 @@ class OllamaToolCallingProvider(ProviderAdapter):
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)
+
+    async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
+        stream = self.stream_next_action(messages, tools)
+        while True:
+            try:
+                chunk = await asyncio.to_thread(next, stream)
+                yield chunk
+            except StopIteration:
+                break
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         return await asyncio.to_thread(self.finalize, messages, tool_results)

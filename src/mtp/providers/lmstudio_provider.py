@@ -165,6 +165,126 @@ class LMStudioToolCallingProvider(ProviderAdapter):
 
         return AgentAction(response_text=message.content or "", metadata=action_meta)
 
+    def stream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Iterator[AgentAction | dict[str, Any]]:
+        lmstudio_messages = self._to_lmstudio_messages(messages)
+        lmstudio_tools = self._to_lmstudio_tools(tools)
+
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": lmstudio_messages,
+            "temperature": self.temperature,
+            "stream": True,
+        }
+        if lmstudio_tools:
+            request_args["tools"] = lmstudio_tools
+            request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+
+        try:
+            stream = self._client.chat.completions.create(**request_args)
+        except TypeError:
+            request_args.pop("parallel_tool_calls", None)
+            stream = self._client.chat.completions.create(**request_args)
+
+        content_acc = ""
+        reasoning_acc = ""
+        usage = None
+        tool_calls_dict: dict[int, Any] = {}
+
+        for chunk in stream:
+            chunk_usage = extract_usage_metrics(chunk)
+            if chunk_usage:
+                usage = chunk_usage
+
+            if not getattr(chunk, "choices", None):
+                continue
+
+            delta = chunk.choices[0].delta
+            
+            chunk_reasoning = getattr(delta, "reasoning_content", None)
+            chunk_content = getattr(delta, "content", None)
+
+            if chunk_reasoning and isinstance(chunk_reasoning, str):
+                yield {"type": "reasoning_chunk", "chunk": chunk_reasoning}
+                reasoning_acc += chunk_reasoning
+
+            if chunk_content and isinstance(chunk_content, str):
+                yield {"type": "text_chunk", "chunk": chunk_content}
+                content_acc += chunk_content
+
+            chunk_tool_calls = getattr(delta, "tool_calls", None)
+            if chunk_tool_calls:
+                for tc in chunk_tool_calls:
+                    index = tc.index
+                    if index not in tool_calls_dict:
+                        tool_calls_dict[index] = {
+                            "id": tc.id, 
+                            "type": "function", 
+                            "function": {"name": getattr(tc.function, "name", ""), "arguments": getattr(tc.function, "arguments", "") or ""}
+                        }
+                    else:
+                        if getattr(tc.function, "arguments", None):
+                            tool_calls_dict[index]["function"]["arguments"] += tc.function.arguments
+
+        action_meta: dict[str, Any] = {"provider": "lmstudio", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if reasoning_acc.strip():
+            action_meta["reasoning"] = reasoning_acc.strip()
+
+        if tool_calls_dict:
+            mtp_calls: list[ToolCall] = []
+            id_by_index: dict[int, str] = {}
+            serialized_tool_calls: list[dict[str, Any]] = []
+            call_reasoning = reasoning_acc.strip() if reasoning_acc.strip() else content_acc.strip() if content_acc.strip() else None
+            
+            for idx, tc in tool_calls_dict.items():
+                call_id = tc["id"] or f"call_{idx}"
+                id_by_index[idx] = call_id
+                args_str = tc["function"]["arguments"]
+                parsed_args = safe_load_arguments(args_str)
+                normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
+                depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
+                tool_name = tc["function"]["name"]
+                
+                mtp_calls.append(
+                    ToolCall(
+                        id=call_id,
+                        name=tool_name,
+                        arguments=normalized_args,
+                        depends_on=depends_on,
+                        reasoning=call_reasoning,
+                    )
+                )
+                serialized_tool_calls.append(
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool_name, "arguments": args_str},
+                        "reasoning": call_reasoning,
+                    }
+                )
+
+            plan = ExecutionPlan(
+                batches=calls_to_dependency_batches(mtp_calls),
+                metadata={"provider": "lmstudio", "model": self.model},
+            )
+            yield AgentAction(
+                plan=plan,
+                metadata={
+                    **action_meta,
+                    "assistant_tool_message": {
+                        "role": "assistant",
+                        "content": content_acc,
+                        "tool_calls": serialized_tool_calls,
+                        "reasoning": reasoning_acc,
+                    },
+                },
+            )
+            return
+
+        yield AgentAction(response_text=content_acc, metadata=action_meta)
+
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         lmstudio_messages = self._to_lmstudio_messages(messages)
         response = self._client.chat.completions.create(
@@ -215,6 +335,15 @@ class LMStudioToolCallingProvider(ProviderAdapter):
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)
+
+    async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
+        stream = self.stream_next_action(messages, tools)
+        while True:
+            try:
+                chunk = await asyncio.to_thread(next, stream)
+                yield chunk
+            except StopIteration:
+                break
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         return await asyncio.to_thread(self.finalize, messages, tool_results)
