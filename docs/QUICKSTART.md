@@ -16,6 +16,12 @@ Common optional installs:
 # Groq + dotenv helper
 pip install "mtpx[groq,dotenv]"
 
+# LM Studio local inference
+pip install "mtpx[lmstudio]"
+
+# Ollama local inference
+pip install "mtpx[ollama]"
+
 # OpenAI + Anthropic providers
 pip install "mtpx[openai,anthropic,dotenv]"
 
@@ -182,6 +188,8 @@ Notes:
 
 - Enable persistent sessions:
   - [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
+- Use local inference providers:
+  - [Local Inference](C:\Users\prajw\Downloads\MTP\docs\LOCAL_INFERENCE.md)
 - Add your own provider adapter under `src/mtp/providers/`
 - Add your own toolkit under `src/mtp/toolkits/`
 - Add a transport layer integration under `src/mtp/transport/`

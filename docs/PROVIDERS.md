@@ -13,6 +13,8 @@ Use official extras instead of remembering each SDK package:
 ```bash
 pip install "mtpx[groq]"
 pip install "mtpx[openai]"
+pip install "mtpx[lmstudio]"
+pip install "mtpx[ollama]"
 pip install "mtpx[anthropic]"
 pip install "mtpx[gemini]"
 pip install "mtpx[cohere]"
@@ -123,7 +125,7 @@ agent = Agent.MTPAgent(provider=provider, tools=registry)
 ## Notes
 
 - Alias names available (when matching optional SDKs are installed):
-  - `Groq`, `OpenRouter`, `OpenAI`, `Gemini`, `Anthropic`, `SambaNova`
+  - `Groq`, `OpenRouter`, `OpenAI`, `LMStudio`, `Ollama`, `Gemini`, `Anthropic`, `SambaNova`
   - `Cerebras`, `DeepSeek`, `Mistral`, `Cohere`, `TogetherAI`, `FireworksAI`
 - Local deterministic planner provider is also available as `MockPlannerProvider` (class alias for `SimplePlannerProvider`).
 - Provider exports are dependency-optional: missing SDKs no longer block importing other providers.
@@ -135,3 +137,46 @@ agent = Agent.MTPAgent(provider=provider, tools=registry)
 
 Related:
 - [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
+- [Local Inference](C:\Users\prajw\Downloads\MTP\docs\LOCAL_INFERENCE.md)
+
+## Local providers quick reference
+
+## LM Studio
+
+`LMStudio` targets the OpenAI-compatible LM Studio local server.
+
+```python
+from mtp.providers import LMStudio
+
+provider = LMStudio(
+    model="qwen3-4b-thinking-2507",
+    base_url="http://127.0.0.1:1234/v1",
+    temperature=0.0,
+)
+```
+
+Notes:
+- No cloud API key is required for local LM Studio usage.
+- The LM Studio API server must be started and a model must be loaded.
+
+## Ollama
+
+`Ollama` targets a local Ollama host using the native Ollama client SDK.
+
+```python
+from mtp.providers import Ollama
+
+provider = Ollama(
+    model="qwen3:1.7b",
+    host="http://localhost:11434",
+    think=True,
+    options={"temperature": 0},
+)
+```
+
+Notes:
+- For local Ollama usage, no cloud API key is required.
+- Ensure the model is pulled first (`ollama pull ...`) and the service is running.
+
+Detailed setup and troubleshooting:
+- [Local Inference](C:\Users\prajw\Downloads\MTP\docs\LOCAL_INFERENCE.md)
