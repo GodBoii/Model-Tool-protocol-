@@ -1811,12 +1811,20 @@ def _run_mtp_prompt(state: TUIState, prompt: str) -> ChatResult:
             )
     
     try:
+        # Get current model name for context window detection
+        settings_path = provider_settings_path(state.session_store.file_path)
+        settings = load_provider_settings(settings_path)
+        entry = ensure_provider_entry(settings, state.backend)
+        model_name = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(state.backend, "unknown")
+        
         # Run MTP agent
         mtp_result = mtp_backend.run_mtp_prompt(
             agent=state.agent,
             prompt=prompt,
             max_rounds=state.max_rounds,
             emit_live=_emit_live_event,
+            provider_name=state.backend,
+            model_name=model_name,
         )
         
         return ChatResult(
@@ -3014,17 +3022,32 @@ def _render_prompt_and_response(result: ChatResult, state: TUIState | None = Non
         print()
         # Try to render a context bar from usage lines
         ctx_match = None
+        thinking_line = None
+        other_lines = []
+        
         for uline in result.usage_lines:
             m = re.match(r"context_window=([\d,]+)/([\d,]+)", uline)
             if m:
                 ctx_match = m
-                break
+            elif uline.startswith("thinking="):
+                thinking_line = uline
+            else:
+                other_lines.append(uline)
+        
+        # Render context bar if available
         if ctx_match:
             used = int(ctx_match.group(1).replace(",", ""))
             total = int(ctx_match.group(2).replace(",", ""))
             print(f"  {C_DIM}ctx{RESET} {_render_usage_bar(used, total)}")
-        else:
-            compact_usage = "  ".join(result.usage_lines[:2])
+        
+        # Render thinking tokens prominently if available
+        if thinking_line:
+            thinking_text = thinking_line.replace("thinking=", "")
+            print(f"  {C_ACCENT}💭 thinking{RESET} {C_DIM}{thinking_text}{RESET}")
+        
+        # Render other metrics compactly
+        if other_lines:
+            compact_usage = "  ".join(other_lines[:3])  # Show up to 3 lines
             print(f"  {C_DIM}{compact_usage}{RESET}")
     print()
 

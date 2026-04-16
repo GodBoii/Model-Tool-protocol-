@@ -1856,6 +1856,7 @@ class Agent:
                     model=action_metadata.get("model"),
                     usage=action_metadata.get("usage"),
                     rate_limits=action_metadata.get("rate_limits"),
+                    reasoning=action_metadata.get("reasoning"),  # Pass through reasoning/thinking tokens
                     duration_seconds=llm_duration,
                     has_plan=action.plan is not None,
                     has_response=bool(action.response_text),
@@ -2200,6 +2201,7 @@ class Agent:
                     model=action_metadata.get("model"),
                     usage=action_metadata.get("usage"),
                     rate_limits=action_metadata.get("rate_limits"),
+                    reasoning=action_metadata.get("reasoning"),  # Pass through reasoning/thinking tokens
                     duration_seconds=llm_duration,
                     has_plan=action.plan is not None,
                     has_response=bool(action.response_text),
