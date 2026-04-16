@@ -200,6 +200,7 @@ Fix options:
 
 ## Related docs
 
+- [TUI CLI Local Inference Guide](TUI_LOCAL_INFERENCE.md) - Using local providers in the interactive TUI
 - [Providers](C:\Users\prajw\Downloads\MTP\docs\PROVIDERS.md)
 - [Quickstart](C:\Users\prajw\Downloads\MTP\docs\QUICKSTART.md)
 - [Agent API Reference](C:\Users\prajw\Downloads\MTP\docs\AGENT_API.md)

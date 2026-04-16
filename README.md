@@ -182,13 +182,35 @@ my_store = MySQLSessionStore(
 python examples/quickstart.py
 python examples/groq_agent.py
 python examples/groq_agent_events.py
+python examples/ollama_agent.py
+python examples/lmstudio_agent.py
 python examples/mcp_stdio_server.py
 ```
+
+### Interactive TUI with Local Inference
+
+```bash
+# Install with local inference support
+pip install -e ".[ollama,lmstudio]"
+
+# Start TUI
+mtp tui
+
+# Switch to local provider
+/backend ollama
+
+# Follow interactive setup to select model
+# Start chatting with your local LLM!
+```
+
+### Streamlit UI
 
 ```bash
 pip install -e ".[groq,dotenv,ui-streamlit]"
 streamlit run examples/streamlit_groq_agent_chat.py
 ```
+
+### Agent OS
 
 ```bash
 pip install -e ".[dotenv,ui-streamlit,groq,openai,openrouter]"
