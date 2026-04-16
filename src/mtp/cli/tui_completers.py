@@ -269,17 +269,23 @@ def build_bottom_toolbar(state) -> str:
     turns = len(state.transcript)
     reasoning = state.reasoning_effort
     backend = state.backend
+    autoresearch = state.autoresearch
 
     d = '#6b6b80'  # dim label
     v = '#9d9db5'  # value (slightly brighter, same hue)
     sep = f'<style fg="#3d3d50"> {SYM_DOT} </style>'
 
-    # Build toolbar - only show reasoning for Codex
+    # Build toolbar - show different info based on backend
     toolbar_parts = [f'<style fg="{v}">{model}</style>']
     
-    # Only show reasoning for Codex backend
     if state.backend == "codex":
+        # Codex: show reasoning
         toolbar_parts.append(f'<style fg="{d}">reasoning </style><style fg="{v}">{reasoning}</style>')
+    else:
+        # MTP providers: show autoresearch status
+        autoresearch_status = "on" if autoresearch else "off"
+        autoresearch_color = v if autoresearch else d
+        toolbar_parts.append(f'<style fg="{d}">autoresearch </style><style fg="{autoresearch_color}">{autoresearch_status}</style>')
     
     toolbar_parts.extend([
         f'<style fg="{d}">{backend}</style>',

@@ -55,7 +55,7 @@ def run_mtp_prompt(
     emit_live: Callable[[str, str], None] | None = None,
 ) -> MTPRunResult:
     """
-    Execute a prompt using an MTP provider agent.
+    Execute a prompt using an MTP provider agent with event streaming.
     
     Args:
         agent: Initialized MTP agent instance
@@ -67,28 +67,67 @@ def run_mtp_prompt(
         MTPRunResult with response text, tool events, warnings, and usage metrics
     """
     warnings: list[str] = []
+    tool_events: list[str] = []
+    final_text_chunks: list[str] = []
     
     try:
         if emit_live:
             emit_live("status", "Sending request to provider...")
         
-        # Execute agent run (use .run() method, not .run_loop())
-        result = agent.run(
+        # Use run_events to get streaming events (MTPAgent wrapper method)
+        for event in agent.run_events(
             prompt=prompt,
             max_rounds=max_rounds,
-        )
+            stream_final=True,
+            stream_tool_events=True,  # Enable tool event streaming
+            stream_tool_results=False,  # Disable tool result streaming
+        ):
+            event_type = event.get("type")
+            
+            # Handle tool events
+            if event_type == "tool_started":
+                tool_name = event.get("tool_name", "unknown")
+                reasoning = event.get("reasoning", "")
+                if reasoning:
+                    tool_event_msg = f"🔧 {tool_name}: {reasoning}"
+                else:
+                    tool_event_msg = f"🔧 {tool_name}"
+                tool_events.append(tool_event_msg)
+                if emit_live:
+                    emit_live("tool", tool_event_msg)
+            
+            elif event_type == "tool_finished":
+                tool_name = event.get("tool_name", "unknown")
+                success = event.get("success", False)
+                if success:
+                    tool_events.append(f"  ✓ {tool_name} completed")
+                else:
+                    tool_events.append(f"  ✗ {tool_name} failed")
+            
+            # Handle text chunks
+            elif event_type == "text_chunk":
+                chunk = event.get("chunk", "")
+                final_text_chunks.append(chunk)
+                if emit_live:
+                    emit_live("text", chunk)
+            
+            # Handle completion
+            elif event_type == "run_completed":
+                final_text = event.get("final_text", "")
+                if final_text and not final_text_chunks:
+                    final_text_chunks.append(final_text)
         
         if emit_live:
             emit_live("status", "Processing response...")
         
-        # Extract tool events
-        tool_events = _extract_tool_events_from_agent(agent)
+        # Combine final text
+        result_text = "".join(final_text_chunks) if final_text_chunks else ""
         
         # Extract usage metrics
-        usage_lines = _extract_usage_metrics(agent, result)
+        usage_lines = _extract_usage_metrics(agent, result_text)
         
         return MTPRunResult(
-            text=result,
+            text=result_text,
             tool_events=tool_events,
             warnings=warnings,
             usage_lines=usage_lines,
@@ -139,4 +178,6 @@ def build_mtp_agent(
         strict_dependency_mode=True,
         autoresearch=autoresearch,
         research_instructions=research_instructions,
+        stream_tool_events=True,  # Enable tool event streaming
+        stream_tool_results=False,  # Disable tool result streaming
     )
