@@ -371,12 +371,13 @@ def _print_help() -> None:
         ]),
         ("Backend & Model", [
             ("/backend", "List all available providers"),
-            ("/backend <provider>", "Switch to provider (codex, openai, groq, claude, etc.)"),
+            ("/backend <provider>", "Switch to provider (codex, openai, groq, ollama, lmstudio, etc.)"),
             ("/apikey", "List all API keys (masked)"),
             ("/apikey set <provider> <key>", "Set/update API key for provider"),
             ("/apikey delete <provider>", "Delete API key for provider"),
             ("/apikey show <provider>", "Show full API key (use with caution)"),
             ("/models", "Show all models for all providers"),
+            ("/models refresh", "Refresh model list for local providers (ollama, lmstudio)"),
             ("/model <name>", "Switch to model"),
             ("/model add <provider> <name>", "Add custom model to any provider"),
             ("/reasoning <none|low|...|xhigh>", "Set reasoning effort (codex only)"),
@@ -2140,9 +2141,20 @@ def _setup_provider_interactive(state: TUIState, provider_name: str) -> tuple[bo
     """
     Interactive setup flow for a new provider.
     
+    Handles both cloud-only and local-capable providers.
+    
     Returns:
         (success, message) tuple
     """
+    from .tui_local_providers import is_local_capable_provider
+    from .tui_local_setup import setup_local_provider_interactive
+    
+    # Check if this is a local-capable provider
+    if is_local_capable_provider(provider_name):
+        # Use local provider setup flow
+        return setup_local_provider_interactive(state, provider_name)
+    
+    # Cloud-only provider setup (existing flow)
     settings_path = provider_settings_path(state.session_store.file_path)
     settings = load_provider_settings(settings_path)
     entry = ensure_provider_entry(settings, provider_name)
@@ -2253,6 +2265,7 @@ def _switch_backend(state: TUIState, provider_name: str) -> str:
     entry = ensure_provider_entry(settings, provider_name)
     model = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(provider_name, "default")
     api_key = entry.get("api_key")
+    base_url = entry.get("base_url")  # For local providers
     
     # Build provider
     try:
@@ -2260,6 +2273,7 @@ def _switch_backend(state: TUIState, provider_name: str) -> str:
             provider_name=provider_name,
             model_name=model,
             api_key=api_key,
+            base_url=base_url,
         )
         provider = build_tui_provider(selection)
     except Exception as e:
@@ -2486,6 +2500,17 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
         result = _open_session_viewer(state, arg)
         return result
     if cmd == "/models":
+        # Handle "/models refresh" for local providers
+        if arg and arg.lower() == "refresh":
+            from .tui_local_setup import refresh_local_models
+            from .tui_local_providers import is_local_capable_provider
+            
+            if not is_local_capable_provider(state.backend):
+                return f"{C_WARNING}Current backend ({state.backend}) does not support model refresh.{RESET}"
+            
+            success, message = refresh_local_models(state, state.backend)
+            return message
+        
         _print_model_matrix(state)
         return None
     if cmd == "/backend":

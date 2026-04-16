@@ -34,6 +34,8 @@ PROVIDERS: list[ProviderInfo] = [
     ProviderInfo("cohere", "Cohere", "CohereToolCallingProvider", "cohere", "COHERE_API_KEY"),
     ProviderInfo("togetherai", "TogetherAI", "TogetherAIToolCallingProvider", "openai", "TOGETHER_API_KEY"),
     ProviderInfo("fireworksai", "FireworksAI", "FireworksAIToolCallingProvider", "openai", "FIREWORKS_API_KEY"),
+    ProviderInfo("ollama", "Ollama", "OllamaToolCallingProvider", "ollama", None, "local inference (localhost:11434)"),
+    ProviderInfo("lmstudio", "LMStudio", "LMStudioToolCallingProvider", "openai", None, "local inference (localhost:1234)"),
 ]
 
 
