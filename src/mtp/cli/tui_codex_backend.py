@@ -631,6 +631,7 @@ def _build_codex_exec_command(
     model: str | None,
     reasoning_effort: str,
     session_id: str | None,
+    sandbox_mode: str = "workspace-write",
 ) -> list[str]:
     """
     Build codex exec command with proper syntax for resume vs fresh sessions.
@@ -638,6 +639,11 @@ def _build_codex_exec_command(
     CRITICAL: codex exec resume does NOT accept -C flag!
     - Fresh session: codex exec -C <cwd> [options] <prompt>
     - Resume session: codex exec resume <session_id> [options] <prompt>
+    
+    Args:
+        sandbox_mode: Sandbox mode for file operations.
+                     Options: "read-only", "workspace-write", "danger-full-access"
+                     Default: "workspace-write" (allows file edits in workspace)
     """
     if session_id:
         # Resume command: NO -C flag, working directory is inherited from original session
@@ -663,6 +669,12 @@ def _build_codex_exec_command(
             "--output-last-message",
             str(output_path),
         ]
+    
+    # Add sandbox mode flag
+    # Valid modes: read-only, workspace-write, danger-full-access
+    if sandbox_mode in ("read-only", "workspace-write", "danger-full-access"):
+        cmd.extend(["--sandbox", sandbox_mode])
+    
     if model:
         cmd.extend(["-m", model])
     if reasoning_effort in _REASONING_EFFORTS and reasoning_effort != "none":
@@ -707,6 +719,7 @@ def run_codex_prompt(
     model: str | None,
     reasoning_effort: str,
     previous_session_id: str | None,
+    sandbox_mode: str = "workspace-write",
     conversation_history: list[tuple[str, str]] | None = None,
     emit_live: Callable[[str, str], None] | None = None,
 ) -> CodexRunResult:
@@ -720,6 +733,7 @@ def run_codex_prompt(
         model: Model name
         reasoning_effort: Reasoning effort level
         previous_session_id: Previous Codex session/thread ID for resume
+        sandbox_mode: Sandbox mode ("read-only", "workspace-write", "danger-full-access")
         conversation_history: List of (user_prompt, assistant_response) tuples for manual history injection
         emit_live: Optional callback for live event streaming
     
@@ -755,6 +769,7 @@ def run_codex_prompt(
             model=model,
             reasoning_effort=reasoning_effort,
             session_id=previous_session_id,
+            sandbox_mode=sandbox_mode,
         )
         return_code, stdout_text = _run_codex_command(cmd=cmd, emit=_emit_adapter if emit_live else None)
         text = output_path.read_text(encoding="utf-8", errors="replace").strip() if output_path.exists() else ""
@@ -785,6 +800,7 @@ def run_codex_prompt(
                 model=model,
                 reasoning_effort=reasoning_effort,
                 session_id=None,
+                sandbox_mode=sandbox_mode,
             )
             fresh_return_code, fresh_stdout_text = _run_codex_command(
                 cmd=fresh_cmd,

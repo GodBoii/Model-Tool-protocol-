@@ -292,6 +292,7 @@ class TUIState:
     autoresearch: bool
     research_instructions: str | None
     reasoning_effort: str
+    codex_sandbox_mode: str  # "read-only", "workspace-write", or "danger-full-access"
     last_usage_lines: list[str]
     transcript: list[TranscriptTurn]
     session_store: JsonSessionStore
@@ -358,6 +359,7 @@ def _print_help() -> None:
             ("/model <name|1..4|default>", "Set model for active backend"),
             ("/reasoning <none|low|...|xhigh>", "Set reasoning effort (codex)"),
             ("/rounds <n>", "Set max_rounds (mtp-openai)"),
+            ("/sandbox [mode]", "Set Codex sandbox mode (Ctrl+W) - controls file access permissions"),
         ]),
         ("Research & Auth", [
             ("/autoresearch on|off", "Toggle autoresearch (mtp-openai)"),
@@ -386,6 +388,7 @@ def _print_help() -> None:
         ("Ctrl+C", "Interrupt current request / Exit on double press"),
         ("Ctrl+L", "Clear screen and redraw banner"),
         ("Ctrl+D", "Exit TUI"),
+        ("Ctrl+W", "Cycle Codex sandbox mode (read-only → workspace-write → danger-full-access)"),
         ("Ctrl+R", "Reverse search through history"),
         ("Tab", "Accept autocomplete suggestion"),
         ("↑ / ↓", "Navigate command history"),
@@ -518,6 +521,7 @@ def _save_tui_session(state: TUIState) -> None:
         "openai_model": state.openai_model,
         "codex_session_id": state.codex_session_id,
         "reasoning_effort": state.reasoning_effort,
+        "codex_sandbox_mode": state.codex_sandbox_mode,
         "max_rounds": state.max_rounds,
         "autoresearch": state.autoresearch,
         "research_instructions": state.research_instructions,
@@ -616,6 +620,17 @@ def _load_session_into_state(state: TUIState, record: SessionRecord) -> None:
     reasoning = tui_meta.get("reasoning_effort")
     if isinstance(reasoning, str) and _resolve_reasoning(reasoning) is not None:
         state.reasoning_effort = reasoning
+    # Restore codex_sandbox_mode (default to workspace-write if not present for backward compatibility)
+    codex_sandbox_mode = tui_meta.get("codex_sandbox_mode")
+    if isinstance(codex_sandbox_mode, str) and codex_sandbox_mode in ("read-only", "workspace-write", "danger-full-access"):
+        state.codex_sandbox_mode = codex_sandbox_mode
+    else:
+        # Backward compatibility: check old codex_write_mode field
+        codex_write_mode = tui_meta.get("codex_write_mode")
+        if isinstance(codex_write_mode, bool):
+            state.codex_sandbox_mode = "workspace-write" if codex_write_mode else "read-only"
+        else:
+            state.codex_sandbox_mode = "workspace-write"  # Default to workspace-write mode
     state.autoresearch = bool(tui_meta.get("autoresearch", state.autoresearch))
     research_instructions = tui_meta.get("research_instructions")
     state.research_instructions = (
@@ -1702,6 +1717,7 @@ def _run_codex_prompt(state: TUIState, prompt: str) -> ChatResult:
         model=state.codex_model,
         reasoning_effort=state.reasoning_effort,
         previous_session_id=state.codex_session_id,
+        sandbox_mode=state.codex_sandbox_mode,
         conversation_history=conversation_history,  # Pass conversation history
         emit_live=_emit_live_event,
     )
@@ -1856,11 +1872,21 @@ def _print_status(state: TUIState) -> None:
     print(f"  {C_BRAND_BOLD}Session Status{RESET}")
     print(thin_rule)
 
+    # Format sandbox mode display
+    sandbox_mode_colors = {
+        "read-only": (C_WARNING, "🔒"),
+        "workspace-write": (C_SUCCESS, "✓"),
+        "danger-full-access": (C_ERROR, "⚠"),
+    }
+    color, icon = sandbox_mode_colors.get(state.codex_sandbox_mode, (C_DIM, "?"))
+    sandbox_mode_display = f"{color}{state.codex_sandbox_mode.upper()}{RESET} {icon}"
+
     fields = [
         ("session_id", state.session_id, C_VALUE),
         ("session_label", state.session_label or "(none)", C_DIM),
         ("turns", str(len(state.transcript)), C_VALUE),
         ("backend", state.backend, C_SUCCESS),
+        ("codex_sandbox_mode", sandbox_mode_display, ""),  # Color already in display
         ("cwd", str(state.cwd), C_TEXT),
         ("codex_session", state.codex_session_id or "(none)", C_DIM),
         ("codex_model", state.codex_model or "(codex-default)", C_MODEL),
@@ -1871,7 +1897,10 @@ def _print_status(state: TUIState) -> None:
         ("reasoning", state.reasoning_effort, C_VALUE),
     ]
     for label, value, color in fields:
-        print(f"    {C_LABEL}{label:<20}{RESET} {color}{value}{RESET}")
+        if color:
+            print(f"    {C_LABEL}{label:<20}{RESET} {color}{value}{RESET}")
+        else:
+            print(f"    {C_LABEL}{label:<20}{RESET} {value}")
     usage_lines = state.last_usage_lines or ["(none)"]
     print(f"    {C_LABEL}{'last_usage':<20}{RESET} {C_VALUE}{usage_lines[0]}{RESET}")
     for extra in usage_lines[1:]:
@@ -2085,6 +2114,54 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
         state.agent = None
         _save_tui_session(state)
         return f"{C_SUCCESS}{_SYM_OK}{RESET} cwd set to {C_TEXT}{target}{RESET}. Agent reloaded."
+    if cmd == "/sandbox":
+        if not arg:
+            # Cycle through modes: read-only → workspace-write → danger-full-access → read-only
+            modes = ["read-only", "workspace-write", "danger-full-access"]
+            current_idx = modes.index(state.codex_sandbox_mode) if state.codex_sandbox_mode in modes else 1
+            next_idx = (current_idx + 1) % len(modes)
+            state.codex_sandbox_mode = modes[next_idx]
+            _save_tui_session(state)
+            
+            # Display with appropriate color and icon
+            mode_display = {
+                "read-only": (C_WARNING, "🔒", "Codex can only read files (safe mode)"),
+                "workspace-write": (C_SUCCESS, "✓", "Codex can modify files in workspace"),
+                "danger-full-access": (C_ERROR, "⚠", "Codex has unrestricted file access (DANGEROUS)"),
+            }
+            color, icon, desc = mode_display.get(state.codex_sandbox_mode, (C_DIM, "?", "Unknown mode"))
+            
+            return (
+                f"{C_SUCCESS}{_SYM_OK}{RESET} Codex sandbox mode: {color}{state.codex_sandbox_mode.upper()}{RESET} {icon}\n"
+                f"  {C_DIM}{desc}{RESET}\n"
+                f"  {C_DIM}Cycle with: {C_CMD}/sandbox{RESET} {C_DIM}or {C_KEY}Ctrl+W{RESET}"
+            )
+        # Explicit mode setting
+        lowered = arg.lower()
+        if lowered not in {"read-only", "workspace-write", "danger-full-access", "readonly", "write", "full"}:
+            return f"{C_WARNING}Usage:{RESET} {C_CMD}/sandbox [read-only|workspace-write|danger-full-access]{RESET}"
+        
+        # Normalize shortcuts
+        mode_map = {
+            "readonly": "read-only",
+            "write": "workspace-write",
+            "full": "danger-full-access",
+        }
+        state.codex_sandbox_mode = mode_map.get(lowered, lowered)
+        _save_tui_session(state)
+        
+        # Display with appropriate color and icon
+        mode_display = {
+            "read-only": (C_WARNING, "🔒", "Codex can only read files (safe mode)"),
+            "workspace-write": (C_SUCCESS, "✓", "Codex can modify files in workspace"),
+            "danger-full-access": (C_ERROR, "⚠", "Codex has unrestricted file access (DANGEROUS)"),
+        }
+        color, icon, desc = mode_display.get(state.codex_sandbox_mode, (C_DIM, "?", "Unknown mode"))
+        
+        return (
+            f"{C_SUCCESS}{_SYM_OK}{RESET} Codex sandbox mode: {color}{state.codex_sandbox_mode.upper()}{RESET} {icon}\n"
+            f"  {C_DIM}{desc}{RESET}"
+        )
     return f"{C_ERROR}Unknown command.{RESET} Use {C_CMD}/help{RESET}."
 
 
@@ -2115,6 +2192,7 @@ def _normalize_input(raw: str) -> str:
         "research",
         "cd",
         "tools",
+        "sandbox",
     }
     if raw.startswith("/"):
         return raw
@@ -2540,6 +2618,7 @@ def run_tui(args) -> int:
         autoresearch=bool(args.autoresearch),
         research_instructions=args.research_instructions,
         reasoning_effort=str(getattr(args, "reasoning_effort", "medium")),
+        codex_sandbox_mode="workspace-write",  # Default to workspace-write mode for convenience
         last_usage_lines=[],
         transcript=[],
         session_store=session_store,
