@@ -26,6 +26,8 @@ def test_expected_extras_exist() -> None:
         "dotenv",
         "websocket",
         "openai",
+        "lmstudio",
+        "ollama",
         "groq",
         "anthropic",
         "gemini",
@@ -53,4 +55,3 @@ def test_all_extra_contains_provider_toolkit_store_dependencies() -> None:
     for group in ("providers", "toolkits-web", "stores-db"):
         for dependency in optional[group]:
             assert dependency in all_extra
-

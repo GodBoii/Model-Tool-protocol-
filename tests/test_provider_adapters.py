@@ -12,7 +12,9 @@ from mtp.media import Audio, File, Image, Video
 from mtp.providers import (
     AnthropicToolCallingProvider,
     GeminiToolCallingProvider,
+    LMStudioToolCallingProvider,
     OpenAIToolCallingProvider,
+    OllamaToolCallingProvider,
     OpenRouterToolCallingProvider,
     SambaNovaToolCallingProvider,
 )
@@ -51,6 +53,11 @@ class _FakeOpenAIClient:
         if self.calls == 1:
             return _OpenAIResponse(_OpenAIMessage("", [_ToolCall("c1", "x.test", "{bad json}")]))
         return _OpenAIResponse(_OpenAIMessage("done"))
+
+
+class _FakeOpenAIStreamChunk:
+    def __init__(self, content: str) -> None:
+        self.choices = [SimpleNamespace(delta=SimpleNamespace(content=content))]
 
 
 class _AnthropicContent:
@@ -116,14 +123,61 @@ class _FakeGeminiClient:
         self.models = _FakeGeminiModels()
 
 
+class _FakeOllamaClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def chat(self, **kwargs):
+        self.calls += 1
+        if kwargs.get("stream"):
+            return [
+                {"message": {"content": "hello "}},
+                {"message": {"content": "world"}, "prompt_eval_count": 5, "eval_count": 2},
+            ]
+        if self.calls == 1:
+            return {
+                "message": {
+                    "content": "",
+                    "thinking": "tool reasoning",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "x.test",
+                                "arguments": {"value": 7},
+                            }
+                        }
+                    ],
+                },
+                "prompt_eval_count": 10,
+                "eval_count": 3,
+            }
+        return {
+            "message": {"content": "done"},
+            "prompt_eval_count": 11,
+            "eval_count": 4,
+        }
+
+
 class ProviderAdapterTests(unittest.TestCase):
     def test_openai_like_providers_handle_invalid_tool_json(self) -> None:
         tools = [ToolSpec(name="x.test", description="x", input_schema={"type": "object"})]
-        for provider_cls in (OpenAIToolCallingProvider, OpenRouterToolCallingProvider, SambaNovaToolCallingProvider):
+        for provider_cls in (
+            OpenAIToolCallingProvider,
+            OpenRouterToolCallingProvider,
+            SambaNovaToolCallingProvider,
+            LMStudioToolCallingProvider,
+        ):
             provider = provider_cls(client=_FakeOpenAIClient())
             action = provider.next_action(messages=[{"role": "user", "content": "go"}], tools=tools)
             self.assertIsNotNone(action.plan)
             self.assertEqual(action.plan.batches[0].calls[0].arguments, {"_raw_arguments": "{bad json}"})
+
+    def test_lmstudio_finalize_stream_yields_text_chunks(self) -> None:
+        fake = _FakeOpenAIClient()
+        fake.chat.completions.create = lambda **kwargs: [_FakeOpenAIStreamChunk("hello "), _FakeOpenAIStreamChunk("world")]
+        provider = LMStudioToolCallingProvider(client=fake)
+        output = "".join(provider.finalize_stream(messages=[{"role": "user", "content": "hi"}], tool_results=[]))
+        self.assertEqual(output, "hello world")
 
     def test_anthropic_preserves_system_and_tool_message_metadata(self) -> None:
         fake = _FakeAnthropicClient()
@@ -253,6 +307,23 @@ class ProviderAdapterTests(unittest.TestCase):
         text_parts = [part for part in parts if part["type"] == "text"]
         self.assertGreaterEqual(len(text_parts), 2)
         self.assertIn("[file:note.txt]", text_parts[-1]["text"])
+
+    def test_ollama_builds_plan_from_native_tool_calls(self) -> None:
+        provider = OllamaToolCallingProvider(client=_FakeOllamaClient(), think=True)
+        action = provider.next_action(
+            messages=[{"role": "user", "content": "run tool"}],
+            tools=[ToolSpec(name="x.test", description="x", input_schema={"type": "object"})],
+        )
+        self.assertIsNotNone(action.plan)
+        assert action.plan is not None
+        self.assertEqual(action.plan.batches[0].calls[0].name, "x.test")
+        self.assertEqual(action.plan.batches[0].calls[0].arguments, {"value": 7})
+        self.assertEqual(action.metadata["reasoning"], "tool reasoning")
+
+    def test_ollama_finalize_stream_yields_text_chunks(self) -> None:
+        provider = OllamaToolCallingProvider(client=_FakeOllamaClient())
+        output = "".join(provider.finalize_stream(messages=[{"role": "user", "content": "hi"}], tool_results=[]))
+        self.assertEqual(output, "hello world")
 
 
 if __name__ == "__main__":
