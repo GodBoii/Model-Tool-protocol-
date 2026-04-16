@@ -251,11 +251,21 @@ def build_bottom_toolbar(state) -> str:
 
     Design: single muted palette, clean dot separators, readable shortcuts.
     """
+    from .tui_settings import (
+        provider_settings_path,
+        load_provider_settings,
+        preferred_model_for_provider,
+    )
+    
     # Use the active model name
     if state.backend == "codex":
-        model = state.codex_model or "(codex-default)"
+        model = state.codex_model or "gpt-5.4-codex"
     else:
-        model = state.openai_model
+        # MTP Provider - get actual model from settings
+        settings_path = provider_settings_path(state.session_store.file_path)
+        settings = load_provider_settings(settings_path)
+        model = preferred_model_for_provider(settings, state.backend)
+    
     turns = len(state.transcript)
     reasoning = state.reasoning_effort
     backend = state.backend
@@ -264,14 +274,23 @@ def build_bottom_toolbar(state) -> str:
     v = '#9d9db5'  # value (slightly brighter, same hue)
     sep = f'<style fg="#3d3d50"> {SYM_DOT} </style>'
 
-    return (
-        f'<style fg="{v}">{model}</style>'
-        f'{sep}'
-        f'<style fg="{d}">reasoning </style><style fg="{v}">{reasoning}</style>'
-        f'{sep}'
-        f'<style fg="{d}">{backend}</style>'
-        f'{sep}'
-        f'<style fg="{d}">turns </style><style fg="{v}">{turns}</style>'
+    # Build toolbar - only show reasoning for Codex
+    toolbar_parts = [f'<style fg="{v}">{model}</style>']
+    
+    # Only show reasoning for Codex backend
+    if state.backend == "codex":
+        toolbar_parts.append(f'<style fg="{d}">reasoning </style><style fg="{v}">{reasoning}</style>')
+    
+    toolbar_parts.extend([
+        f'<style fg="{d}">{backend}</style>',
+        f'<style fg="{d}">turns </style><style fg="{v}">{turns}</style>',
+    ])
+    
+    # Join with separator
+    toolbar = sep.join(toolbar_parts)
+    
+    # Add keyboard shortcuts
+    toolbar += (
         f'<style fg="#3d3d50">  {SYM_V}  </style>'
         f'<style fg="{d}">^C </style><style fg="#7a7a95">stop</style>'
         f'<style fg="#3d3d50">  </style>'
@@ -279,6 +298,8 @@ def build_bottom_toolbar(state) -> str:
         f'<style fg="#3d3d50">  </style>'
         f'<style fg="{d}">^D </style><style fg="#7a7a95">exit</style>'
     )
+    
+    return toolbar
 
 
 # ─────────────────────────────────────────────────────────────────────────────
