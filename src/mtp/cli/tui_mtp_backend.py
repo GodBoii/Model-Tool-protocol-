@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from mtp import Agent
+from .tui_model_context import get_context_window, format_context_usage
 
 
 @dataclass(slots=True)
@@ -53,6 +54,8 @@ def run_mtp_prompt(
     prompt: str,
     max_rounds: int,
     emit_live: Callable[[str, str], None] | None = None,
+    provider_name: str | None = None,
+    model_name: str | None = None,
 ) -> MTPRunResult:
     """
     Execute a prompt using an MTP provider agent with event streaming.
@@ -62,6 +65,8 @@ def run_mtp_prompt(
         prompt: User prompt to execute
         max_rounds: Maximum number of tool-use rounds
         emit_live: Optional callback for live event streaming (kind, message)
+        provider_name: Provider name for context window detection
+        model_name: Model name for context window detection
     
     Returns:
         MTPRunResult with response text, tool events, warnings, and usage metrics
@@ -69,6 +74,7 @@ def run_mtp_prompt(
     warnings: list[str] = []
     tool_events: list[str] = []
     final_text_chunks: list[str] = []
+    thinking_chunks: list[str] = []  # Collect thinking/reasoning tokens
     
     # Metrics tracking
     total_input_tokens = 0
@@ -109,6 +115,13 @@ def run_mtp_prompt(
                     cache_creation_input_tokens += usage.get("cache_creation_input_tokens", 0)
                     cache_read_input_tokens += usage.get("cache_read_input_tokens", 0)
                     llm_calls += 1
+                
+                # Extract reasoning/thinking tokens from metadata
+                reasoning_text = event.get("reasoning")
+                if reasoning_text and isinstance(reasoning_text, str):
+                    thinking_chunks.append(reasoning_text)
+                    if emit_live:
+                        emit_live("thinking", f"💭 {reasoning_text[:100]}...")
                 
                 duration = event.get("duration_seconds", 0.0)
                 if duration:
@@ -159,18 +172,25 @@ def run_mtp_prompt(
             # Calculate tokens per second
             tokens_per_sec = (total_tokens / total_duration) if total_duration > 0 else 0
             
-            # Default context window for MTP providers (240k tokens)
-            DEFAULT_CONTEXT_WINDOW = 240_000
+            # Get context window for this model
+            context_window, source = get_context_window(provider_name, model_name)
             
             # Context window line (for progress bar rendering)
-            usage_lines.append(
-                f"context_window={total_tokens:,}/{DEFAULT_CONTEXT_WINDOW:,}"
-            )
+            context_str, context_pct = format_context_usage(total_tokens, provider_name, model_name)
+            usage_lines.append(f"context_window={context_str}")
             
             # Main token line
             usage_lines.append(
                 f"tokens(in/out/total/reasoning)={total_input_tokens}/{total_output_tokens}/{total_tokens}/{reasoning_tokens}"
             )
+            
+            # Thinking tokens (if any)
+            if thinking_chunks:
+                thinking_text = " | ".join(thinking_chunks)
+                # Truncate if too long
+                if len(thinking_text) > 200:
+                    thinking_text = thinking_text[:197] + "..."
+                usage_lines.append(f"thinking={thinking_text}")
             
             # Cache tokens (only if any cache tokens exist)
             if any([cached_input_tokens, cache_write_tokens, cache_creation_input_tokens, cache_read_input_tokens]):
