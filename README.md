@@ -41,6 +41,12 @@ Common optional installs:
 # Groq + dotenv helper
 pip install "mtpx[groq,dotenv]"
 
+# LM Studio local inference
+pip install "mtpx[lmstudio]"
+
+# Ollama local inference
+pip install "mtpx[ollama]"
+
 # OpenAI + Anthropic providers
 pip install "mtpx[openai,anthropic,dotenv]"
 
@@ -194,6 +200,7 @@ mtp agent-os
 - [Agent API Reference](docs/AGENT_API.md)
 - [Storage and Sessions](docs/STORAGE.md)
 - [Providers](docs/PROVIDERS.md)
+- [Local Inference (LM Studio + Ollama)](docs/LOCAL_INFERENCE.md)
 - [Creating Tools](docs/CREATING_TOOLS.md)
 - [Events Contract](docs/EVENTS.md)
 - [Architecture](docs/ARCHITECTURE.md)
@@ -215,7 +222,7 @@ mtp agent-os
 - `src/mtp/toolkits/`: Local toolkits (`calculator`, `file`, `python`, `shell`).
 - `src/mtp/transport/`: Envelope transport over stdio and HTTP.
 - `src/mtp/mcp.py`: MCP-compatible JSON-RPC adapter around `ToolRegistry`.
-- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider` + OpenAI/Groq/OpenRouter/Gemini/Anthropic/SambaNova/Cerebras/DeepSeek/Mistral/Cohere/TogetherAI/FireworksAI).
+- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider` + OpenAI/LMStudio/Ollama/Groq/OpenRouter/Gemini/Anthropic/SambaNova/Cerebras/DeepSeek/Mistral/Cohere/TogetherAI/FireworksAI).
 - `docs/`: documentation and implementation guides.
 
 ## Contributors
