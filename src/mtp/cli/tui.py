@@ -519,6 +519,46 @@ def _new_session_id() -> str:
     return f"chat-{uuid4().hex[:10]}"
 
 
+def _generate_session_title_from_prompt(prompt: str, max_words: int = 4, max_chars: int = 50) -> str:
+    """
+    Generate a session title from the first user prompt.
+    
+    Extracts the first 3-4 meaningful words, removing:
+    - Attachment references (@file syntax)
+    - Extra whitespace
+    - Special characters that don't add meaning
+    
+    Args:
+        prompt: The user's first prompt
+        max_words: Maximum number of words to include (default 4)
+        max_chars: Maximum character length (default 50)
+    
+    Returns:
+        A clean, readable session title
+    """
+    # Remove attachment references (@file syntax)
+    cleaned = re.sub(r'@[^\s]+', '', prompt)
+    
+    # Remove extra whitespace and newlines
+    cleaned = ' '.join(cleaned.split())
+    
+    # Extract first N words
+    words = cleaned.split()[:max_words]
+    title = ' '.join(words)
+    
+    # Truncate to max length if needed, breaking at word boundary
+    if len(title) > max_chars:
+        title = title[:max_chars].rsplit(' ', 1)[0]
+        if title:  # Only add ellipsis if we have content
+            title += '...'
+    
+    # Fallback for empty or very short titles
+    if len(title.strip()) < 3:
+        return "Quick chat"
+    
+    return title.strip()
+
+
 def _now_label() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2124,19 +2164,67 @@ def _print_saved_sessions(state: TUIState) -> None:
         print(f"  {C_DIM}No saved sessions yet.{RESET}")
         print()
         return
-    for record in sessions[:12]:
+    
+    # Group sessions by working directory
+    from collections import defaultdict
+    sessions_by_dir: dict[str, list[SessionRecord]] = defaultdict(list)
+    
+    for record in sessions:
         tui_meta = record.metadata.get("tui") if isinstance(record.metadata, dict) else {}
         tui_meta = tui_meta if isinstance(tui_meta, dict) else {}
-        label = str(tui_meta.get("session_label") or "(unnamed)")
-        turn_count = int(tui_meta.get("turn_count") or 0)
-        backend = str(tui_meta.get("backend") or "unknown")
-        updated = str(tui_meta.get("updated_at") or record.updated_at)
-        active = f" {C_SUCCESS}● active{RESET}" if record.session_id == state.session_id else ""
-        sid_short = record.session_id.split("-")[-1][:8]
-        print(f"  {C_VALUE}{sid_short}{RESET} {C_TEXT}{label}{RESET}{active}")
-        print(f"    {C_DIM}{backend} {_SYM_DOT} {turn_count} turns {_SYM_DOT} {updated}{RESET}")
+        cwd = str(tui_meta.get("cwd") or "unknown")
+        sessions_by_dir[cwd].append(record)
+    
+    # Get current working directory (normalized)
+    current_cwd = str(state.cwd.resolve())
+    
+    # Sort directories: current directory first, then alphabetically
+    sorted_dirs = sorted(sessions_by_dir.keys(), key=lambda d: (d != current_cwd, d))
+    
+    total_shown = 0
+    max_sessions = 20  # Show up to 20 sessions total
+    
+    for dir_path in sorted_dirs:
+        if total_shown >= max_sessions:
+            break
+        
+        dir_sessions = sessions_by_dir[dir_path]
+        
+        # Display directory header
+        is_current = dir_path == current_cwd
+        dir_display = Path(dir_path).name or dir_path
+        
+        if is_current:
+            print(f"\n  {C_SUCCESS}● {C_HIGHLIGHT}{dir_display}{RESET} {C_DIM}(current directory){RESET}")
+        else:
+            print(f"\n  {C_DIM}○ {dir_display}{RESET}")
+        
+        # Show sessions for this directory (limit per directory)
+        for record in dir_sessions[:8]:  # Max 8 sessions per directory
+            if total_shown >= max_sessions:
+                break
+            
+            tui_meta = record.metadata.get("tui") if isinstance(record.metadata, dict) else {}
+            tui_meta = tui_meta if isinstance(tui_meta, dict) else {}
+            label = str(tui_meta.get("session_label") or "(unnamed)")
+            turn_count = int(tui_meta.get("turn_count") or 0)
+            backend = str(tui_meta.get("backend") or "unknown")
+            updated = str(tui_meta.get("updated_at") or record.updated_at)
+            active = f" {C_SUCCESS}● active{RESET}" if record.session_id == state.session_id else ""
+            sid_short = record.session_id.split("-")[-1][:8]
+            
+            print(f"    {C_VALUE}{sid_short}{RESET} {C_TEXT}{label}{RESET}{active}")
+            print(f"      {C_DIM}{backend} {_SYM_DOT} {turn_count} turns {_SYM_DOT} {updated}{RESET}")
+            
+            total_shown += 1
+    
+    # Show summary if there are more sessions
+    total_sessions = len(sessions)
+    if total_sessions > total_shown:
+        remaining = total_sessions - total_shown
+        print(f"\n  {C_DIM}... and {remaining} more session(s) in other directories{RESET}")
+    
     print()
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Model/Reasoning resolution (unchanged logic)
@@ -3508,6 +3596,15 @@ def run_tui(args) -> int:
             continue
         spinner.stop()
         _record_turn(state, raw, result)
+        
+        # Auto-generate session title from first turn if not already set
+        # This extracts the first 3-4 words from the user's prompt to create
+        # a descriptive session title, making it easier to identify sessions
+        # in the /sessions list. Manual labels (via /new [label]) are preserved.
+        if len(state.transcript) == 1 and not state.session_label:
+            state.session_label = _generate_session_title_from_prompt(raw)
+            _save_tui_session(state)
+        
         try:
             from . import tui_cat
             # Hide the cat before the massive print block to stop native VT100 scroll smearing
