@@ -3,6 +3,7 @@ import time
 import math
 import threading
 import shutil
+from pathlib import Path
 
 class CatEngine:
     def __init__(self):
@@ -15,6 +16,12 @@ class CatEngine:
         self.running = False
         self.thread = None
         self._lock = threading.Lock()
+        self.telemetry = {
+            "cwd": str(Path.cwd().name),
+            "sandbox": "workspace-write",
+            "files": []
+        }
+        self.cursor_ratio = 0.5
         
         # Transparent diffing arrays
         self.prev_blocks = [[ "empty" for _ in range(self.width // 2)] for _ in range(self.height // 2)]
@@ -39,6 +46,12 @@ class CatEngine:
             if new_state in ("wakeup", "response", "error"):
                 self.tick = 0.0
             self.state = new_state
+
+    def set_telemetry(self, data):
+        self.telemetry.update(data)
+
+    def set_cursor_ratio(self, ratio):
+        self.cursor_ratio = max(0.0, min(1.0, ratio))
 
     def _loop(self):
         fps = 15
@@ -187,10 +200,40 @@ class CatEngine:
                 
             out.append("\033[0m")
             
+        self._render_sidebar(out, start_x, start_y, cols)
         out.append("\0338")  # restore cursor
         # Write atomically to terminal
         sys.stdout.write("".join(out))
         sys.stdout.flush()
+
+    def _render_sidebar(self, out, start_x, start_y, cols):
+        if getattr(self, "state", "idle") == "hidden":
+            return
+            
+        hud_y = start_y + (self.height // 2) + 1
+        x = start_x
+        
+        # Border structure
+        w = max(20, cols)
+        v = "\033[38;5;238m│\033[0m"
+        tl = f"\033[38;5;238m╭{'─' * w}╮\033[0m"
+        bl = f"\033[38;5;238m╰{'─' * w}╯\033[0m"
+        
+        cwd = self.telemetry.get("cwd", "")
+        sbx = self.telemetry.get("sandbox", "auto")
+        
+        # Only draw if there's enough room vertically (terminal lines > 30)
+        out.append(f"\033[{hud_y};{x}H{tl}\033[K")
+        out.append(f"\033[{hud_y+1};{x}H{v} \033[36m󰉖 \033[38;5;248mCWD:\033[0m \033[97m{cwd[:w-9]:<{w-9}}\033[0m{v}\033[K")
+        out.append(f"\033[{hud_y+2};{x}H{v} \033[35m󰆧 \033[38;5;248mSBX:\033[0m \033[97m{sbx[:w-9]:<{w-9}}\033[0m{v}\033[K")
+        
+        files = self.telemetry.get("files", [])
+        if files:
+            file_str = f"{len(files)} files"
+            out.append(f"\033[{hud_y+3};{x}H{v} \033[32m󰈔 \033[38;5;248mCTX:\033[0m \033[97m{file_str[:w-9]:<{w-9}}\033[0m{v}\033[K")
+            out.append(f"\033[{hud_y+4};{x}H{bl}\033[K")
+        else:
+            out.append(f"\033[{hud_y+3};{x}H{bl}\033[K")
 
     # --- Vector Drawing Primitives ---
     def _rect(self, pixels, x, y, w, h, color):
@@ -329,7 +372,11 @@ class CatEngine:
             self._rect(pixels, hx+3, hy-1.5, 3, 1, C_PUPIL)
         elif eye_state == "open":
             pupil_dx = 0
-            if dot_pos:
+            if getattr(self, "cursor_ratio", None) is not None and self.state in ("idle", "wakeup"):
+                # Track user shell cursor dynamically (-2 to +2 shifted from center)
+                ratio = self.cursor_ratio
+                pupil_dx = int(round(-2.0 + (ratio * 4.0)))
+            elif dot_pos:
                 if dot_pos > hx + 3: pupil_dx = 1
                 elif dot_pos < hx - 3: pupil_dx = -1
                 

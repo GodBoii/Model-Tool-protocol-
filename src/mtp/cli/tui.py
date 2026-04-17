@@ -1844,7 +1844,8 @@ def _run_mtp_prompt(state: TUIState, prompt: str, spinner: _Spinner | None = Non
                     if kind == "reasoning":
                         sys.stdout.write(f"\n  {C_LABEL}╭─ {BOLD}Reasoning Process{RESET} ──────────{RESET}\n  {C_DIM}│  ")
                     elif kind == "text":
-                        sys.stdout.write(f"{RESET}\n  {C_RESPONSE}╰─ {BOLD}Agent Response{RESET} ───────────{RESET}\n  {C_TEXT}")
+                        # Phosphor Decay: incoming stream is bright C_HIGHLIGHT, which decays to C_TEXT during final layout render
+                        sys.stdout.write(f"{RESET}\n  {C_RESPONSE}╰─ {BOLD}Agent Response{RESET} ───────────{RESET}\n  {C_HIGHLIGHT}")
                     mode_state["current_mode"] = kind
 
                 # Insert a vertical pipe for reasoning lines if there are newlines
@@ -1864,8 +1865,17 @@ def _run_mtp_prompt(state: TUIState, prompt: str, spinner: _Spinner | None = Non
                     mode_state["current_mode"] = None
                 
                 clean_msg = message.replace("🔧 ", "")
-                sys.stdout.write(f"\n  {C_ACCENT}⚡ Tool execution:_ {C_VALUE}{clean_msg}{RESET}\n")
-                sys.stdout.flush()
+                # Create an active spinner for the tool
+                from . import tui
+                mode_state["active_tool_spinner"] = tui._Spinner(label=f"{C_ACCENT}Active Tool {_SYM_PROMPT_ARROW} {C_VALUE}{clean_msg}{RESET}")
+                mode_state["active_tool_spinner"].start()
+                
+            elif kind == "tool_end":
+                if "active_tool_spinner" in mode_state and mode_state["active_tool_spinner"]:
+                    mode_state["active_tool_spinner"].stop()
+                    mode_state["active_tool_spinner"] = None
+                    sys.stdout.write(f"\r  {C_SUCCESS}{message}{RESET}\n")
+                    sys.stdout.flush()
             else:
                 if spinner and not mode_state["spinner_stopped"]:
                     pass
@@ -2528,6 +2538,23 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
         return "__compose__"
     if cmd == "/exit":
         return "__exit__"
+    if cmd in {"/nf", "/nerdfont"}:
+        from .tui_theme import NERD_FONT_ENABLED
+        if not arg or arg.lower() not in {"on", "off", "1", "0", "true", "false"}:
+            status = "ON" if NERD_FONT_ENABLED else "OFF"
+            return (
+                f"{C_INFO}Nerd Font is currently {C_VALUE}{status}{RESET}\n"
+                f"  {C_WARNING}Usage:{RESET} {C_CMD}{cmd} <on|off>{RESET}"
+            )
+        enable = arg.lower() in {"on", "1", "true"}
+        env_path = state.cwd / ".env"
+        lines = []
+        if env_path.exists():
+            lines = env_path.read_text(encoding="utf-8").splitlines()
+        lines = [line for line in lines if not line.strip().startswith("NF=")]
+        lines.append(f"NF={'1' if enable else '0'}")
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f"{C_SUCCESS}{_SYM_OK}{RESET} Nerd Font config updated. {C_WARNING}Please restart the CLI (Ctrl+D and relaunch) to apply.{RESET}"
     if cmd == "/tools":
         _print_tool_events_expanded(state)
         return None
@@ -3243,6 +3270,21 @@ def _compose_multiline_prompt() -> str | None:
     
     print(_input_box_bottom(width=w))
     composed = "\n".join(lines).strip()
+    
+    # Dynamic Input Pulse (Cursor Focus)
+    if composed and not composed.startswith("/"):
+        import time
+        for i in range(5):
+            sys.stdout.write(f"\033[1A\r╰{'─' * (w - 2)}╯\n")
+            if i % 2 == 0:
+                sys.stdout.write(f"\033[1A\r{C_ACCENT}╰{'─' * (w - 2)}╯{RESET}\n")
+            else:
+                sys.stdout.write(f"\033[1A\r{C_BORDER}╰{'─' * (w - 2)}╯{RESET}\n")
+            sys.stdout.flush()
+            time.sleep(0.04)
+        sys.stdout.write(f"\033[1A\r{C_BORDER}╰{'─' * (w - 2)}╯{RESET}\n")
+        sys.stdout.flush()
+        
     return composed or None
 
 
@@ -3343,6 +3385,20 @@ def run_tui(args) -> int:
                 raw = input(prompt_prefix)
                 print(bottom_border)
                 box_opened = False
+                
+            # Dynamic Input Pulse (Cursor Focus) for ALL input modes
+            if raw and not raw.startswith("/"):
+                import time
+                w = _get_term_width()
+                for i in range(5):
+                    if i % 2 == 0:
+                        sys.stdout.write(f"\033[1A\r{C_ACCENT}╰{'─' * (w - 2)}╯{RESET}\n")
+                    else:
+                        sys.stdout.write(f"\033[1A\r{C_BORDER}╰{'─' * (w - 2)}╯{RESET}\n")
+                    sys.stdout.flush()
+                    time.sleep(0.04)
+                sys.stdout.write(f"\033[1A\r{C_BORDER}╰{'─' * (w - 2)}╯{RESET}\n")
+                sys.stdout.flush()
         except KeyboardInterrupt:
             # Close box if it was opened
             if box_opened and bottom_border:
@@ -3392,6 +3448,16 @@ def run_tui(args) -> int:
                 continue
 
         expanded_prompt, attachments, attachment_warnings = _collect_prompt_attachments(raw, state.cwd)
+        
+        try:
+            from . import tui_cat
+            tui_cat._ENGINE.set_telemetry({
+                "files": [Path(p).name for p in attachments] if attachments else [],
+                "sandbox": getattr(state, "codex_sandbox_mode", "auto")
+            })
+        except Exception:
+            pass
+            
         active_model = _active_model_name(state)
 
         # Build status line
