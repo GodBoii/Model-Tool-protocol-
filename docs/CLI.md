@@ -101,9 +101,47 @@ Recommended launch command:
 - Thinking tokens for supported models (Ollama)
 
 **Session Management**:
-- Persistent chat sessions
+- Persistent chat sessions with auto-generated titles
+- Centralized session storage in `~/.mtp/sessions/`
+- Directory-based session grouping
 - Session history and replay
 - Multi-turn conversations with context
+- Sessions accessible from any directory
+
+**Session Commands:**
+- `/sessions` - List all saved sessions (grouped by directory)
+- `/new [label]` - Start a new session (optional custom label)
+- `/load <session_id>` - Load a saved session
+- `/open <session_id>` - View a session (read-only)
+- `/history [n]` - Show recent turns in current session
+
+**Session Features:**
+- **Auto-Generated Titles**: Session titles are automatically created from your first message
+  - Example: "How do I implement authentication" → Title: "How do I implement"
+  - File attachments (@file) are removed from titles
+  - Very short prompts default to "Quick chat"
+- **Centralized Storage**: All sessions stored in `~/.mtp/sessions/` regardless of working directory
+- **Directory Grouping**: Sessions organized by project directory when listed
+  - Current directory sessions shown first (marked with ●)
+  - Other directories shown below (marked with ○)
+- **Cross-Project Access**: Resume sessions from any directory
+- **Persistent**: Sessions survive even if project directories are deleted
+
+**Session List Example:**
+```
+Saved Sessions
+──────────────────────────────────────────────────────────
+
+● webapp (current directory)
+  abc123 Fix authentication bug
+    openai • 5 turns • 2026-04-17 10:30:00
+  def456 Implement user login
+    groq • 3 turns • 2026-04-17 11:00:00
+
+○ api-service
+  ghi789 Debug API endpoint
+    claude • 7 turns • 2026-04-17 09:15:00
+```
 
 **Modern UI/UX & Aesthetics**:
 - **Interactive Cat Companion**: An animated terminal cat that tracks your input cursor and reacts to generation states.

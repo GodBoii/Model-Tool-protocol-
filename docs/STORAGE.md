@@ -60,6 +60,16 @@ agent.run("Remember my codename is Atlas.", session_id="chat-1", user_id="u1")
 agent.run("What is my codename?", session_id="chat-1", user_id="u1")
 ```
 
+**TUI Default Storage:**
+The MTP TUI uses centralized JSON storage by default:
+- **Location**: `~/.mtp/sessions/` (user home directory)
+- **Benefits**: 
+  - All sessions from all projects in one place
+  - Sessions accessible from any directory
+  - Sessions persist even if project directories are deleted
+- **Session Metadata**: Includes working directory (`cwd`) for directory-based grouping
+- **Auto-Generated Titles**: Session titles automatically created from first user message
+
 ## PostgreSQL store
 
 Install dependency:
