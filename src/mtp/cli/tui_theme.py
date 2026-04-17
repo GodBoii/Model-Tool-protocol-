@@ -87,21 +87,44 @@ UNICODE_ENABLED = _supports_unicode()
 
 SYM_RULE         = "─" if UNICODE_ENABLED else "-"
 SYM_V            = "│" if UNICODE_ENABLED else "|"
-SYM_TL           = "╭" if UNICODE_ENABLED else "+"
-SYM_TR           = "╮" if UNICODE_ENABLED else "+"
-SYM_BL           = "╰" if UNICODE_ENABLED else "+"
-SYM_BR           = "╯" if UNICODE_ENABLED else "+"
-SYM_ML           = "├" if UNICODE_ENABLED else "+"
-SYM_MR           = "┤" if UNICODE_ENABLED else "+"
-SYM_DOT          = "·" if UNICODE_ENABLED else "|"
-SYM_FILLED       = "●" if UNICODE_ENABLED else "*"
-SYM_EMPTY        = "○" if UNICODE_ENABLED else "o"
-SYM_PROMPT_ARROW = "❯" if UNICODE_ENABLED else ">"
-SYM_INFO         = "ℹ" if UNICODE_ENABLED else "i"
-SYM_WARN         = "⚠" if UNICODE_ENABLED else "!"
-SYM_OK           = "✓" if UNICODE_ENABLED else "OK"
-SYM_ERR          = "✗" if UNICODE_ENABLED else "x"
-SYM_BULLET       = "•" if UNICODE_ENABLED else "-"
+def _supports_nerd_font() -> bool:
+    val = os.environ.get("NF", "") or os.environ.get("NERD_FONT", "")
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+NERD_FONT_ENABLED = _supports_nerd_font() and UNICODE_ENABLED
+
+if NERD_FONT_ENABLED:
+    SYM_TL           = "╭"
+    SYM_TR           = "╮"
+    SYM_BL           = "╰"
+    SYM_BR           = "╯"
+    SYM_ML           = "├"
+    SYM_MR           = "┤"
+    SYM_DOT          = "·"
+    SYM_FILLED       = "󰚩"
+    SYM_EMPTY        = "󰈈"
+    SYM_PROMPT_ARROW = ""
+    SYM_INFO         = ""
+    SYM_WARN         = ""
+    SYM_OK           = ""
+    SYM_ERR          = ""
+    SYM_BULLET       = ""
+else:
+    SYM_TL           = "╭" if UNICODE_ENABLED else "+"
+    SYM_TR           = "╮" if UNICODE_ENABLED else "+"
+    SYM_BL           = "╰" if UNICODE_ENABLED else "+"
+    SYM_BR           = "╯" if UNICODE_ENABLED else "+"
+    SYM_ML           = "├" if UNICODE_ENABLED else "+"
+    SYM_MR           = "┤" if UNICODE_ENABLED else "+"
+    SYM_DOT          = "·" if UNICODE_ENABLED else "|"
+    SYM_FILLED       = "●" if UNICODE_ENABLED else "*"
+    SYM_EMPTY        = "○" if UNICODE_ENABLED else "o"
+    SYM_PROMPT_ARROW = "❯" if UNICODE_ENABLED else ">"
+    SYM_INFO         = "ℹ" if UNICODE_ENABLED else "i"
+    SYM_WARN         = "⚠" if UNICODE_ENABLED else "!"
+    SYM_OK           = "✓" if UNICODE_ENABLED else "OK"
+    SYM_ERR          = "✗" if UNICODE_ENABLED else "x"
+    SYM_BULLET       = "•" if UNICODE_ENABLED else "-"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
