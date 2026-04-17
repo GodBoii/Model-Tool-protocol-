@@ -4,6 +4,92 @@
 
 The MTP TUI has been significantly enhanced to support 12 MTP providers with comprehensive management features, replacing the previous two-backend system (codex + mtp-openai).
 
+## Latest Update: Session Management Enhancements (April 2026)
+
+### 1. Auto-Generated Session Titles
+- **Smart Title Generation**: Session titles are now automatically generated from the first user message
+- **Intelligent Extraction**: Extracts first 3-4 meaningful words from user prompts
+- **Clean Formatting**: Automatically removes file attachments (@file syntax) and extra whitespace
+- **Fallback Handling**: Very short prompts (< 3 chars) default to "Quick chat"
+- **Manual Override**: Users can still set custom labels via `/new [label]` command
+- **Zero Friction**: No user action required - titles are generated automatically
+
+**Before:**
+```
+6db601d1d4 (unnamed)
+  codex • 3 turns • 2026-04-17 10:30:15
+```
+
+**After:**
+```
+6db601d1d4 How do I implement
+  codex • 3 turns • 2026-04-17 10:30:15
+```
+
+### 2. Centralized Session Storage
+- **Single Storage Location**: All sessions now stored in `~/.mtp/sessions/` by default
+- **Cross-Project Access**: Sessions accessible from any directory
+- **Persistent Storage**: Sessions survive even if project directories are deleted
+- **Backward Compatible**: Old session databases can be migrated by copying to new location
+
+**Old Behavior:**
+- Each directory had its own `tmp/mtp_tui_sessions/`
+- Sessions isolated per directory
+- Hard to find sessions across projects
+
+**New Behavior:**
+- All sessions in `~/.mtp/sessions/`
+- Centralized management
+- Easy cross-project session access
+
+### 3. Directory-Based Session Grouping
+- **Smart Organization**: Sessions grouped by working directory when listed
+- **Current Directory First**: Sessions from current directory shown at the top (marked with ●)
+- **Other Directories**: Sessions from other directories shown below (marked with ○)
+- **Visual Hierarchy**: Easy to see which sessions belong to which project
+- **Scalable Display**: Shows up to 20 sessions total (8 per directory max)
+
+**Example `/sessions` Output:**
+```
+Saved Sessions
+──────────────────────────────────────────────────────────
+
+● webapp (current directory)
+  abc123 Fix authentication bug
+    openai • 5 turns • 2026-04-17 10:30:00
+  def456 Implement user login
+    groq • 3 turns • 2026-04-17 11:00:00
+
+○ api-service
+  ghi789 Debug API endpoint
+    claude • 7 turns • 2026-04-17 09:15:00
+
+○ mobile-app
+  jkl012 Setup push notifications
+    codex • 4 turns • 2026-04-17 08:45:00
+```
+
+### 4. Implementation Details
+
+**Code Changes:**
+- `src/mtp/cli/tui.py`: Added `_generate_session_title_from_prompt()` function
+- `src/mtp/cli/tui.py`: Auto-titling logic in main loop after first turn
+- `src/mtp/cli/tui.py`: Rewrote `_print_saved_sessions()` with directory grouping
+- `src/mtp/cli/main.py`: Changed `--session-db` default to `~/.mtp/sessions/`
+
+**Session Metadata:**
+- Session titles stored in `metadata.tui.session_label`
+- Working directory stored in `metadata.tui.cwd`
+- All existing metadata fields preserved
+
+**Benefits:**
+- No more cryptic "(unnamed)" sessions
+- Instantly recognize session content
+- See all work across projects in one place
+- Current project sessions highlighted
+- Zero manual effort required
+- Sessions persist across directory changes
+
 ## Recent Update: TUI Stabilization & Aesthetic Refinement
 
 ### 1. Cat Engine Stabilization & Layout HUD
