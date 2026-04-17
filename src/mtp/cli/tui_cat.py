@@ -65,12 +65,48 @@ class CatEngine:
         if term_size.columns < 40 or term_size.lines < 15:
             return
 
+        start_y = 2
+        start_x = term_size.columns - cols - 3
+
+        if not hasattr(self, "last_start_x"):
+            self.last_start_x = start_x
+            self.last_term_lines = term_size.lines
+
+        # If terminal was resized horizontally or vertically, erase the old position fully
+        if self.last_start_x != start_x or self.last_term_lines != term_size.lines:
+            erase_out = ["\0337"]
+            for y_off in range(self.height // 2):
+                erase_out.append(f"\033[{start_y + y_off};{self.last_start_x}H\033[K")
+            erase_out.append("\0338")
+            sys.stdout.write("".join(erase_out))
+            sys.stdout.flush()
+            self.last_start_x = start_x
+            self.last_term_lines = term_size.lines
+            self.prev_blocks = [["empty" for _ in range(cols)] for _ in range(self.height // 2)]
+
+        if self.state == "hidden":
+            if not getattr(self, "was_cleared", False):
+                # Clear completely off the screen
+                out = ["\0337"]
+                for cy in range(self.height // 2):
+                    out.append(f"\033[{start_y + cy};{start_x}H\033[K")
+                out.append("\0338")
+                sys.stdout.write("".join(out))
+                sys.stdout.flush()
+                self.was_cleared = True
+                self.prev_blocks = [["empty" for _ in range(cols)] for _ in range(self.height // 2)]
+            return
+        
+        self.was_cleared = False
+
         pixels = [[None for _ in range(self.width)] for _ in range(self.height)]
         self._render_scene(pixels)
 
         out = ["\0337"]  # save cursor
-        start_y = 2
-        start_x = term_size.columns - cols - 3
+
+        # If generating tokens, text pushes up. Clear the line above to stop trails.
+        if self.state in ("response", "thinking"):
+            out.append(f"\033[1;{start_x}H\033[K")
 
         quad_map = [
             ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟',

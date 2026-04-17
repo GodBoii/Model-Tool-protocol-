@@ -68,8 +68,9 @@ from .tui_theme import (
     shorten_text as _shorten_text,
     input_box_top as _input_box_top,
     input_box_bottom as _input_box_bottom,
+    gradient_progress_bar as _gradient_progress_bar,
     # Color helpers (used in logo rendering)
-    _fg_rgb, _bg_rgb,
+    _fg_rgb, _bg_rgb, _bg256,
 )
 from .tui_toast import toast as _toast
 from .tui_completers import (
@@ -3050,20 +3051,21 @@ def _render_prompt_and_response(result: ChatResult, state: TUIState | None = Non
     
     # Render thinking tokens prominently BEFORE response text
     if thinking_line:
-        thinking_text = thinking_line.replace("thinking=", "")
+        thinking_text = thinking_line.replace("thinking=", "").strip()
         print()  # Blank line before thinking
-        # Wrap long thinking text across multiple lines
-        max_width = w - 20  # Leave margin
-        if len(thinking_text) > max_width:
-            # Wrap thinking text (textwrap already imported at module level)
-            wrapped_lines = textwrap.wrap(thinking_text, width=max_width, break_long_words=False, break_on_hyphens=False)
-            for i, line in enumerate(wrapped_lines):
-                if i == 0:
-                    print(f"  {C_ACCENT}💭 thinking{RESET} {C_DIM}{line}{RESET}")
-                else:
-                    print(f"  {C_DIM}{'':12}{line}{RESET}")
+        print(f"  {C_BORDER}╭─ {C_ACCENT}💭 Cognitive Trace {C_BORDER}{'─' * max(5, w - 24)}╮{RESET}")
+        
+        lines = thinking_text.split(" | ") if " | " in thinking_text else thinking_text.splitlines()
+        if len(lines) > 5:
+            display_lines = lines[:2] + [f"... {len(lines)-4} steps collapsed ..."] + lines[-2:]
         else:
-            print(f"  {C_ACCENT}💭 thinking{RESET} {C_DIM}{thinking_text}{RESET}")
+            display_lines = lines
+            
+        for line in display_lines:
+            short_line = _shorten_text(line, w - 8)
+            print(f"  {C_BORDER}│{RESET} {C_DIM}{short_line}{RESET}")
+            
+        print(f"  {C_BORDER}╰{'─' * max(5, w - 4)}╯{RESET}")
         print()  # Blank line after thinking
 
     # Indent and wrap markdown-ish response text with inline markup.
@@ -3077,14 +3079,16 @@ def _render_prompt_and_response(result: ChatResult, state: TUIState | None = Non
                 in_code = True
                 code_lang = stripped.strip()[3:].strip()
                 lang_label = f" {BOLD}{C_ACCENT}{code_lang.upper()}{RESET} " if code_lang else f" {BOLD}{C_ACCENT}CODE{RESET} "
-                print(f"  {C_BORDER}╭{lang_label}{C_BORDER}{'─' * 30}{RESET}")
+                print(f"  {C_BORDER}╭{lang_label}{C_BORDER}{'─' * max(2, body_width - len(code_lang) - 3)}╮{RESET}")
             else:
                 in_code = False
                 code_lang = ""
-                print(f"  {C_BORDER}╰{'─' * 38}{RESET}")
+                print(f"  {C_BORDER}╰{'─' * (body_width + 1)}╯{RESET}")
             continue
         if in_code:
-            print(f"  {C_BORDER}│{RESET}  {C_VALUE}{stripped}{RESET}")
+            bg_color = _bg256(235)  # Dark syntax background
+            padded_line = stripped.ljust(body_width - 2)[:body_width - 2]
+            print(f"  {C_BORDER}│{RESET} {bg_color}{C_VALUE}{padded_line}{RESET} {C_BORDER}│{RESET}")
             continue
         if not stripped.strip():
             print()
@@ -3440,7 +3444,16 @@ def run_tui(args) -> int:
         _record_turn(state, raw, result)
         try:
             from . import tui_cat
+            # Hide the cat before the massive print block to stop native VT100 scroll smearing
+            tui_cat.set_cat_state("hidden")
+            time.sleep(0.08)  # Let the 15fps thread clear it
+        except Exception:
+            pass
+        
+        _render_prompt_and_response(result, state=state)
+        
+        try:
+            from . import tui_cat
             tui_cat.set_cat_state("response")
         except Exception:
             pass
-        _render_prompt_and_response(result, state=state)
