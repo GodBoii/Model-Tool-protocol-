@@ -22,6 +22,8 @@ class CatEngine:
             "files": []
         }
         self.cursor_ratio = 0.5
+        self._last_region = None
+        self._force_full_repaint = True
         
         # Transparent diffing arrays
         self.prev_blocks = [[ "empty" for _ in range(self.width // 2)] for _ in range(self.height // 2)]
@@ -46,12 +48,38 @@ class CatEngine:
             if new_state in ("wakeup", "response", "error"):
                 self.tick = 0.0
             self.state = new_state
+            self._force_full_repaint = True
 
     def set_telemetry(self, data):
         self.telemetry.update(data)
+        self._force_full_repaint = True
 
     def set_cursor_ratio(self, ratio):
         self.cursor_ratio = max(0.0, min(1.0, ratio))
+
+    def _compute_region(self, term_columns, term_lines):
+        cols = self.width // 2
+        if term_columns < 40 or term_lines < 15:
+            return None
+
+        start_y = 2
+        start_x = term_columns - cols - 3
+        hud_y = start_y + (self.height // 2) + 1
+        hud_height = 5 if self.telemetry.get("files") else 4
+        return {
+            "start_x": start_x,
+            "start_y": start_y,
+            "cols": cols,
+            "hud_y": hud_y,
+            "bottom": hud_y + hud_height - 1,
+        }
+
+    def _clear_region(self, out, region, *, from_top=False, extra_below=1):
+        start_line = 1 if from_top else max(1, region["start_y"] - 1)
+        end_line = region["bottom"] + extra_below
+        x = region["start_x"]
+        for y in range(start_line, end_line + 1):
+            out.append(f"\033[{y};{x}H\033[K")
 
     def _loop(self):
         fps = 15
@@ -73,41 +101,35 @@ class CatEngine:
 
     def _draw_frame(self):
         term_size = shutil.get_terminal_size()
-        cols = self.width // 2
-        
-        if term_size.columns < 40 or term_size.lines < 15:
+        region = self._compute_region(term_size.columns, term_size.lines)
+
+        if region is None:
+            if self._last_region is not None:
+                out = ["\0337"]
+                self._clear_region(out, self._last_region, from_top=True, extra_below=1)
+                out.append("\0338")
+                sys.stdout.write("".join(out))
+                sys.stdout.flush()
+                self._last_region = None
+                self.prev_blocks = [["empty" for _ in range(self.width // 2)] for _ in range(self.height // 2)]
             return
 
-        start_y = 2
-        start_x = term_size.columns - cols - 3
-
-        if not hasattr(self, "last_start_x"):
-            self.last_start_x = start_x
-            self.last_term_lines = term_size.lines
-
-        # If terminal was resized horizontally or vertically, erase the old position fully
-        if self.last_start_x != start_x or self.last_term_lines != term_size.lines:
-            erase_out = ["\0337"]
-            for y_off in range(self.height // 2):
-                erase_out.append(f"\033[{start_y + y_off};{self.last_start_x}H\033[K")
-            erase_out.append("\0338")
-            sys.stdout.write("".join(erase_out))
-            sys.stdout.flush()
-            self.last_start_x = start_x
-            self.last_term_lines = term_size.lines
-            self.prev_blocks = [["empty" for _ in range(cols)] for _ in range(self.height // 2)]
+        cols = region["cols"]
+        start_y = region["start_y"]
+        start_x = region["start_x"]
+        resized = self._last_region is not None and self._last_region != region
 
         if self.state == "hidden":
-            if not getattr(self, "was_cleared", False):
-                # Clear completely off the screen
+            if not getattr(self, "was_cleared", False) or resized:
                 out = ["\0337"]
-                for cy in range(self.height // 2):
-                    out.append(f"\033[{start_y + cy};{start_x}H\033[K")
+                clear_region = self._last_region or region
+                self._clear_region(out, clear_region, from_top=True, extra_below=1)
                 out.append("\0338")
                 sys.stdout.write("".join(out))
                 sys.stdout.flush()
                 self.was_cleared = True
                 self.prev_blocks = [["empty" for _ in range(cols)] for _ in range(self.height // 2)]
+                self._last_region = region
             return
         
         self.was_cleared = False
@@ -117,9 +139,15 @@ class CatEngine:
 
         out = ["\0337"]  # save cursor
 
-        # If generating tokens, text pushes up. Clear the line above to stop trails.
-        if self.state in ("response", "thinking"):
-            out.append(f"\033[1;{start_x}H\033[K")
+        if resized and self._last_region is not None:
+            self._clear_region(out, self._last_region, from_top=True, extra_below=1)
+
+        # Streaming output scrolls the terminal buffer, so the old overlay can linger
+        # a few rows above. Force-clear the whole right rail before redraw in active modes.
+        full_repaint = self._force_full_repaint or resized or self.state in ("thinking", "response")
+        if full_repaint:
+            self._clear_region(out, region, from_top=True, extra_below=1)
+            self.prev_blocks = [["empty" for _ in range(cols)] for _ in range(self.height // 2)]
 
         quad_map = [
             ' ', '▗', '▖', '▄', '▝', '▐', '▞', '▟',
@@ -205,6 +233,8 @@ class CatEngine:
         # Write atomically to terminal
         sys.stdout.write("".join(out))
         sys.stdout.flush()
+        self._last_region = region
+        self._force_full_repaint = False
 
     def _render_sidebar(self, out, start_x, start_y, cols):
         if getattr(self, "state", "idle") == "hidden":
@@ -423,4 +453,3 @@ def hide_cat():
 def show_cat():
     _ENGINE.is_hidden = False
     _ENGINE.set_state("idle")
-
