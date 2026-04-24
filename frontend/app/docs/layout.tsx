@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { docSidebar } from "@/lib/docs-content";
-import { Hexagon, ChevronDown, ChevronRight, Search, ExternalLink, Play } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState } from "react";
 
 export default function DocsLayout({
   children,
@@ -41,10 +42,27 @@ export default function DocsLayout({
   return (
     <div className="min-h-screen bg-black text-white">
       {/* ── TOP HEADER ── */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-white/[0.06] bg-black/90 backdrop-blur-xl flex items-center px-8">
-        <Link href="/" className="flex items-center gap-3 mr-10 group">
-          <Hexagon className="size-6 text-tertiary fill-tertiary/10" />
-          <span className="font-bold text-[18px] tracking-tight text-white">MTP Protocol</span>
+      <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-white/[0.06] bg-black/90 backdrop-blur-xl flex items-center px-6 md:px-8">
+        <Link href="/" className="flex items-center gap-2.5 mr-10 group">
+          {/* Logo with subtle hover glow */}
+          <div className="relative size-8 flex-shrink-0">
+            <div className="absolute inset-0 rounded-lg bg-[#facc15] opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-500" />
+            <Image
+              src="/mtp-logo.png"
+              alt="MTPX Logo"
+              width={32}
+              height={32}
+              className="relative z-10 rounded-lg"
+              priority
+            />
+          </div>
+          {/* Wordmark */}
+          <div className="flex flex-col leading-none">
+            <span className="font-bold text-[15px] tracking-tight text-white">
+              mtpx<span className="text-[#facc15]">.</span>
+            </span>
+            <span className="text-[9px] font-mono text-white/25 tracking-[0.15em] uppercase">Docs</span>
+          </div>
         </Link>
 
         <div className="ml-auto flex items-center gap-6">
@@ -64,11 +82,17 @@ export default function DocsLayout({
             GitHub
           </a>
           <Link
-            href="/playground"
-            className="px-5 py-1.5 rounded-full bg-tertiary text-black font-bold text-[14px] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-1.5"
+            href="/"
+            className="text-[13px] text-white/50 hover:text-white transition-colors font-medium"
           >
-            Try AgentOS
-            <ChevronRight className="size-3.5" />
+            ← Home
+          </Link>
+          <Link
+            href="/docs"
+            className="px-4 py-1.5 rounded-full bg-[#facc15] text-black font-bold text-[13px] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-1.5 shadow-lg shadow-[#facc15]/10"
+          >
+            Get Started
+            <ChevronRight className="size-3" />
           </Link>
         </div>
 

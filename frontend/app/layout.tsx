@@ -17,12 +17,24 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "MTPX — Model Tool Protocol Extended",
   description:
-    "Protocol-first Python library for AI agent tool orchestration. Structured execution plans, 13+ providers, DAG-based tool execution, and session persistence.",
-  keywords: ["AI agents", "tool orchestration", "MTP", "Python", "LLM", "agent SDK"],
+    "Protocol-first Python SDK for AI agent tool orchestration. Structured DAG execution plans, 13+ provider adapters, safety policies, and persistent sessions — production-ready from day one.",
+  keywords: ["AI agents", "tool orchestration", "MTP", "MTPX", "Python", "LLM", "agent SDK", "model tool protocol"],
+  icons: {
+    icon: "/mtp-logo.png",
+    shortcut: "/mtp-logo.png",
+    apple: "/mtp-logo.png",
+  },
   openGraph: {
     title: "MTPX — Model Tool Protocol Extended",
     description: "Build production-grade AI agents with structured execution plans and deterministic tool orchestration.",
     type: "website",
+    images: [{ url: "/mtp-logo.png", width: 1080, height: 1080, alt: "MTPX Logo" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "MTPX — Model Tool Protocol Extended",
+    description: "Protocol-first Python SDK for AI agent tool orchestration.",
+    images: ["/mtp-logo.png"],
   },
 };
 
