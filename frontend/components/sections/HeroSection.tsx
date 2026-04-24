@@ -1,6 +1,7 @@
 "use client";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import { Terminal, ArrowRight, Star } from "lucide-react";
 import { useState } from "react";
 
@@ -16,8 +17,18 @@ export function HeroSection() {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full pointer-events-none" style={{ background: "radial-gradient(ellipse, rgba(250,204,21,0.07) 0%, transparent 65%)" }} />
       <div className="absolute top-1/3 left-1/4 w-[400px] h-[400px] rounded-full pointer-events-none" style={{ background: "radial-gradient(ellipse, rgba(79,142,247,0.08) 0%, transparent 65%)" }} />
 
-      {/* Badge */}
-      <motion.div custom={0} initial="hidden" animate="visible" variants={fadeUp} className="mb-8">
+      {/* Logo mark */}
+      <motion.div custom={0} initial="hidden" animate="visible" variants={fadeUp} className="mb-8 flex flex-col items-center gap-6">
+        {/* Logo with glow ring */}
+        <div className="relative">
+          <div className="absolute inset-0 rounded-2xl bg-[#facc15] blur-2xl opacity-20 scale-110" />
+          <div className="relative size-20 md:size-24 rounded-2xl overflow-hidden border border-[#facc15]/20"
+            style={{ background: "rgba(250,204,21,0.06)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", boxShadow: "0 0 40px rgba(250,204,21,0.15), inset 0 1px 0 rgba(255,255,255,0.08)" }}>
+            <Image src="/mtp-logo.png" alt="MTPX" width={96} height={96} className="w-full h-full object-cover" priority />
+          </div>
+        </div>
+
+        {/* PyPI badge */}
         <a href="https://pypi.org/project/mtpx/" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#facc15]/25 text-[#facc15] text-xs font-medium tracking-wide"
           style={{ background: "rgba(250,204,21,0.06)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
