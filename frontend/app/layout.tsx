@@ -1,20 +1,29 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-display",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "MTP Developer Platform",
-  description: "A premium, developer-first hub for the Model Tool Protocol",
+  title: "MTPX — Model Tool Protocol Extended",
+  description:
+    "Protocol-first Python library for AI agent tool orchestration. Structured execution plans, 13+ providers, DAG-based tool execution, and session persistence.",
+  keywords: ["AI agents", "tool orchestration", "MTP", "Python", "LLM", "agent SDK"],
+  openGraph: {
+    title: "MTPX — Model Tool Protocol Extended",
+    description: "Build production-grade AI agents with structured execution plans and deterministic tool orchestration.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +34,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
     >
-      <body className="h-full flex flex-col bg-background text-foreground bg-[url('/bg-texture.png')] bg-repeat overflow-x-hidden">
+      <body className="h-full flex flex-col bg-[#030305] text-[#f0f0f5] overflow-x-hidden">
         {children}
       </body>
     </html>
