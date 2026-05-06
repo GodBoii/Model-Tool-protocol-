@@ -34,6 +34,7 @@ PROVIDERS: list[ProviderInfo] = [
     ProviderInfo("cohere", "Cohere", "CohereToolCallingProvider", "cohere", "COHERE_API_KEY"),
     ProviderInfo("togetherai", "TogetherAI", "TogetherAIToolCallingProvider", "openai", "TOGETHER_API_KEY"),
     ProviderInfo("fireworksai", "FireworksAI", "FireworksAIToolCallingProvider", "openai", "FIREWORKS_API_KEY"),
+    ProviderInfo("xiaomi", "Xiaomi", "XiaomiToolCallingProvider", "openai", "MIMO_API_KEY", "MiMo OpenAI-compatible Token Plan endpoint"),
     ProviderInfo("ollama", "Ollama", "OllamaToolCallingProvider", "ollama", None, "local inference (localhost:11434)"),
     ProviderInfo("lmstudio", "LMStudio", "LMStudioToolCallingProvider", "openai", None, "local inference (localhost:1234)"),
 ]
@@ -76,4 +77,3 @@ def providers_as_rows() -> list[dict[str, Any]]:
             }
         )
     return rows
-

@@ -20,6 +20,7 @@ SUPPORTED_TUI_PROVIDERS: tuple[str, ...] = (
     "deepseek",
     "togetherai",
     "fireworksai",
+    "xiaomi",
     "ollama",      # Local inference support
     "lmstudio",    # Local inference support
 )
@@ -122,6 +123,11 @@ def _fireworksai_builder(model: str, api_key: str | None, base_url: str | None) 
     return FireworksAI(model=model, api_key=api_key)
 
 
+def _xiaomi_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+    from mtp.providers import Xiaomi
+    return Xiaomi(model=model, api_key=api_key, base_url=base_url or "https://token-plan-ams.xiaomimimo.com/v1")
+
+
 def _ollama_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
     from mtp.providers import Ollama
     
@@ -165,6 +171,7 @@ PROVIDER_BUILDERS: dict[str, _ProviderBuilder] = {
     "deepseek": _deepseek_builder,
     "togetherai": _togetherai_builder,
     "fireworksai": _fireworksai_builder,
+    "xiaomi": _xiaomi_builder,
     "ollama": _ollama_builder,
     "lmstudio": _lmstudio_builder,
 }
