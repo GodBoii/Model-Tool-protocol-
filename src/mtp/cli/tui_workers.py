@@ -225,6 +225,7 @@ def _run_mtp(
                 provider=provider, cwd=state.cwd, mode=state.harness_mode,
                 autoresearch=state.autoresearch,
                 research_instructions=state.research_instructions,
+                sandbox_mode=state.codex_sandbox_mode,
             )
         except Exception as exc:
             return ChatResult(
@@ -314,6 +315,7 @@ def switch_backend(state: TUIState, provider_name: str) -> str:
             provider=provider, cwd=state.cwd, mode=state.harness_mode,
             autoresearch=state.autoresearch,
             research_instructions=state.research_instructions,
+            sandbox_mode=state.codex_sandbox_mode,
         )
         state.backend = provider_name
         save_tui_session(state)
