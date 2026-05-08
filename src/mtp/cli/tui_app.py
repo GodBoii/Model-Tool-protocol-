@@ -346,10 +346,36 @@ class MTPApp(App):
         self._populate_and_show_suggestions(matches, prefix="@")
 
     def _show_command_suggestions(self, partial: str) -> None:
-        from .tui_completers import CommandCompleter
-        completer = CommandCompleter()
-        cmds = completer._COMMANDS
-        matches = [cmd for cmd in cmds if cmd.startswith(partial.lower())]
+        cmd_desc = {
+            "/help": "Show this reference",
+            "/exit": "Quit TUI",
+            "/clear": "Clear chat log",
+            "/status": "Show session state",
+            "/sessions": "List saved sessions",
+            "/history": "Show recent turns",
+            "/tools": "Show last tool events",
+            "/backend": "Switch provider",
+            "/model": "Switch model",
+            "/models": "Show all models",
+            "/apikey": "Manage API keys",
+            "/reasoning": "Set reasoning level",
+            "/mode": "Set harness mode",
+            "/sandbox": "Cycle sandbox mode",
+            "/load": "Load a session",
+            "/open": "Open a session",
+            "/new": "Start new session",
+            "/reset": "Reset session",
+            "/rounds": "Set max rounds",
+            "/cd": "Change directory",
+            "/autoresearch": "Toggle auto-research",
+            "/research": "Set research instructions"
+        }
+        
+        matches = []
+        for cmd, desc in cmd_desc.items():
+            if cmd.startswith(partial.lower()):
+                matches.append(f"{cmd}  ·  {desc}")
+                
         if not matches:
             try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
             except Exception: pass
@@ -388,9 +414,14 @@ class MTPApp(App):
                     sid = s.session_id.split("-")[-1][:8]
                     tui = s.metadata.get("tui", {}) if isinstance(s.metadata, dict) else {}
                     label = tui.get("session_label", "")
+                    turns = tui.get("turn_count", 0)
                     search_str = f"{sid} {label}".lower()
                     if partial in search_str:
-                        matches.append(sid)
+                        display = f"{sid}"
+                        if label:
+                            display += f"  ·  {label}"
+                        display += f"  ({turns} turns)"
+                        matches.append(display)
             except Exception:
                 pass
         elif cmd == "mode":
@@ -424,7 +455,7 @@ class MTPApp(App):
         words = current_line.split()
         
         if selected.startswith("↳ "):
-            val = selected[2:]
+            val = selected[2:].split()[0]
             parts = current_line.split()
             if current_line.endswith(" "):
                 new_line = current_line + val + " "
@@ -459,6 +490,8 @@ class MTPApp(App):
                 container.mount(AttachmentBadge(f"📎 {filename}"))
                 container.add_class("visible")
         else:
+            if "  ·  " in selected:
+                selected = selected.split("  ·  ")[0]
             start_idx = current_line.rfind(last_word)
             new_line = current_line[:start_idx] + selected + " "
             lines[cursor_row] = new_line + lines[cursor_row][cursor_col:]
@@ -617,6 +650,12 @@ class MTPApp(App):
 
         if cmd == "help":
             chat_log.add_system_message(self._build_help_text())
+            input_area = self.query_one("#chat-input", InputArea)
+            input_area.text = "/"
+            input_area.cursor_location = (0, 1)
+            self._show_command_suggestions("/")
+            try: self.query_one("#suggestion-list", OptionList).focus()
+            except Exception: pass
         elif cmd == "exit":
             self.exit()
         elif cmd == "clear":

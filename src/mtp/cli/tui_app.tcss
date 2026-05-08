@@ -83,7 +83,7 @@ ChatLog {
 InputPanel {
     dock: bottom;
     height: auto;
-    max-height: 14;
+    max-height: 30;
     padding: 0 1;
     background: $surface;
 }
@@ -111,7 +111,7 @@ InputArea:focus {
 
 #suggestion-list {
     height: auto;
-    max-height: 6;
+    max-height: 10;
     display: none;
     border: tall $brand;
     background: $surface-1;
