@@ -95,6 +95,18 @@ class InputArea(TextArea):
         )
 
     async def _on_key(self, event: events.Key) -> None:
+        # If the autocomplete suggestion list is visible, hand over navigation focus
+        if event.key in ("down", "up", "tab"):
+            try:
+                option_list = self.app.query_one("#suggestion-list", OptionList)
+                if option_list.has_class("visible"):
+                    option_list.focus()
+                    event.prevent_default()
+                    event.stop()
+                    return
+            except Exception:
+                pass
+
         # In Textual 8.x, modifiers are encoded in the key name:
         #   plain Enter  →  "enter"
         #   Shift+Enter  →  "shift+enter"

@@ -257,6 +257,25 @@ class MTPApp(App):
         current_line = lines[cursor_row][:cursor_col]
         words = current_line.split()
         
+        words = current_line.split()
+        
+        # Check for command arguments
+        if current_line.startswith("/"):
+            parts = current_line.split()
+            if len(parts) > 1 or (len(parts) == 1 and current_line.endswith(" ")):
+                cmd = parts[0][1:].lower()
+                partial = parts[1].lower() if len(parts) > 1 else ""
+                if len(parts) <= 2:
+                    self._show_command_argument_suggestions(cmd, partial)
+                else:
+                    try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
+                    except Exception: pass
+                return
+            else:
+                cmd_partial = parts[0] if parts else ""
+                self._show_command_suggestions(cmd_partial)
+                return
+
         if not words or not current_line.endswith(words[-1]):
             try:
                 self.query_one("#suggestion-list", OptionList).remove_class("visible")
@@ -265,9 +284,7 @@ class MTPApp(App):
             
         last_word = words[-1]
         
-        if last_word.startswith("/"):
-            self._show_command_suggestions(last_word)
-        elif last_word.startswith("@"):
+        if last_word.startswith("@"):
             self._show_file_suggestions(last_word[1:])
         elif len(words) == 1 and len(last_word) >= 1:
             matches = [h for h in self._input_history if h.startswith(last_word) and h != last_word]
@@ -346,7 +363,52 @@ class MTPApp(App):
             option_list.add_option(f"{prefix}{m}")
         
         option_list.add_class("visible")
-        option_list.focus()
+
+    def _show_command_argument_suggestions(self, cmd: str, partial: str) -> None:
+        matches = []
+        if cmd == "backend":
+            from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
+            options = ["codex"] + sorted(SUPPORTED_TUI_PROVIDERS)
+            matches = [p for p in options if partial in p.lower()]
+        elif cmd == "model":
+            from .tui_state import MODEL_PRESETS
+            options = [m for m, d in MODEL_PRESETS]
+            matches = [m for m in options if partial in m.lower()]
+        elif cmd in ("load", "sessions", "open"):
+            import json
+            from mtp import SessionRecord
+            try:
+                sessions = []
+                if self._state.session_store.file_path.exists():
+                    rows = json.loads(self._state.session_store.file_path.read_text(encoding="utf-8"))
+                    for row in rows:
+                        sessions.append(SessionRecord.from_dict(row))
+                sessions.sort(key=lambda x: x.updated_at, reverse=True)
+                for s in sessions[:30]:
+                    sid = s.session_id.split("-")[-1][:8]
+                    tui = s.metadata.get("tui", {}) if isinstance(s.metadata, dict) else {}
+                    label = tui.get("session_label", "")
+                    search_str = f"{sid} {label}".lower()
+                    if partial in search_str:
+                        matches.append(sid)
+            except Exception:
+                pass
+        elif cmd == "mode":
+            from .tui_harness_policy import HARNESS_MODES
+            matches = [m for m in HARNESS_MODES if partial in m.lower()]
+        elif cmd == "reasoning":
+            from .tui_state import REASONING_SHORTCUTS
+            matches = [m for m in REASONING_SHORTCUTS.values() if partial in m.lower()]
+        elif cmd == "sandbox":
+            options = ["read-only", "workspace-write", "danger-full-access"]
+            matches = [m for m in options if partial in m.lower()]
+            
+        if not matches:
+            try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
+            except Exception: pass
+            return
+            
+        self._populate_and_show_suggestions(matches, prefix="↳ ")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_list = event.option_list
@@ -360,6 +422,23 @@ class MTPApp(App):
         lines = input_area.text.split("\n")
         current_line = lines[cursor_row][:cursor_col]
         words = current_line.split()
+        
+        if selected.startswith("↳ "):
+            val = selected[2:]
+            parts = current_line.split()
+            if current_line.endswith(" "):
+                new_line = current_line + val + " "
+                start_idx = len(current_line)
+            else:
+                last_len = len(parts[-1])
+                start_idx = len(current_line) - last_len
+                new_line = current_line[:start_idx] + val + " "
+            
+            lines[cursor_row] = new_line + lines[cursor_row][cursor_col:]
+            input_area.text = "\n".join(lines)
+            input_area.cursor_location = (cursor_row, start_idx + len(val) + 1)
+            return
+
         if not words:
             return
             
