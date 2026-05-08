@@ -173,7 +173,7 @@ class InputPanel(Vertical):
     DEFAULT_CSS = """
     InputPanel {
         height: auto;
-        max-height: 14;
+        max-height: 30;
         dock: bottom;
         padding: 0;
         margin: 0 1;
