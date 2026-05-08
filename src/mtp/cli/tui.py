@@ -3421,11 +3421,13 @@ _interrupt_requested = threading.Event()
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_tui(args) -> int:
-    try:
-        from . import tui_cat
-        tui_cat.start_cat_ui()
-    except Exception:
-        pass
+    """Entry point for the TUI.
+
+    Uses the new Textual-based UI by default.
+    Set ``MTP_TUI_LEGACY=1`` environment variable to use the old ANSI/prompt_toolkit loop.
+    """
+    use_legacy = os.environ.get("MTP_TUI_LEGACY", "").strip().lower() in {"1", "true", "yes", "on"}
+
     session_store = JsonSessionStore(db_path=args.session_db)
     initial_session_id = args.session_id or _new_session_id()
     state = TUIState(
@@ -3438,7 +3440,7 @@ def run_tui(args) -> int:
         research_instructions=args.research_instructions,
         reasoning_effort=str(getattr(args, "reasoning_effort", "medium")),
         harness_mode=normalize_harness_mode(getattr(args, "mode", "code")),
-        codex_sandbox_mode="workspace-write",  # Default to workspace-write mode for convenience
+        codex_sandbox_mode="workspace-write",
         last_usage_lines=[],
         transcript=[],
         session_store=session_store,
@@ -3452,6 +3454,31 @@ def run_tui(args) -> int:
         if existing is not None:
             _load_session_into_state(state, existing)
     _save_tui_session(state)
+
+    if not use_legacy:
+        # ── New Textual TUI ──
+        try:
+            from .tui_app import MTPApp
+            app = MTPApp(state=state)
+            app.run()
+            return 0
+        except ImportError:
+            # Textual not installed — fall through to legacy
+            pass
+        except Exception as exc:
+            print(f"Textual TUI failed ({exc}), falling back to legacy mode...")
+
+    # ── Legacy ANSI/prompt_toolkit loop ──
+    return _run_tui_legacy(state)
+
+
+def _run_tui_legacy(state: TUIState) -> int:
+    """Original ANSI/prompt_toolkit TUI loop (preserved for backward compat)."""
+    try:
+        from . import tui_cat
+        tui_cat.start_cat_ui()
+    except Exception:
+        pass
     _animate_boot(state)
 
     # ── Build prompt session (prompt_toolkit or fallback) ────────────────

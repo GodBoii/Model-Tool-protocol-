@@ -32,6 +32,7 @@ mtp = "mtp.cli.main:main"
 dotenv = ["python-dotenv"]
 websocket = ["websockets"]
 ui-streamlit = ["streamlit"]
+tui = ["textual>=1.0.0"]
 
 # Provider SDK extras.
 openai = ["openai"]
@@ -108,7 +109,7 @@ Issues = "https://github.com/GodBoii/Model-Tool-protocol-/issues"
 package-dir = { "" = "src" }
 
 [tool.setuptools.package-data]
-"mtp.cli" = ["templates/**/*.tpl"]
+"mtp.cli" = ["templates/**/*.tpl", "*.tcss"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
