@@ -27,11 +27,23 @@ def build_harness_agent(
     autoresearch: bool,
     research_instructions: str | None,
     debug_mode: bool = False,
+    sandbox_mode: str = "workspace-write",
 ) -> Agent.MTPAgent:
     resolved_mode = normalize_harness_mode(mode)
+    perms = HarnessPermissions()
+    if sandbox_mode in {"workspace-write", "danger-full-access"}:
+        for k in list(perms.edit.keys()):
+            if perms.edit[k] == "ask":
+                perms.edit[k] = "allow"
+        for k in list(perms.bash.keys()):
+            if perms.bash[k] == "ask":
+                perms.bash[k] = "allow"
+        if perms.default == "ask":
+            perms.default = "allow"
+
     tools = Agent.ToolRegistry(
-        policy=HarnessRiskPolicy(mode=resolved_mode, permissions=HarnessPermissions()),
-        approval_handler=make_approval_handler(interactive=True),
+        policy=HarnessRiskPolicy(mode=resolved_mode, permissions=perms),
+        approval_handler=make_approval_handler(interactive=False),
     )
     register_harness_toolkits(tools, root=cwd)
     return Agent.MTPAgent(

@@ -528,14 +528,17 @@ class MTPApp(App):
 
         self.run_worker(
             self._run_llm_worker(expanded, attachments, att_warnings),
-            name="llm_call", thread=True, exclusive=True,
+            name="llm_call", exclusive=True,
         )
 
     async def _run_llm_worker(
         self, expanded_prompt: str, attachments: list[str], att_warnings: list[str],
     ) -> ChatResult:
         """Worker coroutine — runs blocking LLM call in thread."""
-        result = run_prompt_blocking(self._state, expanded_prompt)
+        import asyncio
+        result = await asyncio.to_thread(
+            run_prompt_blocking, self._state, expanded_prompt
+        )
         result.attachments = attachments
         result.warnings = [*att_warnings, *result.warnings]
         return result
