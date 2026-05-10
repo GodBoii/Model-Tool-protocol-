@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Terminal, ArrowRight, Star } from "lucide-react";
 import { useState } from "react";
 
-const fadeUp = { hidden: { opacity: 0, y: 28 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.7, delay: i * 0.12, ease: [0.16, 1, 0.3, 1] } }) };
+const fadeUp = { hidden: { opacity: 0, y: 28 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.7, delay: i * 0.12, ease: [0.16, 1, 0.3, 1] as any } }) };
 
 export function HeroSection() {
   const [copied, setCopied] = useState(false);

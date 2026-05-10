@@ -4,7 +4,7 @@
 /* ════════════════════════════════════════════
    DESIGN TOKENS — MTP Protocol
    Aesthetic: Dark Neon + Liquid Glass
-════════════════════════════════════════════ */
+   ════════════════════════════════════════════ */
 :root {
   /* ── Color Palette ── */
   --color-bg:               #030305;
@@ -28,7 +28,7 @@
   --color-text-muted:       rgba(240,240,245,0.55);
   --color-text-dim:         rgba(240,240,245,0.30);
 
-  /* ── Glass Tokens (Glass-UI.md compliant) ── */
+  /* ── Glass Tokens ── */
   --glass-bg:               rgba(255, 255, 255, 0.05);
   --glass-bg-hover:         rgba(255, 255, 255, 0.09);
   --glass-border:           rgba(255, 255, 255, 0.10);
@@ -42,7 +42,7 @@
   --font-display:           'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-mono:              'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
 
-  /* ── Spacing (8pt grid) ── */
+  /* ── Spacing ── */
   --space-xs:   8px;
   --space-sm:   16px;
   --space-md:   24px;
@@ -58,12 +58,12 @@
   --radius-xl:  28px;
   --radius-full: 9999px;
 
-  /* ── Easing Tokens ── */
+  /* ── Easing ── */
   --ease-out-expo:    cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
   --ease-spring:      cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* ── Duration Tokens ── */
+  /* ── Duration ── */
   --dur-fast:       150ms;
   --dur-base:       300ms;
   --dur-slow:       600ms;
@@ -116,13 +116,6 @@
   --radius-lg:  var(--radius-lg);
 }
 
-/* ════════════════════════════════════════════
-   BASE STYLES
-════════════════════════════════════════════ */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
-
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
@@ -137,11 +130,6 @@ body {
   min-height: 100vh;
 }
 
-/* ════════════════════════════════════════════
-   GLASS UTILITY CLASSES (Glass-UI.md rules)
-════════════════════════════════════════════ */
-
-/* Core glass surface — RGBA + backdrop-filter (never opacity) */
 .glass {
   background: var(--glass-bg);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -166,9 +154,6 @@ body {
   box-shadow: var(--glass-shadow-accent);
 }
 
-/* ════════════════════════════════════════════
-   AMBIENT BACKGROUND BLOBS (needed for glass)
-════════════════════════════════════════════ */
 .ambient-bg {
   position: fixed;
   inset: 0;
@@ -210,9 +195,6 @@ body {
   to   { transform: translate(-60px, -40px) scale(1.08); }
 }
 
-/* ════════════════════════════════════════════
-   TYPOGRAPHY
-════════════════════════════════════════════ */
 .heading-display {
   font-family: var(--font-display);
   font-weight: 700;
@@ -242,9 +224,6 @@ body {
   100% { background-position: 0% 50%; }
 }
 
-/* ════════════════════════════════════════════
-   INTERACTIVE ELEMENTS
-════════════════════════════════════════════ */
 .btn-accent {
   background: var(--color-accent);
   color: #000;
@@ -290,9 +269,6 @@ body {
   transform: scale(1.03);
 }
 
-/* ════════════════════════════════════════════
-   SCROLLBAR
-════════════════════════════════════════════ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 3px; }
@@ -301,9 +277,6 @@ body {
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 
-/* ════════════════════════════════════════════
-   ANIMATIONS
-════════════════════════════════════════════ */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -322,16 +295,12 @@ body {
 .animate-fade-up { animation: fade-up 0.7s var(--ease-out-expo) both; }
 .animate-pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
 
-/* Stagger helpers */
 .delay-100 { animation-delay: 100ms; }
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
 .delay-400 { animation-delay: 400ms; }
 .delay-500 { animation-delay: 500ms; }
 
-/* ════════════════════════════════════════════
-   CODE & TERMINAL
-════════════════════════════════════════════ */
 code, pre {
   font-family: var(--font-mono);
 }
@@ -359,9 +328,6 @@ code, pre {
   border-radius: 50%;
 }
 
-/* ════════════════════════════════════════════
-   GRID DECORATION
-════════════════════════════════════════════ */
 .grid-overlay {
   background-image:
     linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
@@ -369,7 +335,6 @@ code, pre {
   background-size: 48px 48px;
 }
 
-/* Selection */
 ::selection {
   background: rgba(250, 204, 21, 0.25);
   color: #fff;

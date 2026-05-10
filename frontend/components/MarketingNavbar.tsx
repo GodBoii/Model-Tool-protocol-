@@ -40,24 +40,21 @@ export function MarketingNavbar() {
         {/* ── Logo ── */}
         <Link href="/" className="flex items-center gap-2.5 group mr-auto">
           {/* Logo image with glow */}
-          <div className="relative size-9 flex-shrink-0">
+          <div className="relative size-11 flex-shrink-0">
             <div className="absolute inset-0 rounded-xl bg-[#facc15] opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-500" />
             <Image
               src="/mtp-logo.png"
               alt="MTPX Logo"
-              width={36}
-              height={36}
+              width={44}
+              height={44}
               className="relative z-10 rounded-xl"
               priority
             />
           </div>
           {/* Wordmark */}
           <div className="flex flex-col leading-none">
-            <span className="font-bold text-[15px] tracking-tight text-white">
+            <span className="font-bold text-[19px] tracking-tight text-white">
               mtpx<span className="text-[#facc15]">.</span>
-            </span>
-            <span className="text-[9px] font-mono text-white/25 tracking-[0.15em] uppercase">
-              Model Tool Protocol
             </span>
           </div>
         </Link>

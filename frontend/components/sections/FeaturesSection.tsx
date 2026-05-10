@@ -2,7 +2,7 @@
 import { motion } from "framer-motion";
 import { Layers, GitMerge, Bot, Shield, Database, Zap, Network, Terminal } from "lucide-react";
 
-const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.6, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] } }) };
+const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.6, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] as any } }) };
 
 const FEATURES = [
   { icon: GitMerge, color: "#facc15", title: "DAG Execution Plans", desc: "Models emit structured JSON execution plans. The MTP runtime resolves step dependencies via $ref before executing any tool — enabling safe parallelism and verifiable ordering." },

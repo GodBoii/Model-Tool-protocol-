@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Terminal, ArrowRight } from "lucide-react";
 
-const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.7, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] } }) };
+const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.7, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] as any } }) };
 
 const COMMANDS = [
   { cmd: "/backend groq",   desc: "Switch provider mid-session" },

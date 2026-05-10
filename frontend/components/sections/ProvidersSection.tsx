@@ -1,7 +1,7 @@
 "use client";
 import { motion } from "framer-motion";
 
-const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.6, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] } }) };
+const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.6, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] as any } }) };
 
 const PROVIDERS = [
   { name: "OpenAI",      logo: "🤖", extra: "mtpx[openai]",      model: "gpt-4o",                         color: "#10a37f" },
