@@ -37,8 +37,9 @@ def provider_settings_path(session_db_path: str | Path) -> Path:
     """
     base = Path(session_db_path)
     
-    # If it's a file, use its parent directory
-    if base.is_file():
+    # If it's a file, or clearly intended to be one (for example sessions.json
+    # before it has been created), use its parent directory.
+    if base.is_file() or base.suffix:
         base = base.parent
     
     return base / "tui_provider_settings.json"
@@ -82,6 +83,8 @@ def ensure_provider_entry(payload: dict[str, Any], provider_name: str) -> dict[s
             "models": [],
             "deployment_type": None,  # "local" or "cloud" for hybrid providers
             "base_url": None,  # Custom endpoint for local/remote deployments
+            "thinking_mode": None,
+            "final_thinking_mode": None,
         }
         providers[provider_name] = entry
     
@@ -94,6 +97,10 @@ def ensure_provider_entry(payload: dict[str, Any], provider_name: str) -> dict[s
         entry["deployment_type"] = None
     if "base_url" not in entry:
         entry["base_url"] = None
+    if "thinking_mode" not in entry:
+        entry["thinking_mode"] = None
+    if "final_thinking_mode" not in entry:
+        entry["final_thinking_mode"] = None
     
     models = entry.get("models")
     if not isinstance(models, list):

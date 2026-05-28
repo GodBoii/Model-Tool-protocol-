@@ -58,77 +58,89 @@ class ProviderSelection:
     model_name: str
     api_key: str | None
     base_url: str | None = None  # For local providers
+    provider_options: dict[str, Any] | None = None
 
 
-_ProviderBuilder = Callable[[str, str | None, str | None], Any]
+_ProviderBuilder = Callable[[str, str | None, str | None, dict[str, Any] | None], Any]
 
 
-def _openai_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _openai_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import OpenAI
     return OpenAI(model=model, api_key=api_key)
 
 
-def _groq_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _groq_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Groq
     return Groq(model=model, api_key=api_key)
 
 
-def _claude_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _claude_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Anthropic
     return Anthropic(model=model, api_key=api_key)
 
 
-def _openrouter_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _openrouter_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import OpenRouter
     return OpenRouter(model=model, api_key=api_key)
 
 
-def _gemini_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _gemini_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Gemini
     return Gemini(model=model, api_key=api_key)
 
 
-def _mistral_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _mistral_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Mistral
     return Mistral(model=model, api_key=api_key)
 
 
-def _cohere_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _cohere_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Cohere
     return Cohere(model=model, api_key=api_key)
 
 
-def _sambanova_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _sambanova_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import SambaNova
     return SambaNova(model=model, api_key=api_key)
 
 
-def _cerebras_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _cerebras_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Cerebras
     return Cerebras(model=model, api_key=api_key)
 
 
-def _deepseek_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _deepseek_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import DeepSeek
     return DeepSeek(model=model, api_key=api_key)
 
 
-def _togetherai_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _togetherai_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import TogetherAI
     return TogetherAI(model=model, api_key=api_key)
 
 
-def _fireworksai_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _fireworksai_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import FireworksAI
     return FireworksAI(model=model, api_key=api_key)
 
 
-def _xiaomi_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _xiaomi_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Xiaomi
-    return Xiaomi(model=model, api_key=api_key, base_url=base_url or "https://token-plan-ams.xiaomimimo.com/v1")
+    options = provider_options or {}
+    thinking_mode = options.get("thinking_mode") or "adaptive"
+    final_thinking_mode = options.get("final_thinking_mode")
+    if not isinstance(final_thinking_mode, str) or not final_thinking_mode.strip():
+        final_thinking_mode = thinking_mode if thinking_mode in {"enabled", "disabled"} else "enabled"
+    return Xiaomi(
+        model=model,
+        api_key=api_key,
+        base_url=base_url or "https://token-plan-ams.xiaomimimo.com/v1",
+        thinking_mode=thinking_mode,
+        final_thinking_mode=final_thinking_mode,
+    )
 
 
-def _ollama_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _ollama_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Ollama
     
     # Use provided base_url or default
@@ -143,7 +155,7 @@ def _ollama_builder(model: str, api_key: str | None, base_url: str | None) -> An
     )
 
 
-def _lmstudio_builder(model: str, api_key: str | None, base_url: str | None) -> Any:
+def _lmstudio_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import LMStudio
     
     # Use provided base_url or default
@@ -182,7 +194,7 @@ def build_tui_provider(selection: ProviderSelection) -> Any:
     builder = PROVIDER_BUILDERS[provider_name]
     
     try:
-        return builder(selection.model_name, selection.api_key, selection.base_url)
+        return builder(selection.model_name, selection.api_key, selection.base_url, selection.provider_options)
     except ImportError as e:
         # Provider SDK not installed
         module_name = str(e).split("'")[1] if "'" in str(e) else "unknown"
