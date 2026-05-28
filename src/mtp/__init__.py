@@ -45,7 +45,7 @@ from .toolkits import (
     register_local_toolkits,
 )
 from .transport import HTTPTransportServer, run_stdio_transport
-from .codebase import CodebaseMemory, CodebaseMemoryToolkit
+from .codebase import CodebaseMemory
 
 try:
     from .transport import WebSocketTransportServer, run_ws_transport
@@ -89,7 +89,6 @@ Agent.StopAgentRun = StopAgentRun
 Agent.register_local_toolkits = staticmethod(register_local_toolkits)
 Agent.load_dotenv_if_available = staticmethod(load_dotenv_if_available)
 Agent.CodebaseMemory = CodebaseMemory
-Agent.CodebaseMemoryToolkit = CodebaseMemoryToolkit
 
 __all__ = [
     "__version__",
@@ -160,7 +159,6 @@ __all__ = [
     "validate_strict_dependencies",
     "load_dotenv_if_available",
     "CodebaseMemory",
-    "CodebaseMemoryToolkit",
     "validate_execution_plan",
     "validate_tool_arguments",
     "ToolArgumentsValidationError",
