@@ -76,6 +76,41 @@ Output columns:
 - SDK module and install status
 - API key env var
 
+## `mtp codebase memory`
+
+Enable or disable project codebase memory and indexing.
+
+```bash
+mtp codebase memory
+mtp codebase memory --on
+mtp codebase memory --off
+mtp codebase memory --path ./my_project --on
+mtp codebase status
+```
+
+When enabled, MTP scans the project root, skips heavy/generated folders such as
+`.git`, `.venv`, `venv`, `node_modules`, `dist`, `build`, caches, and secret-like
+files, then stores the index in:
+
+```text
+<project>/.mtp/memory/codebase.sqlite
+```
+
+The index includes file metadata, code/text chunks, deterministic vector-style
+embeddings for semantic matching, and conversation summaries recorded after TUI
+turns. TUI users can manage the same feature with:
+
+```text
+/codebase memory
+/codebase memory on
+/codebase memory off
+/codebase status
+```
+
+When memory is on, TUI harness tools such as `project.inspect`, `fs.search`,
+`fs.grep`, and `codebase.search` use the stored index and refresh changed files
+before retrieval.
+
 ## `mtp tui`
 
 Launch the interactive terminal UI.

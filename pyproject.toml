@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtpx"
-version = "0.1.28"
+version = "0.1.29"
 description = "MTPX: Model Tool Protocol and agent runtime for Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,7 +23,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = []
+dependencies = [
+    "textual>=1.0.0",
+]
 
 [project.scripts]
 mtp = "mtp.cli.main:main"
@@ -32,7 +34,7 @@ mtp = "mtp.cli.main:main"
 dotenv = ["python-dotenv"]
 websocket = ["websockets"]
 ui-streamlit = ["streamlit"]
-tui = ["textual>=1.0.0"]
+# tui = ["textual>=1.0.0"] (moved to core)
 
 # Provider SDK extras.
 openai = ["openai"]
