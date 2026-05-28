@@ -5,6 +5,7 @@ All LLM calls run in Worker threads; UI never blocks.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,19 @@ from .tui_workers import (
     run_prompt_blocking, switch_backend,
 )
 
+_ARG_SUGGESTION_PREFIX = "-> "
+_SUGGESTION_SEPARATOR = " | "
+
+
+@dataclass(slots=True)
+class CodebaseScanResult:
+    root: Path
+    files_indexed: int
+    changed_files: int
+    files_deleted: int
+    chunks_indexed: int
+    db_path: Path
+
 
 class MTPApp(App):
     """MTP Terminal UI — Async Textual Application."""
@@ -60,6 +74,8 @@ class MTPApp(App):
         self._history_draft: str = ""
         self._pending_attachments: list[str] = []  # Track the raw prompt for recording
         self._input_history: list[str] = []
+        self._codebase_scan_progress: str | None = None
+        self._codebase_scan_root: Path | None = None
 
     @property
     def state(self) -> TUIState:
@@ -368,13 +384,14 @@ class MTPApp(App):
             "/rounds": "Set max rounds",
             "/cd": "Change directory",
             "/autoresearch": "Toggle auto-research",
-            "/research": "Set research instructions"
+            "/research": "Set research instructions",
+            "/codebase": "Codebase memory"
         }
         
         matches = []
         for cmd, desc in cmd_desc.items():
             if cmd.startswith(partial.lower()):
-                matches.append(f"{cmd}  ·  {desc}")
+                matches.append(f"{cmd}{_SUGGESTION_SEPARATOR}{desc}")
                 
         if not matches:
             try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
@@ -419,7 +436,7 @@ class MTPApp(App):
                     if partial in search_str:
                         display = f"{sid}"
                         if label:
-                            display += f"  ·  {label}"
+                            display += f"{_SUGGESTION_SEPARATOR}{label}"
                         display += f"  ({turns} turns)"
                         matches.append(display)
             except Exception:
@@ -433,13 +450,24 @@ class MTPApp(App):
         elif cmd == "sandbox":
             options = ["read-only", "workspace-write", "danger-full-access"]
             matches = [m for m in options if partial in m.lower()]
+        elif cmd == "codebase":
+            normalized = partial.strip().lower()
+            if not normalized:
+                matches = ["memory", "status"]
+            elif normalized == "memory":
+                matches = ["on", "off"]
+            elif normalized.startswith("memory "):
+                tail = normalized.split(" ", 1)[1]
+                matches = [item for item in ["on", "off"] if item.startswith(tail)]
+            else:
+                matches = [m for m in ["memory", "status"] if m.startswith(normalized)]
             
         if not matches:
             try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
             except Exception: pass
             return
             
-        self._populate_and_show_suggestions(matches, prefix="↳ ")
+        self._populate_and_show_suggestions(matches, prefix=_ARG_SUGGESTION_PREFIX)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_list = event.option_list
@@ -454,8 +482,8 @@ class MTPApp(App):
         current_line = lines[cursor_row][:cursor_col]
         words = current_line.split()
         
-        if selected.startswith("↳ "):
-            val = selected[2:].split()[0]
+        if selected.startswith(_ARG_SUGGESTION_PREFIX):
+            val = selected[len(_ARG_SUGGESTION_PREFIX):].split()[0]
             parts = current_line.split()
             if current_line.endswith(" "):
                 new_line = current_line + val + " "
@@ -490,8 +518,8 @@ class MTPApp(App):
                 container.mount(AttachmentBadge(f"📎 {filename}"))
                 container.add_class("visible")
         else:
-            if "  ·  " in selected:
-                selected = selected.split("  ·  ")[0]
+            if _SUGGESTION_SEPARATOR in selected:
+                selected = selected.split(_SUGGESTION_SEPARATOR)[0]
             start_idx = current_line.rfind(last_word)
             new_line = current_line[:start_idx] + selected + " "
             lines[cursor_row] = new_line + lines[cursor_row][cursor_col:]
@@ -543,11 +571,70 @@ class MTPApp(App):
         result.warnings = [*att_warnings, *result.warnings]
         return result
 
+    async def _run_codebase_scan_worker(self, root: Path) -> CodebaseScanResult:
+        import asyncio
+        from mtp.codebase import CodebaseMemory
+
+        memory = CodebaseMemory(root)
+
+        def progress(stats) -> None:
+            self.call_from_thread(self._update_codebase_scan_progress, stats.percent, stats.files_seen, stats.changed_files)
+
+        stats = await asyncio.to_thread(memory.scan, enable=True, progress=progress)
+        return CodebaseScanResult(
+            root=root,
+            files_indexed=stats.files_indexed,
+            changed_files=stats.changed_files,
+            files_deleted=stats.files_deleted,
+            chunks_indexed=stats.chunks_indexed,
+            db_path=memory.db_path,
+        )
+
+    def _update_codebase_scan_progress(self, percent: int, files_seen: int, changed_files: int) -> None:
+        self._codebase_scan_progress = f"Indexing codebase {percent}%  files={files_seen} changed={changed_files}"
+        try:
+            self.query_one("#spinner", SpinnerWidget).update_label(self._codebase_scan_progress)
+        except Exception:
+            pass
+
+    def _append_cmd_log(self, message: str, *, style: str = "#a78bfa") -> None:
+        from rich.text import Text
+
+        cmd_log = self.query_one("#cmd-log", RichLog)
+        cmd_log.add_class("visible")
+        cmd_log.write(Text(f"  {message}", style=style))
+
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.worker.name != "llm_call":
+        spinner = self.query_one("#spinner", SpinnerWidget)
+
+        if event.worker.name == "codebase_scan":
+            if event.state == WorkerState.SUCCESS:
+                spinner.stop()
+                result: CodebaseScanResult = event.worker.result
+                self._state.cwd = result.root
+                self._state.agent = None
+                save_tui_session(self._state)
+                self._refresh_prompt_label()
+                self._refresh_status_bar()
+                self._append_cmd_log(
+                    "Codebase memory scan complete: 100%\n"
+                    f"  files={result.files_indexed} changed={result.changed_files} "
+                    f"deleted={result.files_deleted} chunks={result.chunks_indexed}\n"
+                    f"  saved={result.db_path}"
+                )
+                self._codebase_scan_progress = None
+            elif event.state == WorkerState.ERROR:
+                spinner.stop()
+                self._append_cmd_log(f"Codebase scan failed: {event.worker.error}", style="bold #f43f5e")
+                self._codebase_scan_progress = None
+            elif event.state == WorkerState.CANCELLED:
+                spinner.stop()
+                self._append_cmd_log("Codebase scan cancelled.", style="#fbbf24")
+                self._codebase_scan_progress = None
             return
 
-        spinner = self.query_one("#spinner", SpinnerWidget)
+        if event.worker.name != "llm_call":
+            return
 
         if event.state == WorkerState.SUCCESS:
             spinner.stop()
@@ -778,6 +865,8 @@ class MTPApp(App):
             s.agent = None
             save_tui_session(s)
             chat_log.add_command_result("✓ research_instructions updated")
+        elif cmd == "codebase":
+            self._handle_codebase(arg, chat_log)
         elif cmd == "sandbox":
             self._handle_sandbox(arg)
         elif cmd == "apikey":
@@ -825,6 +914,71 @@ class MTPApp(App):
             chat_log.add_command_result(f"Unknown: /{cmd}")
 
     # ── Model / Sandbox / API key handlers ───────────────────────────────
+
+    def _handle_codebase(self, arg: str, chat_log: Any) -> None:
+        from mtp.codebase import CodebaseMemory
+
+        pieces = arg.split()
+        if not pieces:
+            self._open_codebase_memory_picker(self._state.cwd, chat_log)
+            return
+
+        sub = pieces[0].lower()
+        if sub == "status":
+            status = CodebaseMemory(self._state.cwd).status()
+            chat_log.add_command_result(
+                f"Codebase memory {'ON' if status.enabled else 'OFF'}\n"
+                f"root={status.root}\n"
+                f"files={status.file_count} chunks={status.chunk_count} summaries={status.summary_count}\n"
+                f"last_scan_at={status.last_scan_at or '(never)'}"
+            )
+            return
+
+        if sub != "memory":
+            chat_log.add_command_result("Usage: /codebase memory <on|off> [root] or /codebase status")
+            return
+
+        action = pieces[1].lower() if len(pieces) >= 2 else ""
+        root = Path(" ".join(pieces[2:])).expanduser().resolve() if len(pieces) >= 3 else self._state.cwd
+        memory = CodebaseMemory(root)
+
+        if action == "off":
+            memory.set_enabled(False)
+            chat_log.add_command_result(f"Codebase memory OFF for {root}")
+            self._refresh_status_bar()
+            return
+
+        if action != "on":
+            self._open_codebase_memory_picker(root, chat_log)
+            return
+
+        spinner = self.query_one("#spinner", SpinnerWidget)
+        spinner.start("Indexing codebase 0%")
+        self._codebase_scan_root = root
+        self._codebase_scan_progress = "Indexing codebase 0%"
+        chat_log.add_command_result(f"Starting codebase memory scan for {root}")
+        self.run_worker(
+            self._run_codebase_scan_worker(root),
+            name="codebase_scan",
+            exclusive=True,
+        )
+
+    def _open_codebase_memory_picker(self, root: Path, chat_log: Any) -> None:
+        from mtp.codebase import CodebaseMemory
+
+        status = CodebaseMemory(root).status()
+        chat_log.add_command_result(
+            f"Current project root: {root}\n"
+            f"Codebase memory is {'ON' if status.enabled else 'OFF'}.\n"
+            "Choose on/off with arrows + Enter, or type /codebase status manually."
+        )
+        input_area = self.query_one("#chat-input", InputArea)
+        input_area.text = "/codebase memory "
+        input_area.cursor_location = (0, len(input_area.text))
+        self._populate_and_show_suggestions(["on", "off"], prefix=_ARG_SUGGESTION_PREFIX)
+        option_list = self.query_one("#suggestion-list", OptionList)
+        option_list.focus()
+        option_list.highlighted = 0
 
     def _handle_model_switch(self, arg: str) -> None:
         chat_log = self.query_one("#chat-log", ChatLog)
@@ -907,6 +1061,7 @@ class MTPApp(App):
         table.add_row("", "/reasoning", "Set reasoning level")
         table.add_row("", "/mode", "Set harness mode")
         table.add_row("", "/sandbox", "Cycle sandbox mode")
+        table.add_row("", "/codebase memory", "Enable/disable project memory")
         
         table.add_row("Keys", "Ctrl+P", "Command palette")
         table.add_row("", "Ctrl+B", "Toggle sidebar")
@@ -935,6 +1090,14 @@ class MTPApp(App):
         table.add_row("cwd", str(s.cwd))
         table.add_row("turns", str(len(s.transcript)))
         table.add_row("autoresearch", str(s.autoresearch))
+        try:
+            from mtp.codebase import CodebaseMemory
+
+            memory_status = CodebaseMemory(s.cwd).status()
+            table.add_row("codebase_memory", "on" if memory_status.enabled else "off")
+            table.add_row("memory_chunks", str(memory_status.chunk_count))
+        except Exception:
+            table.add_row("codebase_memory", "unknown")
         
         return Panel(table, title="[bold #34d399]Session Status[/]", border_style="#3f3f46")
 

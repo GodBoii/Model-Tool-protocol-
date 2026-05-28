@@ -399,7 +399,10 @@ def _print_help() -> None:
             ("/rounds <n>", "Set max_rounds (MTP providers)"),
             ("/sandbox [mode]", "Set Codex sandbox mode (Ctrl+W) - controls file access permissions"),
         ]),
-        ("Research & Auth", [
+        ("Memory, Research & Auth", [
+            ("/codebase memory", "Show codebase memory options"),
+            ("/codebase memory on [root]", "Scan project and enable codebase memory"),
+            ("/codebase memory off", "Disable codebase memory"),
             ("/autoresearch on|off", "Toggle autoresearch (MTP providers)"),
             ("/research <text>", "Set research instructions"),
             ("/codex-login", "Run official codex login flow"),
@@ -692,6 +695,18 @@ def _record_turn(state: TUIState, prompt: str, result: ChatResult) -> None:
     )
     state.last_usage_lines = list(result.usage_lines)
     _save_tui_session(state)
+    try:
+        from mtp.codebase import CodebaseMemory
+
+        CodebaseMemory(state.cwd).record_conversation_summary(
+            session_id=state.session_id,
+            prompt=prompt,
+            response=result.text,
+            backend=state.backend,
+            model=_active_model_name(state),
+        )
+    except Exception:
+        pass
 
 
 def _load_session_into_state(state: TUIState, record: SessionRecord) -> None:
@@ -2070,6 +2085,17 @@ def _run_openai_prompt(state: TUIState, prompt: str) -> ChatResult:
 
 def _status_lines(state: TUIState) -> list[str]:
     last_usage = " | ".join(state.last_usage_lines) if state.last_usage_lines else "(none)"
+    try:
+        from mtp.codebase import CodebaseMemory
+
+        memory_status = CodebaseMemory(state.cwd).status()
+        codebase_memory = (
+            f"{'on' if memory_status.enabled else 'off'} "
+            f"files={memory_status.file_count} chunks={memory_status.chunk_count} "
+            f"summaries={memory_status.summary_count}"
+        )
+    except Exception:
+        codebase_memory = "unknown"
     return [
         f"session_id={state.session_id}",
         f"session_label={state.session_label or '(none)'}",
@@ -2083,6 +2109,7 @@ def _status_lines(state: TUIState) -> list[str]:
         f"autoresearch={state.autoresearch}",
         f"research_instructions={state.research_instructions or '(none)'}",
         f"reasoning_effort={state.reasoning_effort}",
+        f"codebase_memory={codebase_memory}",
         f"last_usage={last_usage}",
     ]
 
@@ -2828,6 +2855,8 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
         state.agent = None
         _save_tui_session(state)
         return f"{C_SUCCESS}{_SYM_OK}{RESET} research_instructions updated. Agent reloaded."
+    if cmd == "/codebase":
+        return _handle_codebase_command(state, arg)
     if cmd == "/codex-login":
         return _run_codex_login(state)
     if cmd == "/cd":
@@ -2910,6 +2939,68 @@ def _handle_command(state: TUIState, raw: str) -> str | None:
     return f"{C_ERROR}Unknown command.{RESET} Use {C_CMD}/help{RESET}."
 
 
+def _handle_codebase_command(state: TUIState, arg: str) -> str:
+    from mtp.codebase import CodebaseMemory
+
+    parts = arg.split()
+    if not parts:
+        status = CodebaseMemory(state.cwd).status()
+        return (
+            f"{C_LABEL}Current project root:{RESET} {C_VALUE}{state.cwd}{RESET}\n"
+            f"  {C_LABEL}Codebase memory:{RESET} {C_VALUE}{'on' if status.enabled else 'off'}{RESET}\n"
+            f"  {C_DIM}Options: {C_CMD}/codebase memory on{RESET} or {C_CMD}/codebase memory off{RESET}"
+        )
+    sub = parts[0].lower()
+    if sub == "status":
+        status = CodebaseMemory(state.cwd).status()
+        return (
+            f"{C_LABEL}Codebase memory:{RESET} {C_VALUE}{'on' if status.enabled else 'off'}{RESET}\n"
+            f"  root={status.root}\n"
+            f"  files={status.file_count} chunks={status.chunk_count} summaries={status.summary_count}\n"
+            f"  last_scan_at={status.last_scan_at or '(never)'}"
+        )
+    if sub != "memory":
+        return f"{C_WARNING}Usage:{RESET} {C_CMD}/codebase memory <on|off> [root]{RESET}"
+
+    action = parts[1].lower() if len(parts) >= 2 else ""
+    root = Path(" ".join(parts[2:])).expanduser().resolve() if len(parts) >= 3 else state.cwd
+    memory = CodebaseMemory(root)
+    if action == "off":
+        memory.set_enabled(False)
+        return f"{C_SUCCESS}{_SYM_OK}{RESET} Codebase memory off for {C_VALUE}{root}{RESET}."
+    if action != "on":
+        status = memory.status()
+        return (
+            f"{C_LABEL}Project root:{RESET} {C_VALUE}{root}{RESET}\n"
+            f"  {C_LABEL}Codebase memory:{RESET} {C_VALUE}{'on' if status.enabled else 'off'}{RESET}\n"
+            f"  {C_DIM}Choose: {C_CMD}/codebase memory on{RESET} or {C_CMD}/codebase memory off{RESET}"
+        )
+
+    print(f"  {C_INFO}Scanning codebase memory for {C_VALUE}{root}{RESET}")
+    last_percent = {"value": -1}
+
+    def progress(stats) -> None:
+        if stats.percent == last_percent["value"]:
+            return
+        last_percent["value"] = stats.percent
+        sys.stdout.write(
+            f"\r  {C_INFO}scan {stats.percent:3d}%{RESET} "
+            f"{C_DIM}files={stats.files_seen} changed={stats.changed_files} skipped={stats.files_skipped}{RESET}"
+        )
+        sys.stdout.flush()
+
+    stats = memory.scan(enable=True, progress=progress)
+    print()
+    state.cwd = root
+    state.agent = None
+    _save_tui_session(state)
+    return (
+        f"{C_SUCCESS}{_SYM_OK}{RESET} Codebase memory scan complete: {C_VALUE}100%{RESET}\n"
+        f"  files={stats.files_indexed} changed={stats.changed_files} deleted={stats.files_deleted} chunks={stats.chunks_indexed}\n"
+        f"  saved={memory.db_path}"
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Input Normalization (unchanged logic)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2940,6 +3031,7 @@ def _normalize_input(raw: str) -> str:
         "tools",
         "sandbox",
         "cat",
+        "codebase",
     }
     if raw.startswith("/"):
         return raw
