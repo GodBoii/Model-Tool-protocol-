@@ -10,7 +10,7 @@ from typing import Any
 
 from mtp.protocol import ToolRiskLevel, ToolSpec
 from mtp.runtime import RegisteredTool, ToolkitLoader
-from mtp.codebase import CodebaseMemory, CodebaseMemoryToolkit
+from mtp.codebase import CodebaseMemory
 
 
 _TEXT_EXTENSIONS = {
@@ -22,6 +22,16 @@ _DEFAULT_IGNORES = {
     ".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build",
     ".mypy_cache", ".ruff_cache", ".next", ".turbo",
 }
+
+
+def _refresh_codebase_memory(root: Path) -> None:
+    memory = CodebaseMemory(root)
+    if not memory.is_enabled():
+        return
+    try:
+        memory.refresh_changed()
+    except Exception:
+        return
 
 
 def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -91,8 +101,8 @@ class ContextToolkit(ToolkitLoader):
     def list_tool_specs(self) -> list[ToolSpec]:
         return [
             ToolSpec("project.inspect", "Inspect the workspace root, count source file formats, and report concise git status. Returns counts only for files, never a recursive file list.", _schema({}), risk_level=ToolRiskLevel.READ_ONLY, cache_ttl_seconds=15),
-            ToolSpec("fs.search", "Find relevant files by word, text, fuzzy, and lightweight semantic matching. Use `query` for the search text; `pattern` is accepted as an alias.", _query_schema(), risk_level=ToolRiskLevel.READ_ONLY),
-            ToolSpec("fs.grep", "Search indexed codebase memory first, then live files, and return relevant matching snippets. Use `query` for the search text; `pattern` is accepted as an alias.", _query_schema(), risk_level=ToolRiskLevel.READ_ONLY),
+            ToolSpec("fs.search", "Find relevant files by word, text, fuzzy, and lightweight semantic matching. Uses indexed workspace memory when available. Use `query` for the search text; `pattern` is accepted as an alias.", _query_schema(), risk_level=ToolRiskLevel.READ_ONLY),
+            ToolSpec("fs.grep", "Search indexed workspace memory first, then live files, and return relevant matching snippets. Use `query` for the search text; `pattern` is accepted as an alias.", _query_schema(), risk_level=ToolRiskLevel.READ_ONLY),
             ToolSpec("fs.read_text", "Read a bounded line window from a workspace text file by relative path.", _schema({"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, ["path"]), risk_level=ToolRiskLevel.READ_ONLY),
             ToolSpec("agent.explore_codebase", "Subagent-style deep codebase search. Use for broad grep and locating relevant files. Use `query` for the search text; `pattern` is accepted as an alias.", _schema({"task": {"type": "string"}, "query": {"type": "string"}, "pattern": {"type": "string"}, "limit": {"type": "integer"}}, ["task"]), risk_level=ToolRiskLevel.READ_ONLY),
             ToolSpec("agent.debug_context", "Subagent-style debug context gatherer: project summary, git diff, and likely files. Use `query` for the search text; `pattern` is accepted as an alias.", _schema({"symptom": {"type": "string"}, "query": {"type": "string"}, "pattern": {"type": "string"}}, ["symptom"]), risk_level=ToolRiskLevel.READ_ONLY),
@@ -251,6 +261,7 @@ class EditToolkit(ToolkitLoader):
                 raise ValueError(f"old_text appears {count} times. Set replace_all=true or choose a more specific block.")
             after = before.replace(old_text, new_text) if replace_all else before.replace(old_text, new_text, 1)
             target.write_text(after, encoding="utf-8")
+            _refresh_codebase_memory(self.ws.root)
             diff = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile=f"a/{path}", tofile=f"b/{path}"))
             return {"file": self.ws.rel(target), "replacements": count if replace_all else 1, "diff": diff[:20000]}
 
@@ -260,6 +271,7 @@ class EditToolkit(ToolkitLoader):
                 raise ValueError("Refusing to overwrite existing file.")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
+            _refresh_codebase_memory(self.ws.root)
             return {"file": self.ws.rel(target), "bytes": len(content.encode("utf-8"))}
 
         return [
@@ -325,7 +337,6 @@ class CommandToolkit(ToolkitLoader):
 def register_harness_toolkits(registry: Any, *, root: str | Path) -> None:
     registry.register_toolkit_loader("project", ContextToolkit(root))
     registry.register_toolkit_loader("fs", ContextToolkit(root))
-    registry.register_toolkit_loader("codebase", CodebaseMemoryToolkit(root))
     registry.register_toolkit_loader("agent", ContextToolkit(root))
     registry.register_toolkit_loader("edit", EditToolkit(root))
     registry.register_toolkit_loader("shell", CommandToolkit(root))

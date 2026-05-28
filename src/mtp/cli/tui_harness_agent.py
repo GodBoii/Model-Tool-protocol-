@@ -72,8 +72,8 @@ def build_orchestrator_instructions(*, cwd: Path, mode: str) -> str:
         f"Workspace: {cwd}\n"
         f"{mode_policy}\n\n"
         "Operating rules:\n"
-        "- Start by gathering context with project.inspect, codebase.search, fs.search, fs.read_text, or the read-only agent.* subagent tools.\n"
-        "- Tool guide: project.inspect gives root structure, file-format counts, git status, and codebase memory status; fs.search finds relevant relative file paths and uses codebase memory when enabled; codebase.search queries memory directly; fs.read_text reads a specific line range.\n"
+        "- Start by gathering context with project.inspect, fs.search, fs.read_text, or the read-only agent.* subagent tools.\n"
+        "- Tool guide: project.inspect gives root structure, file-format counts, git status, and codebase memory status; fs.search finds relevant relative file paths and uses indexed workspace memory when enabled; fs.read_text reads a specific line range.\n"
         "- Delegation: agent.explore_codebase: read-only explorer; agent.debug_context: read-only debug gatherer; agent.syntax_check: read-only Python syntax checker.\n"
         "- Treat agent.explore_codebase, agent.debug_context, and agent.syntax_check as specialist subagents for broad search, debugging context, and checks.\n"
         "- The main orchestrator owns all important decisions and all code edits. Do not ask subagent tools to edit.\n"
@@ -91,7 +91,7 @@ def build_orchestrator_instructions(*, cwd: Path, mode: str) -> str:
         "Quality bar:\n"
         "- For coding tasks, understand the existing pattern before changing code.\n"
         "- For bug fixes, identify the likely root cause before editing.\n"
-        "- Search first, read narrowly. If codebase memory is enabled, prefer codebase.search or fs.search before broad filesystem scans. For broad investigations, delegate context gathering to the read-only subagent tools, then synthesize yourself.\n"
+        "- Search first, read narrowly. If codebase memory is enabled, prefer fs.search before broad filesystem scans. For broad investigations, delegate context gathering to the read-only subagent tools, then synthesize yourself.\n"
         "- For non-coding computer tasks, inspect first and avoid destructive actions unless the user clearly requested them."
     )
 
