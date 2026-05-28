@@ -89,6 +89,8 @@ class BootInfo(Static):
         model: str,
         session_short: str,
         cwd: str,
+        thinking_label: str | None = None,
+        thinking_value: str | None = None,
     ) -> None:
         info = Text()
         info.append("Model Tool Protocol", style="dim #71717a")
@@ -109,6 +111,10 @@ class BootInfo(Static):
         info.append(session_short, style="#2dd4bf")
         info.append("  cwd ", style="dim #71717a")
         info.append(cwd, style="#f4f4f6")
+        if thinking_label and thinking_value:
+            info.append("  ", style="dim #71717a")
+            info.append(f"{thinking_label} ", style="dim #71717a")
+            info.append(thinking_value, style="#d8b4fe")
         info.append("\n\n")
 
         info.append("  type ", style="dim #71717a")

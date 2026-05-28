@@ -78,6 +78,8 @@ class SessionInfo(Static):
         model: str = "",
         turn_count: int = 0,
         mode: str = "",
+        thinking_label: str | None = None,
+        thinking_value: str | None = None,
     ) -> None:
         info = Text()
         info.append("  Session\n", style="bold #c084fc")
@@ -98,6 +100,10 @@ class SessionInfo(Static):
 
         info.append(f"  Mode    ", style="dim #71717a")
         info.append(f"{mode}\n", style="#818cf8")
+
+        if thinking_label and thinking_value:
+            info.append(f"  {thinking_label.title():<8}", style="dim #71717a")
+            info.append(f"{thinking_value}\n", style="#d8b4fe")
 
         info.append(f"  Turns   ", style="dim #71717a")
         info.append(f"{turn_count}\n", style="#2dd4bf")
