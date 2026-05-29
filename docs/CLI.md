@@ -341,7 +341,3 @@ To enable high-fidelity icons, ensure you have a [Nerd Font](https://www.nerdfon
 `/nerdfont on`
 *Note: Requires a CLI restart to apply all glyph changes.*
 
-**Cat Companion Commands**:
-- `/cat hide` - Disable the terminal cat and telemetry HUD
-- `/cat show` - Re-enable the companion
-- **Eye Tracking**: The cat physically follows your cursor laterally as you type in the prompt.

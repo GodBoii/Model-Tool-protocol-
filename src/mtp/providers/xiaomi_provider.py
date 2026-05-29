@@ -256,6 +256,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         content: str,
         reasoning: str | None,
         usage: dict[str, int] | None,
+        tool_call_source: str,
     ) -> AgentAction:
         action_meta: dict[str, Any] = {"provider": "xiaomi", "model": self.model}
         if usage:
@@ -309,10 +310,15 @@ class XiaomiToolCallingProvider(ProviderAdapter):
             batches=calls_to_dependency_batches(mtp_calls),
             metadata={"provider": "xiaomi", "model": self.model},
         )
+        derived_batch_modes = [batch.mode for batch in plan.batches]
         return AgentAction(
             plan=plan,
             metadata={
                 **action_meta,
+                "tool_call_source": tool_call_source,
+                "raw_tool_call_count": len(tool_calls),
+                "derived_batch_count": len(plan.batches),
+                "derived_batch_modes": derived_batch_modes,
                 "assistant_tool_message": self._assistant_message(
                     content=content,
                     tool_calls=serialized_tool_calls,
@@ -335,6 +341,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
                 content=content,
                 reasoning=reasoning,
                 usage=usage or None,
+                tool_call_source="native_tool_calls",
             )
 
         inline_tool_calls, cleaned_content = self._parse_inline_tool_calls(content)
@@ -344,6 +351,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
                 content=cleaned_content,
                 reasoning=reasoning,
                 usage=usage or None,
+                tool_call_source="inline_tool_call_fallback",
             )
 
         action_meta: dict[str, Any] = {"provider": "xiaomi", "model": self.model}
@@ -380,7 +388,6 @@ class XiaomiToolCallingProvider(ProviderAdapter):
 
             if isinstance(chunk_content, str) and chunk_content:
                 content_acc += chunk_content
-                yield {"type": "text_chunk", "chunk": chunk_content}
 
             chunk_tool_calls = getattr(delta, "tool_calls", None)
             if chunk_tool_calls:
@@ -412,6 +419,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
                 content=content_acc,
                 reasoning=reasoning,
                 usage=usage,
+                tool_call_source="native_tool_calls",
             )
             return
 
@@ -422,6 +430,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
                 content=cleaned_content,
                 reasoning=reasoning,
                 usage=usage,
+                tool_call_source="inline_tool_call_fallback",
             )
             return
 
@@ -431,6 +440,8 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         if reasoning:
             action_meta["reasoning"] = reasoning
         action_meta["assistant_message"] = self._assistant_message(content=content_acc, reasoning=reasoning)
+        if content_acc:
+            yield {"type": "text_chunk", "chunk": content_acc}
         yield AgentAction(response_text=content_acc, metadata=action_meta)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:

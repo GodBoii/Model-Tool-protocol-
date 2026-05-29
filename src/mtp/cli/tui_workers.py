@@ -75,8 +75,10 @@ def record_turn(state: TUIState, prompt: str, result: ChatResult) -> None:
         warnings=list(result.warnings),
         usage_lines=list(result.usage_lines),
         created_at=now_label(),
+        tool_details=list(result.tool_details),
     ))
     state.last_usage_lines = list(result.usage_lines)
+    state.last_tool_details = list(result.tool_details)
     save_tui_session(state)
     _record_codebase_conversation_summary(state, prompt, result)
 
@@ -283,6 +285,7 @@ def _run_mtp(
             attachments=[],
             warnings=mtp_result.warnings,
             usage_lines=mtp_result.usage_lines,
+            tool_details=mtp_result.tool_details,
         )
     except Exception as exc:
         return ChatResult(

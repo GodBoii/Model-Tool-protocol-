@@ -1,8 +1,5 @@
-"""Chat Log Widget — Scrollable message log with rich markdown rendering.
+"""Chat Log widget with markdown rendering and compact tool surfaces."""
 
-Uses Textual's RichLog for efficient rendering of user/assistant messages,
-tool events, code blocks, and usage metrics.
-"""
 from __future__ import annotations
 
 import re
@@ -10,15 +7,26 @@ from typing import Any
 
 from rich.markdown import Markdown
 from rich.text import Text
-
 from textual.widgets import RichLog
 
 
 class ChatMessage:
     """A single chat message for display."""
 
-    __slots__ = ("role", "text", "model", "backend", "tool_events",
-                 "warnings", "usage_lines", "timestamp", "thinking", "duration_sec")
+    __slots__ = (
+        "role",
+        "text",
+        "model",
+        "backend",
+        "tool_events",
+        "warnings",
+        "usage_lines",
+        "timestamp",
+        "thinking",
+        "duration_sec",
+        "tool_details",
+        "show_tool_details",
+    )
 
     def __init__(
         self,
@@ -33,7 +41,9 @@ class ChatMessage:
         timestamp: str = "",
         thinking: str = "",
         duration_sec: float | None = None,
-    ):
+        tool_details: list[dict[str, Any]] | None = None,
+        show_tool_details: bool = False,
+    ) -> None:
         self.role = role
         self.text = text
         self.model = model
@@ -44,10 +54,12 @@ class ChatMessage:
         self.timestamp = timestamp
         self.thinking = thinking
         self.duration_sec = duration_sec
+        self.tool_details = tool_details or []
+        self.show_tool_details = show_tool_details
 
 
 class ChatLog(RichLog):
-    """Premium chat log with gradient-styled messages and markdown rendering."""
+    """Scrollable rich chat log."""
 
     DEFAULT_CSS = """
     ChatLog {
@@ -69,157 +81,169 @@ class ChatLog(RichLog):
         )
 
     def add_user_message(self, text: str, attachments: list[str] | None = None) -> None:
-        """Render a user prompt bubble."""
         header = Text()
-        header.append("  ❯ ", style="bold #ec4899")
+        header.append("  > ", style="bold #ec4899")
         header.append("You", style="bold #f4f4f6")
-
         self.write(header)
 
-        # Attachment badges
         if attachments:
             att_text = Text("  ")
             for att in attachments[:5]:
-                att_text.append(f" 📎 {att} ", style="#38bdf8 on #1e293b")
+                att_text.append(f" [file] {att} ", style="#38bdf8 on #1e293b")
                 att_text.append(" ")
             self.write(att_text)
 
-        # Message body
-        body = Text(f"  {text}", style="#f4f4f6")
-        self.write(body)
-        self.write(Text(""))  # spacer
+        self.write(Text(f"  {text}", style="#f4f4f6"))
+        self.write(Text(""))
 
     def add_assistant_message(self, msg: ChatMessage) -> None:
-        """Render an assistant response with all metadata."""
-        # ── Thinking/reasoning trace ─────────────────────────────
         if msg.thinking:
             self._render_thinking(msg.thinking)
 
-        # ── Tool events ──────────────────────────────────────────
         if msg.tool_events:
             self._render_tool_events(msg.tool_events)
+            if msg.show_tool_details and msg.tool_details:
+                self._render_tool_details(msg.tool_details)
 
-        # ── Warnings ─────────────────────────────────────────────
         if msg.warnings:
-            for w in msg.warnings[:3]:
+            for warning in msg.warnings[:3]:
                 warn_text = Text()
-                warn_text.append("  ⚠ ", style="bold #fbbf24")
-                warn_text.append(w, style="#fbbf24")
+                warn_text.append("  ! ", style="bold #fbbf24")
+                warn_text.append(warning, style="#fbbf24")
                 self.write(warn_text)
 
-        # ── Response header ──────────────────────────────────────
         header = Text()
-        header.append("  ◂ ", style="bold #8b5cf6")
+        header.append("  < ", style="bold #8b5cf6")
         header.append("Agent", style="bold #c084fc")
         if msg.model:
             header.append(f"  {msg.model}", style="dim #71717a")
         self.write(header)
 
-        # ── Response body (markdown) ─────────────────────────────
         if msg.text:
             try:
-                md = Markdown(msg.text, code_theme="monokai")
-                self.write(md)
+                self.write(Markdown(msg.text, code_theme="monokai"))
             except Exception:
                 self.write(Text(f"  {msg.text}", style="#f4f4f6"))
 
-        # ── Usage metrics ────────────────────────────────────────
         if msg.usage_lines:
             self.write(Text(""))
             self._render_usage(msg.usage_lines, msg.duration_sec)
 
-        self.write(Text(""))  # spacer
+        self.write(Text(""))
 
     def add_system_message(self, text: str, style: str = "dim #71717a") -> None:
-        """Render a system/info message."""
-        msg = Text(f"  {text}", style=style)
-        self.write(msg)
+        self.write(Text(f"  {text}", style=style))
 
     def add_command_result(self, text: str) -> None:
-        """Render the result of a slash command."""
-        # Strip any leftover ANSI from the old system
         cleaned = re.sub(r"\033\[[0-9;]*m", "", text)
-        result_text = Text(f"  {cleaned}", style="#a78bfa")
-        self.write(result_text)
+        self.write(Text(f"  {cleaned}", style="#a78bfa"))
         self.write(Text(""))
 
     def _render_thinking(self, thinking: str) -> None:
-        """Render cognitive trace in a subtle panel."""
         header = Text()
-        header.append("  ╭─ ", style="#3f3f46")
-        header.append("💭 Reasoning", style="bold #38bdf8")
-        header.append(" ─", style="#3f3f46")
+        header.append("  +- ", style="#3f3f46")
+        header.append("Reasoning", style="bold #38bdf8")
         self.write(header)
 
         lines = thinking.split(" | ") if " | " in thinking else thinking.splitlines()
         display_lines = lines[:8] if len(lines) > 8 else lines
         for line in display_lines:
             trace_text = Text()
-            trace_text.append("  │  ", style="#3f3f46")
+            trace_text.append("  |  ", style="#3f3f46")
             trace_text.append(line.strip()[:200], style="dim #71717a")
             self.write(trace_text)
         if len(lines) > 8:
-            collapsed = Text()
-            collapsed.append(f"  │  ... {len(lines) - 8} more steps", style="dim #71717a italic")
-            self.write(collapsed)
+            self.write(Text(f"  |  ... {len(lines) - 8} more steps", style="dim #71717a italic"))
 
-        footer = Text()
-        footer.append("  ╰─────", style="#3f3f46")
-        self.write(footer)
+        self.write(Text("  +-----", style="#3f3f46"))
 
     def _render_tool_events(self, events: list[str]) -> None:
-        """Render tool call tree."""
-        meta = Text()
-        meta.append(f"  • {len(events)} tools", style="#a78bfa")
-        self.write(meta)
+        self.write(Text(f"  * {len(events)} tool events", style="#a78bfa"))
 
-        for i, event in enumerate(events[:5]):
-            connector = "└─" if i == len(events[:5]) - 1 and len(events) <= 5 else "├─"
+        visible_events = events[:5]
+        for index, event in enumerate(visible_events):
+            connector = "\\-" if index == len(visible_events) - 1 and len(events) <= 5 else "+-"
             tool_text = Text()
-            tool_text.append(f"  │  {connector} ", style="dim #3f3f46")
-            # Clean emoji prefixes
+            tool_text.append(f"  |  {connector} ", style="dim #3f3f46")
             clean = event.replace("🔧 ", "")
             tool_text.append(clean[:120], style="#2dd4bf")
             self.write(tool_text)
 
         if len(events) > 5:
             more = Text()
-            more.append(f"  │  └─ ... {len(events) - 5} more ", style="dim #3f3f46")
-            more.append("(Ctrl+T to expand)", style="dim italic #818cf8")
+            more.append(f"  |  \\- ... {len(events) - 5} more ", style="dim #3f3f46")
+            more.append("(/details for metadata)", style="dim italic #818cf8")
             self.write(more)
 
+    def _render_tool_details(self, details: list[dict[str, Any]]) -> None:
+        self.write(Text("  tool details", style="bold #818cf8"))
+        for detail in details[:12]:
+            dtype = str(detail.get("type") or "detail")
+            line = Text("  |  ", style="dim #3f3f46")
+            if dtype == "plan_received":
+                source = detail.get("tool_call_source") or "unknown"
+                raw_calls = detail.get("raw_tool_call_count")
+                batch_count = detail.get("derived_batch_count")
+                modes = ",".join(str(mode) for mode in detail.get("derived_batch_modes") or []) or "-"
+                line.append(
+                    f"plan source={source} raw_calls={raw_calls} batches={batch_count} modes={modes}",
+                    style="#93c5fd",
+                )
+            elif dtype == "batch_started":
+                batch_index = detail.get("batch_index")
+                mode = detail.get("mode") or "unknown"
+                call_ids = ",".join(str(call_id) for call_id in detail.get("call_ids") or []) or "-"
+                line.append(f"batch#{batch_index} mode={mode} call_ids={call_ids}", style="#93c5fd")
+            elif dtype == "tool_started":
+                tool_name = detail.get("tool_name") or "unknown"
+                call_id = detail.get("call_id") or "-"
+                depends_on = ",".join(str(dep) for dep in detail.get("depends_on") or []) or "-"
+                line.append(
+                    f"start {tool_name} call_id={call_id} depends_on={depends_on}",
+                    style="#93c5fd",
+                )
+            elif dtype == "tool_finished":
+                tool_name = detail.get("tool_name") or "unknown"
+                call_id = detail.get("call_id") or "-"
+                success = detail.get("success")
+                cached = detail.get("cached")
+                line.append(
+                    f"finish {tool_name} call_id={call_id} success={success} cached={cached}",
+                    style="#93c5fd",
+                )
+            else:
+                line.append(str(detail)[:200], style="#93c5fd")
+            self.write(line)
+        if len(details) > 12:
+            self.write(Text(f"  |  ... {len(details) - 12} more detail items", style="dim #71717a"))
+
     def _render_usage(self, lines: list[str], duration_sec: float | None = None) -> None:
-        """Render compact usage metrics."""
         metrics: list[str] = []
         for line in lines:
             if line.startswith("thinking="):
-                continue  # Already rendered above
+                continue
             metrics.append(line)
 
         if not metrics:
             return
 
-        # Context bar
-        for m in metrics:
-            match = re.match(r"context_window=([\d,]+)/([\d,]+)", m)
+        for metric in metrics:
+            match = re.match(r"context_window=([\d,]+)/([\d,]+)", metric)
             if match:
                 used = int(match.group(1).replace(",", ""))
                 total = int(match.group(2).replace(",", ""))
                 self._render_context_bar(used, total, duration_sec)
                 break
 
-        # Compact metrics
-        compact = "  ".join(m for m in metrics[:3] if not m.startswith("context_window="))
+        compact = "  ".join(metric for metric in metrics[:3] if not metric.startswith("context_window="))
         if compact:
-            usage_text = Text(f"  {compact}", style="dim #71717a")
-            self.write(usage_text)
+            self.write(Text(f"  {compact}", style="dim #71717a"))
 
     def _render_context_bar(self, used: int, total: int, duration_sec: float | None = None) -> None:
-        """Render a gradient context window usage bar."""
-        bar_w = 20
+        bar_width = 20
         pct = min(1.0, used / max(1, total))
-        filled = int(pct * bar_w)
-        empty = bar_w - filled
+        filled = int(pct * bar_width)
+        empty = bar_width - filled
 
         if pct < 0.6:
             color = "#34d399"
@@ -229,10 +253,10 @@ class ChatLog(RichLog):
             color = "#f43f5e"
 
         bar = Text("  ctx ")
-        bar.append("▰" * filled, style=color)
-        bar.append("▱" * empty, style="dim #3f3f46")
-        bar.append(f" {pct*100:.0f}% ", style=color)
+        bar.append("#" * filled, style=color)
+        bar.append("-" * empty, style="dim #3f3f46")
+        bar.append(f" {pct * 100:.0f}% ", style=color)
         bar.append(f"{used:,} / {total:,} tokens", style="dim #71717a")
         if duration_sec is not None:
-            bar.append(f"  ⏱ {duration_sec:.1f}s", style="dim #38bdf8")
+            bar.append(f"  {duration_sec:.1f}s", style="dim #38bdf8")
         self.write(bar)

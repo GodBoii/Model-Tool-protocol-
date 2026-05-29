@@ -47,6 +47,7 @@ class ChatResult:
     attachments: list[str]
     warnings: list[str]
     usage_lines: list[str]
+    tool_details: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -59,6 +60,7 @@ class TranscriptTurn:
     warnings: list[str]
     usage_lines: list[str]
     created_at: str
+    tool_details: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -83,6 +85,7 @@ class TUIState:
     codex_bin: str | None = None
     codex_session_id: str | None = None
     last_tool_events: list[str] = field(default_factory=list)
+    last_tool_details: list[dict[str, Any]] = field(default_factory=list)
     last_warnings: list[str] = field(default_factory=list)
 
 
@@ -128,6 +131,7 @@ def serialize_transcript(turns: list[TranscriptTurn]) -> list[dict[str, Any]]:
             "model": t.model, "attachments": list(t.attachments),
             "warnings": list(t.warnings), "usage_lines": list(t.usage_lines),
             "created_at": t.created_at,
+            "tool_details": list(t.tool_details),
         }
         for t in turns
     ]
@@ -149,6 +153,10 @@ def deserialize_transcript(payload: Any) -> list[TranscriptTurn]:
             warnings=[str(x) for x in item.get("warnings") or []],
             usage_lines=[str(x) for x in item.get("usage_lines") or []],
             created_at=str(item.get("created_at") or now_label()),
+            tool_details=[
+                detail for detail in item.get("tool_details") or []
+                if isinstance(detail, dict)
+            ],
         ))
     return transcript
 

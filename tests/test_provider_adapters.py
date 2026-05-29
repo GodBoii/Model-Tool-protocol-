@@ -384,6 +384,10 @@ class ProviderAdapterTests(unittest.TestCase):
             tools=[ToolSpec(name="fs.search", description="x", input_schema={"type": "object"})],
         )
         self.assertIsNotNone(action.plan)
+        self.assertEqual(action.metadata["tool_call_source"], "native_tool_calls")
+        self.assertEqual(action.metadata["raw_tool_call_count"], 1)
+        self.assertEqual(action.metadata["derived_batch_count"], 1)
+        self.assertEqual(action.metadata["derived_batch_modes"], ["sequential"])
         self.assertEqual(action.metadata["reasoning"], "Need to inspect the spinner-related files before answering.")
         assistant_message = action.metadata["assistant_tool_message"]
         self.assertEqual(
@@ -426,10 +430,11 @@ class ProviderAdapterTests(unittest.TestCase):
             )
         )
         self.assertEqual(chunks[0], {"type": "reasoning_chunk", "chunk": "Need to search first. "})
-        self.assertEqual(chunks[1], {"type": "text_chunk", "chunk": "I'll inspect the project. "})
         action = chunks[-1]
         assert isinstance(action, AgentAction)
         self.assertIsNotNone(action.plan)
+        self.assertEqual(action.metadata["tool_call_source"], "native_tool_calls")
+        self.assertEqual(action.metadata["raw_tool_call_count"], 1)
         self.assertEqual(action.plan.batches[0].calls[0].name, "fs.search")
         self.assertEqual(action.metadata["usage"]["reasoning_tokens"], 3)
         request_args = fake.calls[0]
@@ -505,8 +510,40 @@ class ProviderAdapterTests(unittest.TestCase):
         )
         self.assertIsNotNone(action.plan)
         assert action.plan is not None
+        self.assertEqual(action.metadata["tool_call_source"], "inline_tool_call_fallback")
+        self.assertEqual(action.metadata["raw_tool_call_count"], 1)
         self.assertEqual(action.plan.batches[0].calls[0].name, "fs.read_text")
         self.assertEqual(action.plan.batches[0].calls[0].arguments["path"], "src/app.py")
+
+    def test_xiaomi_stream_inline_tool_call_does_not_emit_raw_text_chunks(self) -> None:
+        fake = _FakeXiaomiClient(
+            [
+                [
+                    _FakeOpenAIStreamChunk(content="I will inspect first."),
+                    _FakeOpenAIStreamChunk(
+                        content=(
+                            "<tool_call><function=fs.read_text>"
+                            "<parameter=path>src/app.py</parameter>"
+                            "</function></tool_call>"
+                        )
+                    ),
+                ]
+            ]
+        )
+        provider = XiaomiToolCallingProvider(client=fake)
+
+        chunks = list(
+            provider.stream_next_action(
+                messages=[{"role": "user", "content": "inspect"}],
+                tools=[ToolSpec(name="fs.read_text", description="x", input_schema={"type": "object"})],
+            )
+        )
+
+        self.assertFalse(any(isinstance(chunk, dict) and chunk.get("type") == "text_chunk" for chunk in chunks))
+        action = chunks[-1]
+        assert isinstance(action, AgentAction)
+        self.assertIsNotNone(action.plan)
+        self.assertEqual(action.metadata["tool_call_source"], "inline_tool_call_fallback")
 
 
 if __name__ == "__main__":

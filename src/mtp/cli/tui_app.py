@@ -95,8 +95,10 @@ class MTPApp(App):
         self._live_reasoning: str = ""
         self._live_text: str = ""
         self._live_tool_events: list[str] = []
+        self._live_tool_details: list[dict[str, Any]] = []
         self._live_warnings: list[str] = []
         self._last_live_render_at: float = 0.0
+        self._show_tool_details = False
 
     @property
     def state(self) -> TUIState:
@@ -163,6 +165,7 @@ class MTPApp(App):
             self._live_reasoning.strip()
             or self._live_text.strip()
             or self._live_tool_events
+            or self._live_tool_details
             or self._live_warnings
         )
 
@@ -188,6 +191,8 @@ class MTPApp(App):
                     warnings=turn.warnings,
                     usage_lines=turn.usage_lines,
                     thinking=self._extract_thinking_text(turn.usage_lines),
+                    tool_details=list(turn.tool_details),
+                    show_tool_details=self._show_tool_details,
                 )
             )
 
@@ -202,8 +207,10 @@ class MTPApp(App):
                         model=active_model_name(self._state),
                         backend=self._state.backend,
                         tool_events=list(self._live_tool_events),
+                        tool_details=list(self._live_tool_details),
                         warnings=list(self._live_warnings),
                         thinking=self._live_reasoning.strip(),
+                        show_tool_details=self._show_tool_details,
                     )
                 )
 
@@ -478,6 +485,7 @@ class MTPApp(App):
             "/sessions": "List saved sessions",
             "/history": "Show recent turns",
             "/tools": "Show last tool events",
+            "/details": "Toggle expanded tool metadata",
             "/backend": "Switch provider",
             "/model": "Switch model",
             "/models": "Show all models",
@@ -556,6 +564,9 @@ class MTPApp(App):
         elif cmd == "reasoning":
             from .tui_state import REASONING_SHORTCUTS
             matches = [m for m in REASONING_SHORTCUTS.values() if partial in m.lower()]
+        elif cmd == "details":
+            options = ["toggle", "on", "off"]
+            matches = [m for m in options if partial in m.lower()]
         elif cmd == "sandbox":
             options = ["read-only", "workspace-write", "danger-full-access"]
             matches = [m for m in options if partial in m.lower()]
@@ -677,7 +688,7 @@ class MTPApp(App):
         """Worker coroutine — runs blocking LLM call in thread."""
         import asyncio
 
-        def emit_live(kind: str, message: str) -> None:
+        def emit_live(kind: str, message: Any) -> None:
             self.call_from_thread(self._handle_live_event, kind, message)
 
         result = await asyncio.to_thread(
@@ -783,6 +794,7 @@ class MTPApp(App):
         self._live_reasoning = ""
         self._live_text = ""
         self._live_tool_events = []
+        self._live_tool_details = []
         self._live_warnings = []
         self._last_live_render_at = 0.0
 
@@ -793,7 +805,7 @@ class MTPApp(App):
         self._last_live_render_at = now
         self._rebuild_chat_log()
 
-    def _handle_live_event(self, kind: str, message: str) -> None:
+    def _handle_live_event(self, kind: str, message: Any) -> None:
         spinner = self.query_one("#spinner", SpinnerWidget)
         if kind == "status":
             if message in {"Sending request to provider...", "Processing response..."}:
@@ -805,6 +817,13 @@ class MTPApp(App):
             self._live_tool_events.append(message)
             self._state.last_tool_events = list(self._live_tool_events)
             self._refresh_sidebar()
+        elif kind == "tool_detail":
+            try:
+                detail = dict(message)  # type: ignore[arg-type]
+            except Exception:
+                detail = {"type": "detail", "message": str(message)}
+            self._live_tool_details.append(detail)
+            self._state.last_tool_details = list(self._live_tool_details)
         elif kind == "warn":
             self._live_warnings.append(message)
         elif kind == "reasoning":
@@ -889,6 +908,7 @@ class MTPApp(App):
                 save_tui_session(self._state)
 
             self._state.last_tool_events = list(result.tool_events)
+            self._state.last_tool_details = list(result.tool_details)
             self._state.last_warnings = list(result.warnings)
             self._clear_pending_turn_display()
             self._reset_live_preview()
@@ -993,6 +1013,24 @@ class MTPApp(App):
             chat_log.add_system_message(self._build_models_text())
         elif cmd == "tools":
             chat_log.add_system_message(self._build_tools_text())
+        elif cmd == "details":
+            normalized = arg.strip().lower()
+            if normalized in {"", "toggle"}:
+                self._show_tool_details = not self._show_tool_details
+            elif normalized in {"on", "true", "1"}:
+                self._show_tool_details = True
+            elif normalized in {"off", "false", "0"}:
+                self._show_tool_details = False
+            else:
+                chat_log.add_command_result("Usage: /details <toggle|on|off>")
+                return
+            chat_log.add_command_result(
+                f"Tool details {'enabled' if self._show_tool_details else 'disabled'}."
+            )
+            self._rebuild_chat_log()
+            self._refresh_status_bar()
+            self._refresh_sidebar()
+            return
         elif cmd == "new" or cmd == "reset":
             s.session_id = new_session_id()
             s.session_label = arg or None
@@ -1132,7 +1170,7 @@ class MTPApp(App):
             if not arg:
                 chat_log.add_command_result("Usage: /open <session_id>")
             else:
-                chat_log.add_system_message(f"Session viewer not yet in Textual. Use legacy mode (MTP_TUI_LEGACY=1).")
+                chat_log.add_system_message(self._build_session_open_text(arg))
         elif cmd == "codex-login":
             from . import tui_codex_backend as codex_backend
             codex_bin = s.codex_bin or codex_backend.detect_codex_bin()
@@ -1143,8 +1181,6 @@ class MTPApp(App):
                 chat_log.add_command_result("Codex CLI not found")
         elif cmd == "compose":
             chat_log.add_system_message("Compose: use Shift+Enter for newlines, Enter to submit.")
-        elif cmd == "cat":
-            chat_log.add_command_result("Cat companion not available in Textual mode.")
         elif cmd == "unknown":
             chat_log.add_command_result("Unknown command. Press Ctrl+P for available commands.")
         else:
@@ -1282,6 +1318,103 @@ class MTPApp(App):
 
     # ── Text builders ────────────────────────────────────────────────────
 
+    def _list_saved_sessions(self) -> list[Any]:
+        import json
+        from mtp import SessionRecord
+
+        sessions: list[SessionRecord] = []
+        if not self._state.session_store.file_path.exists():
+            return sessions
+        rows = json.loads(self._state.session_store.file_path.read_text(encoding="utf-8"))
+        if not isinstance(rows, list):
+            return sessions
+        for row in rows:
+            if isinstance(row, dict):
+                sessions.append(SessionRecord.from_dict(row))
+        sessions.sort(key=lambda item: item.updated_at, reverse=True)
+        return sessions
+
+    def _find_session_by_partial_id(self, session_id_input: str) -> Any | None:
+        needle = session_id_input.strip().lower()
+        if not needle:
+            return None
+        for record in self._list_saved_sessions():
+            if record.session_id.lower() == needle:
+                return record
+            short_id = record.session_id.split("-")[-1][:8].lower()
+            if short_id == needle or record.session_id.lower().endswith(needle):
+                return record
+        return None
+
+    def _format_tool_detail_line(self, detail: dict[str, Any]) -> str:
+        dtype = str(detail.get("type") or "detail")
+        if dtype == "plan_received":
+            source = detail.get("tool_call_source") or "unknown"
+            raw_calls = detail.get("raw_tool_call_count")
+            batches = detail.get("derived_batch_count")
+            modes = ",".join(str(mode) for mode in detail.get("derived_batch_modes") or []) or "-"
+            return f"plan source={source} raw_calls={raw_calls} batches={batches} modes={modes}"
+        if dtype == "batch_started":
+            batch_index = detail.get("batch_index")
+            mode = detail.get("mode") or "unknown"
+            call_ids = ",".join(str(item) for item in detail.get("call_ids") or []) or "-"
+            return f"batch#{batch_index} mode={mode} call_ids={call_ids}"
+        if dtype == "tool_started":
+            tool_name = detail.get("tool_name") or "unknown"
+            call_id = detail.get("call_id") or "-"
+            depends_on = ",".join(str(item) for item in detail.get("depends_on") or []) or "-"
+            return f"start {tool_name} call_id={call_id} depends_on={depends_on}"
+        if dtype == "tool_finished":
+            tool_name = detail.get("tool_name") or "unknown"
+            call_id = detail.get("call_id") or "-"
+            success = detail.get("success")
+            cached = detail.get("cached")
+            return f"finish {tool_name} call_id={call_id} success={success} cached={cached}"
+        return str(detail)
+
+    def _build_session_open_text(self, session_id_input: str) -> Any:
+        from rich.console import Group
+        from rich.panel import Panel
+        from rich.text import Text
+
+        record = self._find_session_by_partial_id(session_id_input)
+        if record is None:
+            return f"Session not found: {session_id_input}"
+
+        tui_meta = record.metadata.get("tui", {}) if isinstance(record.metadata, dict) else {}
+        tui_meta = tui_meta if isinstance(tui_meta, dict) else {}
+        transcript = tui_meta.get("transcript") or []
+
+        header = Text()
+        header.append(f"session={record.session_id}\n", style="bold #c084fc")
+        header.append(f"updated_at={record.updated_at}\n", style="#71717a")
+        if tui_meta.get("session_label"):
+            header.append(f"label={tui_meta['session_label']}\n", style="#f4f4f6")
+        header.append(f"backend={tui_meta.get('backend') or 'unknown'}", style="#34d399")
+
+        renderables: list[Any] = [header]
+        if not transcript:
+            renderables.append(Text("\n\nNo transcript turns stored.", style="#71717a"))
+        else:
+            start_index = max(1, len(transcript) - 9)
+            for index, item in enumerate(transcript[-10:], start=start_index):
+                if not isinstance(item, dict):
+                    continue
+                prompt = str(item.get("prompt") or "").replace("\n", " ")[:120]
+                response = str(item.get("response") or "").replace("\n", " ")[:160]
+                block = Text()
+                block.append(f"\n\n#{index}\n", style="bold #fbbf24")
+                block.append(f"prompt: {prompt}\n", style="#ec4899")
+                block.append(f"response: {response}", style="#8b5cf6")
+                detail_items = item.get("tool_details") or []
+                if self._show_tool_details and isinstance(detail_items, list):
+                    for detail in detail_items[:4]:
+                        if isinstance(detail, dict):
+                            block.append(f"\n  detail: {self._format_tool_detail_line(detail)}", style="#93c5fd")
+                renderables.append(block)
+
+        return Panel(Group(*renderables), title="[bold #38bdf8]Session Viewer[/]", border_style="#3f3f46")
+
     def _build_help_text(self) -> Any:
         from rich.table import Table
         from rich.panel import Panel
@@ -1298,6 +1431,8 @@ class MTPApp(App):
         table.add_row("", "/sessions", "List saved sessions")
         table.add_row("", "/history", "Show recent turns")
         table.add_row("", "/tools", "Show last tool events")
+        table.add_row("", "/details", "Toggle expanded tool metadata")
+        table.add_row("", "/open <session_id>", "Open a saved session transcript")
         
         table.add_row("Backend & Model", "/backend <p>", "Switch provider")
         table.add_row("", "/model <name>", "Switch model")
@@ -1335,6 +1470,7 @@ class MTPApp(App):
             table.add_row(thinking.label, thinking.current_label)
         table.add_row("sandbox", s.codex_sandbox_mode)
         table.add_row("rounds", str(s.max_rounds))
+        table.add_row("tool_details", "on" if self._show_tool_details else "off")
         table.add_row("cwd", str(s.cwd))
         table.add_row("turns", str(len(s.transcript)))
         table.add_row("autoresearch", str(s.autoresearch))
@@ -1350,22 +1486,12 @@ class MTPApp(App):
         return Panel(table, title="[bold #34d399]Session Status[/]", border_style="#3f3f46")
 
     def _build_sessions_text(self) -> Any:
-        import json
-        from mtp import SessionRecord
         from rich.table import Table
         from rich.panel import Panel
-        
-        sessions: list[SessionRecord] = []
+
+        sessions = []
         try:
-            if self._state.session_store.file_path.exists():
-                rows = json.loads(
-                    self._state.session_store.file_path.read_text(encoding="utf-8")
-                )
-                if isinstance(rows, list):
-                    for row in rows:
-                        if isinstance(row, dict):
-                            sessions.append(SessionRecord.from_dict(row))
-            sessions.sort(key=lambda x: x.updated_at, reverse=True)
+            sessions = self._list_saved_sessions()
         except Exception:
             return "No saved sessions."
             
@@ -1437,7 +1563,7 @@ class MTPApp(App):
         from rich.panel import Panel
         from rich.text import Text
         
-        if not self._state.last_tool_events:
+        if not self._state.last_tool_events and not self._state.last_tool_details:
             return "No tool events from last turn."
             
         group = []
@@ -1445,6 +1571,16 @@ class MTPApp(App):
         for e in self._state.last_tool_events:
             text.append(f"  ├─ {e}\n", style="#2dd4bf")
         group.append(text)
+        if self._show_tool_details and self._state.last_tool_details:
+            detail_text = Text("\nDetails:\n", style="bold #93c5fd")
+            for detail in self._state.last_tool_details[:12]:
+                detail_text.append(f"  - {self._format_tool_detail_line(detail)}\n", style="#93c5fd")
+            if len(self._state.last_tool_details) > 12:
+                detail_text.append(
+                    f"  - ... {len(self._state.last_tool_details) - 12} more detail items\n",
+                    style="dim #71717a",
+                )
+            group.append(detail_text)
         
         if self._state.last_warnings:
             w_text = Text(f"\nWarnings ({len(self._state.last_warnings)}):\n", style="bold #fbbf24")
@@ -1453,7 +1589,12 @@ class MTPApp(App):
             group.append(w_text)
             
         from rich.console import Group
-        return Panel(Group(*group), title=f"[bold #a78bfa]Tool Events ({len(self._state.last_tool_events)})[/]", border_style="#3f3f46")
+        detail_suffix = " + details" if self._show_tool_details and self._state.last_tool_details else ""
+        return Panel(
+            Group(*group),
+            title=f"[bold #a78bfa]Tool Events ({len(self._state.last_tool_events)}){detail_suffix}[/]",
+            border_style="#3f3f46",
+        )
 
     def _build_providers_text(self) -> Any:
         from rich.table import Table

@@ -9,7 +9,7 @@ from uuid import uuid4
 import streamlit as st
 
 from mtp import Agent
-from mtp.providers import Groq, OpenAI, OpenRouter
+from mtp.providers import Groq, OpenAI, OpenRouter, Xiaomi
 from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToolkit
 
 
@@ -74,6 +74,8 @@ def _apply_api_key(provider_name: str, api_key: str) -> None:
         os.environ["OPENAI_API_KEY"] = key
     elif provider_name == "OpenRouter":
         os.environ["OPENROUTER_API_KEY"] = key
+    elif provider_name == "Xiaomi":
+        os.environ["MIMO_API_KEY"] = key
 
 
 def _provider_for_config(config: AppConfig):
@@ -83,6 +85,8 @@ def _provider_for_config(config: AppConfig):
         return OpenAI(model=config.model, strict_dependency_mode=config.strict_dependency_mode)
     if config.provider_name == "OpenRouter":
         return OpenRouter(model=config.model, strict_dependency_mode=config.strict_dependency_mode)
+    if config.provider_name == "Xiaomi":
+        return Xiaomi(model=config.model)
     raise ValueError(f"Unsupported provider: {config.provider_name}")
 
 
@@ -273,11 +277,12 @@ def _run_turn(agent: Agent.MTPAgent, prompt: str, config: AppConfig) -> tuple[st
 def _sidebar_config() -> AppConfig:
     with st.sidebar:
         st.header("Agent Config")
-        provider_name = st.selectbox("Provider", ["Groq", "OpenAI", "OpenRouter"], index=0)
+        provider_name = st.selectbox("Provider", ["Groq", "OpenAI", "OpenRouter", "Xiaomi"], index=0)
         default_model = {
             "Groq": "moonshotai/kimi-k2-instruct",
             "OpenAI": "gpt-5.4-mini",
             "OpenRouter": "openai/gpt-5.4-mini",
+            "Xiaomi": "mimo-v2.5-pro",
         }[provider_name]
         model = st.text_input("Model", value=default_model)
         api_key = st.text_input("API Key", value="", type="password", help="Stored only in this session.")

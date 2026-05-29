@@ -27,6 +27,8 @@ COMMANDS: list[tuple[str, str, str, str]] = [
     ("Toggle Sidebar", "Show/hide workspace sidebar", "sidebar", ""),
     ("Models", "Show all available models", "models", ""),
     ("Tools", "Show tool events from last turn", "tools", ""),
+    ("Tool Details", "Toggle expanded tool metadata", "details", "toggle"),
+    ("Open Session", "Open a saved session transcript", "open", ""),
     ("Codebase Memory", "Enable or inspect project memory", "codebase", "memory"),
     # Reasoning
     ("Reasoning: None", "Set reasoning effort to none", "reasoning", "none"),
@@ -34,6 +36,7 @@ COMMANDS: list[tuple[str, str, str, str]] = [
     ("Reasoning: Medium", "Set reasoning effort to medium", "reasoning", "medium"),
     ("Reasoning: High", "Set reasoning effort to high", "reasoning", "high"),
     ("Reasoning: XHigh", "Set reasoning effort to extra high", "reasoning", "xhigh"),
+    ("Thinking", "Open the thinking/reasoning control", "thinking", ""),
     # Mode
     ("Mode: Plan", "Set harness mode to plan", "mode", "plan"),
     ("Mode: Code", "Set harness mode to code", "mode", "code"),
@@ -99,13 +102,13 @@ class MTPCommandProvider(Provider):
 
 SLASH_COMMANDS = {
     "/help", "/exit", "/clear", "/status", "/sessions", "/history",
-    "/models", "/tools", "/compose",
+    "/models", "/tools", "/compose", "/thinking",
 }
 
 SLASH_WITH_ARG = {
     "/backend", "/model", "/apikey", "/reasoning", "/mode",
     "/rounds", "/autoresearch", "/research", "/cd", "/load",
-    "/open", "/sandbox", "/cat", "/new", "/history", "/codebase",
+    "/open", "/sandbox", "/new", "/history", "/codebase", "/details",
 }
 
 
@@ -124,8 +127,8 @@ def parse_slash_command(raw: str) -> tuple[str, str] | None:
     command_heads = {
         "help", "exit", "compose", "new", "reset", "clear", "status",
         "history", "sessions", "load", "backend", "apikey", "models",
-        "model", "reasoning", "rounds", "codex-login", "autoresearch",
-        "research", "cd", "tools", "sandbox", "cat", "codebase",
+        "model", "reasoning", "thinking", "rounds", "codex-login", "autoresearch",
+        "research", "cd", "tools", "details", "sandbox", "codebase", "open",
     }
     head = raw[1:].split(" ", 1)[0].strip().lower()
     if head in command_heads:

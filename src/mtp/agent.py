@@ -554,6 +554,45 @@ class Agent:
             return content.strip()
         return None
 
+    def _plan_event_payload(self, round_idx: int, action_metadata: dict[str, Any], plan: ExecutionPlan) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": "plan_received",
+            "round": round_idx,
+            "batches": [
+                {
+                    "mode": batch.mode,
+                    "calls": [call.name for call in batch.calls],
+                    "call_ids": [call.id for call in batch.calls],
+                }
+                for batch in plan.batches
+            ],
+        }
+        for key in ("tool_call_source", "raw_tool_call_count", "derived_batch_count", "derived_batch_modes"):
+            value = action_metadata.get(key)
+            if value is not None:
+                payload[key] = value
+        return payload
+
+    def _debug_plan_summary(self, action_metadata: dict[str, Any], plan: ExecutionPlan) -> None:
+        call_count = sum(len(batch.calls) for batch in plan.batches)
+        summary = f"plan_received batches={len(plan.batches)} calls={call_count}"
+        tool_call_source = action_metadata.get("tool_call_source")
+        if isinstance(tool_call_source, str) and tool_call_source:
+            summary += f" source={tool_call_source}"
+        raw_tool_call_count = action_metadata.get("raw_tool_call_count")
+        if isinstance(raw_tool_call_count, int):
+            summary += f" raw_calls={raw_tool_call_count}"
+        derived_batch_count = action_metadata.get("derived_batch_count")
+        if isinstance(derived_batch_count, int):
+            summary += f" derived_batches={derived_batch_count}"
+        derived_batch_modes = action_metadata.get("derived_batch_modes")
+        if isinstance(derived_batch_modes, list) and derived_batch_modes:
+            summary += f" modes={derived_batch_modes}"
+        self._debug(summary)
+        for batch_idx, batch in enumerate(plan.batches, start=1):
+            call_names = [call.name for call in batch.calls]
+            self._debug(f"batch#{batch_idx} mode={batch.mode} calls={call_names}")
+
     def _assistant_message_for_action(self, action: AgentAction) -> dict[str, Any]:
         metadata = action.metadata if isinstance(action.metadata, dict) else {}
         assistant_message = metadata.get("assistant_message")
@@ -1071,10 +1110,8 @@ class Agent:
                 )
                 break
             total_tool_calls += call_count
-            self._debug(f"plan_received batches={len(action.plan.batches)} calls={call_count}")
-            for batch_idx, batch in enumerate(action.plan.batches, start=1):
-                call_names = [call.name for call in batch.calls]
-                self._debug(f"batch#{batch_idx} mode={batch.mode} calls={call_names}")
+            action_metadata = action.metadata if isinstance(action.metadata, dict) else {}
+            self._debug_plan_summary(action_metadata, action.plan)
 
             if self.strict_dependency_mode:
                 violations = validate_strict_dependencies(action.plan)
@@ -1097,7 +1134,7 @@ class Agent:
                     )
                     continue
 
-            assistant_tool_message = action.metadata.get("assistant_tool_message")
+            assistant_tool_message = action_metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
                 self._debug("assistant tool-call message appended")
                 self._debug(f"assistant_tool_message={self._short(assistant_tool_message)}")
@@ -1442,6 +1479,8 @@ class Agent:
                 )
                 break
             total_tool_calls += call_count
+            action_metadata = action.metadata if isinstance(action.metadata, dict) else {}
+            self._debug_plan_summary(action_metadata, action.plan)
 
             if self.strict_dependency_mode:
                 violations = validate_strict_dependencies(action.plan)
@@ -1458,7 +1497,7 @@ class Agent:
                     )
                     continue
 
-            assistant_tool_message = action.metadata.get("assistant_tool_message")
+            assistant_tool_message = action_metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
                 self._append_message(assistant_tool_message)
 
@@ -1959,18 +1998,8 @@ class Agent:
                     break
                 total_tool_calls += round_call_count
 
-                yield events.emit(
-                    "plan_received",
-                    round=round_idx,
-                    batches=[
-                        {
-                            "mode": batch.mode,
-                            "calls": [call.name for call in batch.calls],
-                            "call_ids": [call.id for call in batch.calls],
-                        }
-                        for batch in action.plan.batches
-                    ],
-                )
+                plan_payload = self._plan_event_payload(round_idx, action_metadata, action.plan)
+                yield events.emit(plan_payload.pop("type"), **plan_payload)
 
                 if self.strict_dependency_mode:
                     violations = validate_strict_dependencies(action.plan)
@@ -2018,7 +2047,7 @@ class Agent:
                     )
                     continue
 
-                assistant_tool_message = action.metadata.get("assistant_tool_message")
+                assistant_tool_message = action_metadata.get("assistant_tool_message")
                 if isinstance(assistant_tool_message, dict):
                     self._append_message(assistant_tool_message)
                     if emit_tool_events:
@@ -2341,18 +2370,8 @@ class Agent:
                     break
                 total_tool_calls += round_call_count
 
-                yield events.emit(
-                    "plan_received",
-                    round=round_idx,
-                    batches=[
-                        {
-                            "mode": batch.mode,
-                            "calls": [call.name for call in batch.calls],
-                            "call_ids": [call.id for call in batch.calls],
-                        }
-                        for batch in action.plan.batches
-                    ],
-                )
+                plan_payload = self._plan_event_payload(round_idx, action_metadata, action.plan)
+                yield events.emit(plan_payload.pop("type"), **plan_payload)
 
                 if self.strict_dependency_mode:
                     violations = validate_strict_dependencies(action.plan)
@@ -2400,7 +2419,7 @@ class Agent:
                     )
                     continue
 
-                assistant_tool_message = action.metadata.get("assistant_tool_message")
+                assistant_tool_message = action_metadata.get("assistant_tool_message")
                 if isinstance(assistant_tool_message, dict):
                     self._append_message(assistant_tool_message)
                     if emit_tool_events:

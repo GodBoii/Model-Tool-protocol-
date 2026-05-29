@@ -282,6 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
             "deepseek",
             "togetherai",
             "fireworksai",
+            "xiaomi",
             "ollama",
             "lmstudio",
         ],

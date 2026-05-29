@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from mtp.cli.main import main
+from mtp.cli.main import build_parser, main
 from tests.harness_utils import safe_rmtree, workspace_tempdir
 
 
@@ -114,6 +114,11 @@ class CLITests(unittest.TestCase):
                 status_code = main(["codebase", "status", "--path", str(project)])
             self.assertEqual(status_code, 0)
             self.assertIn("chunks", status_out.getvalue())
+
+    def test_tui_parser_accepts_xiaomi_backend(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["tui", "--backend", "xiaomi"])
+        self.assertEqual(args.backend, "xiaomi")
 
 
 if __name__ == "__main__":

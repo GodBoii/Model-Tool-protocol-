@@ -42,49 +42,34 @@ def _namespace(tool_name: str) -> str:
 
 def validate_strict_dependencies(plan: ExecutionPlan) -> list[StrictViolation]:
     """
-    Enforces explicit dependencies for multi-call same-namespace batches.
+    Enforces explicit dependency correctness for tool argument wiring.
 
     Rule:
-    - In the same batch, if multiple calls target the same toolkit namespace
-      (e.g. calculator.*), all calls after the first must declare dependency
-      using `depends_on` or include at least one `$ref` in arguments.
+    - Independent same-toolkit calls in the same batch are allowed.
+    - If a call argument contains `$ref`, every referenced call id must also
+      appear in `depends_on`.
+
+    Existence checks for referenced ids and cycle detection are handled by
+    execution-plan validation elsewhere in the runtime.
     """
     violations: list[StrictViolation] = []
 
     for batch in plan.batches:
-        seen_by_namespace: dict[str, list[ToolCall]] = {}
         for call in batch.calls:
-            seen_by_namespace.setdefault(_namespace(call.name), []).append(call)
-
-        for ns_calls in seen_by_namespace.values():
-            if len(ns_calls) <= 1:
+            refs = list(dict.fromkeys(_collect_refs(call.arguments)))
+            if not refs:
                 continue
-            for call in ns_calls[1:]:
-                has_dep = bool(call.depends_on)
-                has_ref = _has_ref(call.arguments)
-                if not has_dep and not has_ref:
-                    violations.append(
-                        StrictViolation(
-                            message=(
-                                "Strict dependency mode: multi-call same-toolkit batch "
-                                "requires explicit depends_on or $ref argument wiring."
-                            ),
-                            call_id=call.id,
-                            tool_name=call.name,
-                        )
+            missing_dep_refs = [ref for ref in refs if ref not in call.depends_on]
+            if missing_dep_refs:
+                violations.append(
+                    StrictViolation(
+                        message=(
+                            "Strict dependency mode: each $ref must also appear in depends_on. "
+                            f"Missing refs in depends_on: {missing_dep_refs}"
+                        ),
+                        call_id=call.id,
+                        tool_name=call.name,
                     )
-                refs = list(dict.fromkeys(_collect_refs(call.arguments)))
-                missing_dep_refs = [ref for ref in refs if ref not in call.depends_on]
-                if missing_dep_refs:
-                    violations.append(
-                        StrictViolation(
-                            message=(
-                                "Strict dependency mode: each $ref must also appear in depends_on. "
-                                f"Missing refs in depends_on: {missing_dep_refs}"
-                            ),
-                            call_id=call.id,
-                            tool_name=call.name,
-                        )
-                    )
+                )
 
     return violations

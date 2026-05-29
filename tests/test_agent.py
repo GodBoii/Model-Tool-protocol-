@@ -178,6 +178,38 @@ class _PlanWithGenericAndPerCallReasoningProvider(ProviderAdapter):
         return "done"
 
 
+class _PlanWithToolPlanMetadataProvider(ProviderAdapter):
+    def __init__(self) -> None:
+        self._step = 0
+
+    def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
+        if self._step == 0:
+            self._step += 1
+            return AgentAction(
+                plan=ExecutionPlan(
+                    batches=[
+                        ToolBatch(
+                            mode="parallel",
+                            calls=[
+                                ToolCall(id="call-1", name="echo.tool", arguments={"text": "hello"}),
+                                ToolCall(id="call-2", name="echo.tool", arguments={"text": "world"}),
+                            ],
+                        )
+                    ]
+                ),
+                metadata={
+                    "tool_call_source": "native_tool_calls",
+                    "raw_tool_call_count": 2,
+                    "derived_batch_count": 1,
+                    "derived_batch_modes": ["parallel"],
+                },
+            )
+        return AgentAction(response_text="done")
+
+    def finalize(self, messages: list[dict], tool_results: list[ToolResult]) -> str:
+        return "done"
+
+
 class _FailingProvider(ProviderAdapter):
     def next_action(self, messages: list[dict], tools: list[ToolSpec]) -> AgentAction:
         raise RuntimeError("boom")
@@ -421,6 +453,19 @@ class AgentTests(unittest.TestCase):
         events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
         tool_started = next(event for event in events if event["type"] == "tool_started")
         self.assertEqual(tool_started.get("reasoning"), "Per-call: run echo first")
+
+    def test_plan_received_event_includes_tool_call_provenance_metadata(self) -> None:
+        reg = ToolRegistry()
+        reg.register_tool(ToolSpec(name="echo.tool", description=""), lambda text: f"echo:{text}")
+        agent = Agent(provider=_PlanWithToolPlanMetadataProvider(), tools=reg, stream_tool_events=True)
+
+        events = list(agent.run_loop_events("hello", max_rounds=2, stream_final=False))
+        plan_event = next(event for event in events if event["type"] == "plan_received")
+
+        self.assertEqual(plan_event["tool_call_source"], "native_tool_calls")
+        self.assertEqual(plan_event["raw_tool_call_count"], 2)
+        self.assertEqual(plan_event["derived_batch_count"], 1)
+        self.assertEqual(plan_event["derived_batch_modes"], ["parallel"])
 
     def test_direct_response_metadata_is_preserved_in_message_history(self) -> None:
         agent = Agent(provider=_DirectResponseWithAssistantMetadataProvider(), tools=ToolRegistry())
