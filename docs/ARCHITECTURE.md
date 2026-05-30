@@ -3,7 +3,7 @@
 Direction note:
 - MTP protocol and MTP Agent SDK are distinct layers in the same project.
 - MCP support is an interoperability surface, not the core project identity.
-- Canonical statement: [Project Direction](/c:/Users/prajw/Downloads/MTP/docs/PROJECT_DIRECTION.md)
+- Canonical statement: [Project Direction](PROJECT_DIRECTION.md)
 
 ## Layered design
 
@@ -182,4 +182,4 @@ Next steps:
 - Expanded MCP production depth (streaming transport semantics, stronger in-flight cancellation, broader client compatibility matrix).
 
 See:
-- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
+- [Storage and Sessions](STORAGE.md)

@@ -7,7 +7,7 @@ This draft defines the in-process protocol model used by `mtp-python`.
 Positioning note:
 - This file describes protocol-layer contracts only.
 - SDK/framework layering and MCP interoperability strategy are documented in:
-  - [Project Direction](/c:/Users/prajw/Downloads/MTP/docs/PROJECT_DIRECTION.md)
+  - [Project Direction](PROJECT_DIRECTION.md)
 
 ## Core entities
 
@@ -15,7 +15,10 @@ Positioning note:
 - `name`: stable tool identifier (`toolkit.action` recommended)
 - `description`: model-facing description
 - `input_schema`: JSON schema-like object for tool args
+- `tags`: optional model/runtime grouping hints
 - `risk_level`: `read_only` | `write` | `destructive`
+- `cost_hint`: optional human-facing cost hint
+- `side_effects`: optional description of expected side effects
 - `cache_ttl_seconds`: optional cache hint for runtime reuse
 
 ## `ToolCall`
@@ -23,6 +26,7 @@ Positioning note:
 - `name`: selected tool name
 - `arguments`: dict payload
 - `depends_on`: list of call IDs required before this call
+- `reasoning`: optional public decision summary, not private chain-of-thought
 
 ## `ToolBatch`
 - `mode`: `parallel` or `sequential`
@@ -38,6 +42,15 @@ Positioning note:
 - `cached`
 - `approval`: policy decision used (`allow`/`ask`/`deny`)
 - `skipped`: true when blocked by policy
+- `created_at`: timestamp for the result object
+- `expires_at`: cache expiry timestamp when TTL caching is active
+- `images`, `videos`, `audios`, `files`: optional multimodal tool outputs
+
+## `ToolOutput`
+
+Tools may return `ToolOutput` when they need to separate normal `content` from multimodal outputs:
+- `content`: primary tool output
+- `images`, `videos`, `audios`, `files`: optional media/file payloads
 
 ## Envelope
 
@@ -53,6 +66,7 @@ Positioning note:
 1. no duplicate `ToolCall.id`
 2. every dependency references an existing call ID
 3. dependency graph is acyclic
+4. `$ref` arguments and `depends_on` entries only target calls available earlier in execution order
 
 ## Execution semantics
 
@@ -76,4 +90,4 @@ Persistence note:
 - Session persistence is implemented at runtime level (`session_store`) and is intentionally separate from the protocol model.
 
 Related:
-- [Storage and Sessions](C:\Users\prajw\Downloads\MTP\docs\STORAGE.md)
+- [Storage and Sessions](STORAGE.md)

@@ -283,7 +283,7 @@ Release regression policy:
 - [test_mcp_adapter.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_adapter.py)
 - [test_mcp_transport.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_transport.py)
 - [test_mcp_conformance.py](/c:/Users/prajw/Downloads/MTP/tests/test_mcp_conformance.py)
-- [MCP compatibility matrix](/c:/Users/prajw/Downloads/MTP/docs/MCP_COMPATIBILITY_MATRIX.md)
+- [MCP compatibility matrix](MCP_COMPATIBILITY_MATRIX.md)
 
 ## Remaining MCP work
 

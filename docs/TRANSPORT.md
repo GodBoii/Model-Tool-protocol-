@@ -128,7 +128,7 @@ def long_task(cancel_event=None):
   - optional durable replay persistence (`replay_store_path`) across process restarts
   - session/auth scoped replay visibility to avoid cross-session event leakage
 - MCP-specific behavior is documented in:
-  - [MCP Interop Adapter](/c:/Users/prajw/Downloads/MTP/docs/MCP_INTEROP.md)
+  - [MCP Interop Adapter](MCP_INTEROP.md)
 
 Related:
-- [Storage and Sessions](/c:/Users/prajw/Downloads/MTP/docs/STORAGE.md)
+- [Storage and Sessions](STORAGE.md)
