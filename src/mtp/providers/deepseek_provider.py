@@ -165,8 +165,6 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             call_reasoning: str | None = None
             if isinstance(reasoning, str) and reasoning.strip():
                 call_reasoning = reasoning.strip()
-            elif isinstance(message.content, str) and message.content.strip():
-                call_reasoning = message.content.strip()
 
             for idx, tc in enumerate(tool_calls):
                 call_id = tc.id or f"call_{idx}"
