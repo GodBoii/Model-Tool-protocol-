@@ -1,2 +1,0 @@
-"""MCP conformance harness package."""
-
