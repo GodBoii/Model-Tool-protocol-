@@ -504,7 +504,7 @@ class ProviderAdapterTests(unittest.TestCase):
         )
         self.assertEqual(fake.calls[0]["extra_body"]["thinking"]["type"], "disabled")
 
-    def test_xiaomi_inline_tool_call_fallback_parses_text_payload(self) -> None:
+    def test_xiaomi_inline_tool_call_text_is_not_parsed(self) -> None:
         fake = _FakeXiaomiClient(
             [
                 _OpenAIResponse(
@@ -520,14 +520,11 @@ class ProviderAdapterTests(unittest.TestCase):
             messages=[{"role": "user", "content": "inspect"}],
             tools=[ToolSpec(name="fs.read_text", description="x", input_schema={"type": "object"})],
         )
-        self.assertIsNotNone(action.plan)
-        assert action.plan is not None
-        self.assertEqual(action.metadata["tool_call_source"], "inline_tool_call_fallback")
-        self.assertEqual(action.metadata["raw_tool_call_count"], 1)
-        self.assertEqual(action.plan.batches[0].calls[0].name, "fs.read_text")
-        self.assertEqual(action.plan.batches[0].calls[0].arguments["path"], "src/app.py")
+        self.assertIsNone(action.plan)
+        self.assertIn("<tool_call>", action.response_text or "")
+        self.assertNotIn("tool_call_source", action.metadata)
 
-    def test_xiaomi_stream_inline_tool_call_does_not_emit_raw_text_chunks(self) -> None:
+    def test_xiaomi_stream_inline_tool_call_text_streams_as_text(self) -> None:
         fake = _FakeXiaomiClient(
             [
                 [
@@ -551,13 +548,14 @@ class ProviderAdapterTests(unittest.TestCase):
             )
         )
 
-        self.assertFalse(any(isinstance(chunk, dict) and chunk.get("type") == "text_chunk" for chunk in chunks))
+        self.assertTrue(any(isinstance(chunk, dict) and chunk.get("type") == "text_chunk" for chunk in chunks))
         action = chunks[-1]
         assert isinstance(action, AgentAction)
-        self.assertIsNotNone(action.plan)
-        self.assertEqual(action.metadata["tool_call_source"], "inline_tool_call_fallback")
+        self.assertIsNone(action.plan)
+        self.assertIn("<tool_call>", action.response_text or "")
+        self.assertNotIn("tool_call_source", action.metadata)
 
-    def test_groq_inline_tool_call_fallback_parses_and_coerces_text_payload(self) -> None:
+    def test_groq_inline_tool_call_text_is_not_parsed(self) -> None:
         fake = _FakeSingleResponseOpenAIClient(
             _OpenAIMessage(
                 (
@@ -586,14 +584,11 @@ class ProviderAdapterTests(unittest.TestCase):
             ],
         )
 
-        self.assertIsNotNone(action.plan)
-        assert action.plan is not None
-        call = action.plan.batches[0].calls[0]
-        self.assertEqual(action.metadata["tool_call_source"], "inline_tool_call_fallback")
-        self.assertEqual(call.name, "file.list_files")
-        self.assertEqual(call.arguments, {"path": ".", "recursive": True})
+        self.assertIsNone(action.plan)
+        self.assertIn("<tool_call>", action.response_text or "")
+        self.assertNotIn("tool_call_source", action.metadata)
 
-    def test_groq_inline_bash_alias_maps_to_shell_run_command(self) -> None:
+    def test_groq_inline_bash_alias_text_is_not_parsed(self) -> None:
         fake = _FakeSingleResponseOpenAIClient(
             _OpenAIMessage(
                 (
@@ -620,11 +615,9 @@ class ProviderAdapterTests(unittest.TestCase):
             ],
         )
 
-        self.assertIsNotNone(action.plan)
-        assert action.plan is not None
-        call = action.plan.batches[0].calls[0]
-        self.assertEqual(call.name, "shell.run_command")
-        self.assertEqual(call.arguments, {"command": "dir"})
+        self.assertIsNone(action.plan)
+        self.assertIn("<function=bash>", action.response_text or "")
+        self.assertNotIn("tool_call_source", action.metadata)
 
 
 if __name__ == "__main__":
