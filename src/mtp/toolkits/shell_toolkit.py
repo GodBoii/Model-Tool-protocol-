@@ -43,7 +43,15 @@ class ShellToolkit(ToolkitLoader):
             command_parts = shlex.split(command, posix=(os.name != "nt"))
             if not command_parts:
                 raise ValueError("Empty command.")
-            command_name = Path(command_parts[0]).name.lower()
+            raw_command = command_parts[0]
+            command_path = Path(raw_command)
+            if (
+                command_path.is_absolute()
+                or command_path.parent != Path(".")
+                or raw_command != command_path.name
+            ):
+                raise ValueError("Command must be a bare allowlisted executable name.")
+            command_name = raw_command.lower()
             if command_name not in self.allowed_commands:
                 raise ValueError(
                     f"Command '{command_name}' is not allowed. Allowed: {sorted(self.allowed_commands)}"

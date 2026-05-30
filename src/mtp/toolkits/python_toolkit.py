@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -23,30 +22,12 @@ class PythonToolkit(ToolkitLoader):
         self.timeout_seconds = timeout_seconds
         self.allow_unsafe_exec = allow_unsafe_exec
 
-    def _safe_builtins(self) -> dict[str, Any]:
-        return {
-            "abs": abs,
-            "bool": bool,
-            "dict": dict,
-            "float": float,
-            "int": int,
-            "len": len,
-            "list": list,
-            "max": max,
-            "min": min,
-            "print": print,
-            "range": range,
-            "set": set,
-            "sorted": sorted,
-            "str": str,
-            "sum": sum,
-            "tuple": tuple,
-        }
-
     def _is_under_base(self, candidate: Path) -> bool:
-        base = os.path.normcase(str(self.base_dir))
-        target = os.path.normcase(str(candidate))
-        return os.path.commonpath([base, target]) == base
+        try:
+            candidate.resolve(strict=False).relative_to(self.base_dir)
+            return True
+        except ValueError:
+            return False
 
     def _resolve(self, path: str) -> Path:
         candidate = (self.base_dir / path).resolve(strict=False)
@@ -116,12 +97,7 @@ class PythonToolkit(ToolkitLoader):
 
     def load_tools(self) -> list[RegisteredTool]:
         def run_code(code: str, return_variable: str = "result") -> Any:
-            if not self.allow_unsafe_exec:
-                return self._run_in_subprocess(code=code, return_variable=return_variable)
-            globals_ctx = {"__builtins__": self._safe_builtins()}
-            locals_ctx: dict[str, Any] = {}
-            exec(code, globals_ctx, locals_ctx)
-            return locals_ctx.get(return_variable)
+            return self._run_in_subprocess(code=code, return_variable=return_variable)
 
         def run_file(path: str, return_variable: str = "result") -> Any:
             target = self._resolve(path)
