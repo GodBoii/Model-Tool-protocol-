@@ -65,6 +65,11 @@ The `Xiaomi` provider supports:
 - Text, image, audio, and file inputs where the MiMo endpoint/model accepts OpenAI-compatible content parts.
 - Usage extraction through the same `usage` parser used by other OpenAI-compatible providers.
 
+Environment note:
+
+- `Xiaomi(...)` reads `MIMO_API_KEY` from the current process environment unless you pass `api_key=...`.
+- `.env` files are only loaded if your application explicitly calls `Agent.load_dotenv_if_available()` and has `python-dotenv` installed.
+
 The TUI/provider registry includes:
 
 - Provider name: `xiaomi`

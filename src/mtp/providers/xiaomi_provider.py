@@ -451,14 +451,20 @@ class XiaomiToolCallingProvider(ProviderAdapter):
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)
 
+    @staticmethod
+    def _next_stream_item(stream: Iterator[AgentAction | dict[str, Any]]) -> AgentAction | dict[str, Any] | None:
+        try:
+            return next(stream)
+        except StopIteration:
+            return None
+
     async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
         stream = self.stream_next_action(messages, tools)
         while True:
-            try:
-                chunk = await asyncio.to_thread(next, stream)
-                yield chunk
-            except StopIteration:
+            chunk = await asyncio.to_thread(self._next_stream_item, stream)
+            if chunk is None:
                 break
+            yield chunk
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         return await asyncio.to_thread(self.finalize, messages, tool_results)
