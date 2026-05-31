@@ -32,6 +32,8 @@ pip install "mtpx[stores-db]"
 pip install "mtpx[providers,dotenv]"
 ```
 
+`python-dotenv` is optional. MTP does not auto-load `.env` files unless you explicitly call `Agent.load_dotenv_if_available()`.
+
 ## Or from source
 
 ```bash
@@ -48,15 +50,21 @@ pip install "mtpx[groq,dotenv]"
 
 ## 2) Configure API key (Cloud Providers)
 
-For cloud providers, create `.env`:
+For cloud providers, either create `.env` and load it explicitly, or set the variables in your shell/session:
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
+MIMO_API_KEY=your_mimo_api_key_here
 ```
 
 For local providers (Ollama, LM Studio), no API key needed!
+
+Important:
+
+- `Agent.load_dotenv_if_available()` is a convenience helper, not automatic behavior.
+- If you do not call it, providers only use environment variables already present in the process.
 
 ## Local Inference Setup (Optional)
 

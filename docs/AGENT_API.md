@@ -14,7 +14,7 @@ Agent(
     tools: ToolRegistry | None = None,
     debug_mode: bool = False,
     debug_logger: Callable[[str], None] | None = None,
-    debug_max_chars: int = 600,
+    debug_max_chars: int | None = None,
     strict_dependency_mode: bool = False,
     instructions: str | None = None,
     system_instructions: str | None = None,
@@ -61,6 +61,7 @@ Tool-event streaming options:
 - `stream_tool_events=True` (default): include tool lifecycle events in `run_loop_events` / `run_events`.
 - `stream_tool_results=True` (default): include tool output/error payloads in `tool_finished` events.
 - If `stream_tool_events=False`, tool lifecycle events are suppressed regardless of `stream_tool_results`.
+- `debug_max_chars=None` (default): do not truncate debug payloads. Set an integer limit if you want shorter debug lines.
 
 ## Runtime methods
 

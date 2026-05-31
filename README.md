@@ -60,6 +60,8 @@ pip install "mtpx[stores-db]"
 pip install "mtpx[all]"
 ```
 
+`python-dotenv` is optional. MTP does not auto-read `.env` files unless you install the dotenv extra and call `Agent.load_dotenv_if_available()`, or you load env vars yourself.
+
 Verify installation:
 ```bash
 python -c "import mtp; print(f'MTPX version {mtp.__version__} installed successfully!')"
@@ -82,7 +84,7 @@ pip install -e .
 pip install "mtpx[groq,dotenv]"
 ```
 
-Copy `.env.example` to `.env` and set your key:
+Copy `.env.example` to `.env` and set your key, or export the key in your shell/session:
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
@@ -123,6 +125,8 @@ agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stre
 # Raw JSON lines:
 agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stream_events=True, event_format="json")
 ```
+
+If you do not call `Agent.load_dotenv_if_available()`, the provider will only read API keys that already exist in the process environment, such as `GROQ_API_KEY`, `OPENAI_API_KEY`, or `MIMO_API_KEY`.
 
 ### Autoresearch mode (persistent execution)
 

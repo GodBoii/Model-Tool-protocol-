@@ -1,216 +1,239 @@
-# MTP Tool Call Syntax
+# MTP Native Tool Call Syntax
 
-This file is the model-facing reference for how an LLM should request tools in MTP.
+This document defines the tool-calling contract that MTP actually accepts and executes.
 
-## First Rule
+## The Important Mental Model
 
-Use the provider's native tool/function calling channel. MTP does not parse inline `<tool_call>` text from normal assistant output.
+MTP does not expect the model to print a JSON execution plan into assistant text.
 
-A final answer must not contain raw `<tool_call>` blocks, JSON plans, or pseudo-code tool invocations. Tool calls are for the runtime; final answers are for the user.
+MTP expects the model to use the provider's native function-calling channel:
 
-## Native Function Call Shape
+1. MTP sends tool schemas to the model provider.
+2. The model returns native `tool_calls`.
+3. MTP parses those calls into its internal execution graph.
+4. MTP executes the graph in parallel or sequential order depending on dependencies.
+5. MTP sends tool results back as `role: "tool"` messages.
+6. The model produces the final answer.
 
-For OpenAI-compatible providers, Groq, OpenRouter, DeepSeek, SambaNova, Cerebras, TogetherAI, FireworksAI, LM Studio, and Xiaomi, the model should emit native function calls with:
+The internal `ExecutionPlan` is runtime machinery. The model should focus on producing correct native tool calls.
 
-```json
-{
-  "name": "file.read_file",
-  "arguments": {
-    "path": "src/mtp/agent_os/app.py",
-    "start_line": 1,
-    "end_line": 120,
-    "reasoning": "Read the Streamlit app before editing it."
-  }
-}
-```
+## What The Model Should Emit
 
-The runtime converts the provider-native call into:
+For OpenAI-compatible providers such as Xiaomi, OpenAI, Groq-compatible adapters, Together, Cerebras, and similar APIs, the accepted shape is:
 
 ```json
 {
-  "id": "call_1",
-  "name": "file.read_file",
-  "arguments": {
-    "path": "src/mtp/agent_os/app.py",
-    "start_line": 1,
-    "end_line": 120
-  },
-  "depends_on": []
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "calculator.add",
+              "arguments": "{\"a\":15,\"b\":27}"
+            }
+          }
+        ]
+      }
+    }
+  ]
 }
 ```
 
-The `reasoning` argument is optional and should be a short decision summary. It is not private chain-of-thought. If the target tool schema does not define `reasoning`, MTP removes it before handler execution.
+Notes:
+
+- `tool_calls` is the native channel.
+- `function.arguments` is a JSON string at the provider boundary.
+- MTP parses that string before validating and executing the tool.
+
+## One Native Response Can Contain Many Tool Calls
+
+This is the key MTP behavior to optimize for.
+
+If the tool calls are independent, return them together in one native `tool_calls` response. MTP will run them in parallel.
+
+Example:
+
+```json
+{
+  "tool_calls": [
+    {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+        "name": "calculator.add",
+        "arguments": "{\"a\":15,\"b\":27}"
+      }
+    },
+    {
+      "id": "call_2",
+      "type": "function",
+      "function": {
+        "name": "file.read_file",
+        "arguments": "{\"path\":\"notes.txt\"}"
+      }
+    }
+  ]
+}
+```
+
+`calculator.add` and `file.read_file` do not depend on each other, so MTP derives a single parallel batch.
+
+## Sequential Dependencies In The Same Native Response
+
+MTP also supports dependency chains inside one native `tool_calls` response.
+
+If a later call depends on the result of an earlier call, reference it with `{"$ref":"<call_id>"}` inside the arguments.
+
+Example:
+
+```json
+{
+  "tool_calls": [
+    {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+        "name": "calculator.subtract",
+        "arguments": "{\"a\":18,\"b\":6}"
+      }
+    },
+    {
+      "id": "call_2",
+      "type": "function",
+      "function": {
+        "name": "calculator.multiply",
+        "arguments": "{\"a\":4,\"b\":{\"$ref\":\"call_1\"}}"
+      }
+    },
+    {
+      "id": "call_3",
+      "type": "function",
+      "function": {
+        "name": "calculator.divide",
+        "arguments": "{\"a\":{\"$ref\":\"call_2\"},\"b\":3}"
+      }
+    },
+    {
+      "id": "call_4",
+      "type": "function",
+      "function": {
+        "name": "calculator.add",
+        "arguments": "{\"a\":15,\"b\":{\"$ref\":\"call_3\"}}"
+      }
+    }
+  ]
+}
+```
+
+Even though all four calls arrive in one native response, MTP derives the dependency graph:
+
+- `call_1` first
+- then `call_2`
+- then `call_3`
+- then `call_4`
+
+This is how MTP supports sequential execution without forcing the model to wait for a later planning round.
+
+## How `$ref` Works
+
+`$ref` points to a prior tool call ID from the same native response or an earlier executed call already present in history.
+
+Example:
+
+```json
+{"a":{"$ref":"call_1"}}
+```
+
+During execution, MTP replaces that object with the actual tool result value from `call_1`.
+
+Rules:
+
+- Only reference calls that appear earlier in the same response or already exist in prior history.
+- Do not guess intermediate values if they should come from a tool.
+- If a value comes from a prior tool result, prefer `$ref` over hardcoding.
 
 ## Argument Rules
 
-Tool arguments must match the advertised JSON schema exactly.
+Arguments must match the tool schema.
 
-- Strings use JSON strings: `"src/main.py"`.
-- Booleans use JSON booleans: `true` or `false`, not `"True"`.
-- Integers and numbers use JSON numbers: `50`, not `"50"`.
-- Objects and arrays must be valid JSON values.
-- Use relative paths from the configured working directory unless the tool explicitly supports absolute paths.
-- Do not invent parameters. Unknown parameters can cause validation failures.
-
-Bad:
+Correct:
 
 ```json
-{
-  "name": "file.list_files",
-  "arguments": {
-    "path": "C:\\Users\\prajw\\Downloads\\MTP",
-    "recursive": "True",
-    "workdir": "C:\\Users\\prajw\\Downloads\\MTP"
-  }
-}
+{"a":15,"b":6,"ok":true}
 ```
 
-Good:
+Wrong:
 
 ```json
-{
-  "name": "file.list_files",
-  "arguments": {
-    "path": ".",
-    "recursive": true,
-    "reasoning": "Inspect the project tree before choosing files."
-  }
-}
+{"a":"15","b":"6","ok":"true"}
 ```
 
-## Dependencies And `$ref`
+Additional rules:
 
-When one tool needs the output of another tool, use `$ref` to refer to the prior call id.
+- Use JSON numbers for numeric fields.
+- Use JSON booleans for boolean fields.
+- Use arrays and objects as real JSON values, not quoted JSON strings.
+- Keep paths relative unless a tool explicitly accepts absolute paths.
+- The optional `reasoning` argument, when present in a tool schema, should only be a short public summary of why that tool is being used.
+
+## What The Model Should Not Do
+
+Do not print a plan like this in assistant text:
 
 ```json
 {
   "batches": [
     {
-      "mode": "sequential",
+      "mode": "parallel",
       "calls": [
-        {
-          "id": "call_1",
-          "name": "file.search_in_files",
-          "arguments": {
-            "pattern": "chat_input",
-            "path": "src",
-            "reasoning": "Find Streamlit input handling."
-          }
-        },
-        {
-          "id": "call_2",
-          "name": "file.read_file",
-          "arguments": {
-            "path": {
-              "$ref": "call_1"
-            },
-            "reasoning": "Read the matching file after search identifies it."
-          },
-          "depends_on": [
-            "call_1"
-          ]
-        }
+        {"id":"call_1","name":"calculator.add","arguments":{"a":15,"b":27}}
       ]
     }
   ]
 }
 ```
 
-Use parallel calls only when they are independent. Use sequential calls when later calls require earlier results.
+That is documentation format, not executable output.
 
-## Built-In Tool Examples
+Do not emit XML-style inline tool tags.
 
-List files:
+Do not describe a tool plan in prose when the provider already supports native tool calling.
+
+## Streaming
+
+When streaming is enabled, providers may send tool calls incrementally. For example:
+
+```json
+{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"calculator.add","arguments":""}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\":15,"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"b\":27}"}}]}}]}
+```
+
+MTP accumulates those fragments by `index`, reconstructs the full call, and then executes it normally.
+
+## Runtime Result Flow
+
+After execution, MTP sends results back as tool messages:
 
 ```json
 {
-  "name": "file.list_files",
-  "arguments": {
-    "path": ".",
-    "recursive": false,
-    "limit": 200,
-    "reasoning": "Inspect the project root."
-  }
+  "role": "tool",
+  "tool_call_id": "call_1",
+  "content": "42"
 }
 ```
 
-Read a bounded file range:
+The model should then produce a final answer grounded in those tool outputs.
 
-```json
-{
-  "name": "file.read_file",
-  "arguments": {
-    "path": "src/mtp/agent_os/app.py",
-    "start_line": 1,
-    "end_line": 160,
-    "reasoning": "Review current Streamlit state handling."
-  }
-}
-```
+## Summary
 
-Search files:
-
-```json
-{
-  "name": "file.search_in_files",
-  "arguments": {
-    "pattern": "pending_prompt|chat_input|run_events",
-    "path": "src",
-    "max_results": 50,
-    "reasoning": "Find the run loop and input handling."
-  }
-}
-```
-
-Write a file:
-
-```json
-{
-  "name": "file.write_file",
-  "arguments": {
-    "path": "docs/NOTE.md",
-    "content": "# Note\n\nText.\n",
-    "append": false,
-    "reasoning": "Create the requested documentation."
-  }
-}
-```
-
-Run shell command:
-
-```json
-{
-  "name": "shell.run_command",
-  "arguments": {
-    "command": "pytest tests/test_agent_os_app.py",
-    "reasoning": "Verify the Streamlit app regression tests."
-  }
-}
-```
-
-Run Python:
-
-```json
-{
-  "name": "python.run_code",
-  "arguments": {
-    "code": "result = 2 + 2",
-    "return_variable": "result",
-    "reasoning": "Compute a small deterministic value."
-  }
-}
-```
-
-Terminate autoresearch:
-
-```json
-{
-  "name": "agent.terminate",
-  "arguments": {
-    "reason": "The task is complete and tests passed.",
-    "summary": "Implemented the fix and verified it with targeted tests."
-  }
-}
-```
-
-Use `agent.terminate` only when autoresearch mode is enabled.
+- MTP accepts native provider tool calls.
+- One native `tool_calls` response can contain multiple independent calls.
+- One native `tool_calls` response can also contain a dependency chain using `$ref`.
+- MTP derives parallel and sequential execution automatically from the dependency structure.
+- Printed JSON plans are documentation only, not executable model output.
