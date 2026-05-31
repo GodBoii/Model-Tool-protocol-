@@ -5,6 +5,7 @@ import fnmatch
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from typing import Any
 
@@ -175,6 +176,9 @@ class ContextToolkit(ToolkitLoader):
                             for hit in memory_hits
                         ],
                     }
+            fast_hits = _search_with_ripgrep(self.ws, query=query, path=path, limit=limit)
+            if fast_hits is not None:
+                return fast_hits
             terms = _search_terms(query)
             query_norm = _normalize_text(query)
             hits: list[dict[str, Any]] = []
@@ -250,7 +254,12 @@ class EditToolkit(ToolkitLoader):
             after = before.replace(old_text, new_text) if replace_all else before.replace(old_text, new_text, 1)
             target.write_text(after, encoding="utf-8")
             diff = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile=f"a/{path}", tofile=f"b/{path}"))
-            return {"file": self.ws.rel(target), "replacements": count if replace_all else 1, "diff": diff[:20000]}
+            return {
+                "file": self.ws.rel(target),
+                "replacements": count if replace_all else 1,
+                "diff": diff[:20000],
+                "new_text": new_text[:20000],
+            }
 
         def create_file(path: str, content: str) -> dict[str, Any]:
             target = self.ws.resolve(path)
@@ -258,7 +267,11 @@ class EditToolkit(ToolkitLoader):
                 raise ValueError("Refusing to overwrite existing file.")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-            return {"file": self.ws.rel(target), "bytes": len(content.encode("utf-8"))}
+            return {
+                "file": self.ws.rel(target),
+                "bytes": len(content.encode("utf-8")),
+                "content": content[:20000],
+            }
 
         return [
             RegisteredTool(spec=specs["edit.apply_patch"], handler=apply_patch),
@@ -412,4 +425,104 @@ def _run(cmd: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
 def _run_shell(command: str, cwd: Path, timeout: int) -> dict[str, Any]:
     completed = subprocess.run(command, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=max(1, int(timeout)))
     return {"returncode": completed.returncode, "stdout": completed.stdout.strip()[:30000], "stderr": completed.stderr.strip()[:12000]}
+
+
+def _search_with_ripgrep(ws: _Workspace, *, query: str, path: str, limit: int) -> dict[str, Any] | None:
+    rg_bin = shutil.which("rg")
+    if not rg_bin:
+        return None
+
+    search_root = ws.resolve(path or ".")
+    if search_root.is_file():
+        search_targets = [str(search_root)]
+    else:
+        search_targets = [str(search_root)]
+
+    base_cmd = [
+        rg_bin,
+        "--line-number",
+        "--smart-case",
+        "--max-count",
+        "3",
+        "--max-columns",
+        "240",
+        "--glob",
+        "!**/.git/**",
+        "--glob",
+        "!**/node_modules/**",
+        "--glob",
+        "!**/.venv/**",
+        "--glob",
+        "!**/venv/**",
+        "--glob",
+        "!**/__pycache__/**",
+        query,
+        *search_targets,
+    ]
+    try:
+        completed = subprocess.run(
+            base_cmd,
+            cwd=str(ws.root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+
+    hits_by_file: dict[str, dict[str, Any]] = {}
+    try:
+        file_list = subprocess.run(
+            [rg_bin, "--files", *search_targets],
+            cwd=str(ws.root),
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        query_terms = _search_terms(query)
+        for raw_file in file_list.stdout.splitlines():
+            normalized = raw_file.replace("\\", "/")
+            if _looks_secret(normalized):
+                continue
+            if any(term in normalized.lower() for term in query_terms):
+                entry = hits_by_file.setdefault(
+                    normalized,
+                    {"file": normalized, "score": 6.0, "match": ["path"], "snippets": [f"path: {normalized}"]},
+                )
+                entry["score"] = max(float(entry["score"]), 6.0)
+    except Exception:
+        pass
+
+    for line in completed.stdout.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) < 3:
+            continue
+        raw_file, line_no, snippet = parts
+        try:
+            rel_file = ws.rel(Path(raw_file) if Path(raw_file).is_absolute() else ws.root / raw_file)
+        except Exception:
+            rel_file = raw_file.replace("\\", "/")
+        if _looks_secret(rel_file):
+            continue
+        entry = hits_by_file.setdefault(
+            rel_file,
+            {"file": rel_file, "score": 0.0, "match": ["rg"], "snippets": []},
+        )
+        entry["score"] += 5.0
+        if len(entry["snippets"]) < 3:
+            entry["snippets"].append(f"{line_no}: {snippet.strip()[:240]}")
+
+    if not hits_by_file:
+        return None
+
+    hits = sorted(hits_by_file.values(), key=lambda item: (-float(item["score"]), str(item["file"])))
+    bounded = hits[: max(1, int(limit))]
+    return {
+        "query": query,
+        "source": "ripgrep",
+        "count": len(bounded),
+        "total_matches": len(hits),
+        "truncated": len(hits) > len(bounded),
+        "hits": bounded,
+    }
 

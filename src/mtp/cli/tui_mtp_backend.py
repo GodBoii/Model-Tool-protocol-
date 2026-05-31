@@ -7,6 +7,7 @@ This module handles chat execution for MTP SDK providers (non-Codex backends).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
@@ -53,6 +54,49 @@ def _append_unique_text(chunks: list[str], chunk: str) -> None:
         return
     merged = _merge_stream_text("".join(chunks), chunk)
     chunks[:] = [merged]
+
+
+def _format_tool_result_preview(tool_name: str, payload: Any) -> str:
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        text = payload.strip()
+        if not text:
+            return ""
+        if tool_name.startswith("edit.") and "\n" in text:
+            return f"```text\n{text[:12000]}\n```"
+        return text[:12000]
+    if isinstance(payload, dict):
+        if tool_name == "edit.create_file" and isinstance(payload.get("content"), str):
+            file_name = str(payload.get("file") or "file")
+            content = payload["content"][:12000]
+            return f"Created `{file_name}`:\n```text\n{content}\n```"
+        if tool_name == "edit.apply_patch":
+            diff = payload.get("diff")
+            if isinstance(diff, str) and diff.strip():
+                return f"```diff\n{diff[:12000]}\n```"
+            new_text = payload.get("new_text")
+            if isinstance(new_text, str) and new_text.strip():
+                return f"```text\n{new_text[:12000]}\n```"
+        if tool_name in {"fs.search", "fs.grep"} and isinstance(payload.get("hits"), list):
+            lines = []
+            for hit in payload["hits"][:8]:
+                if not isinstance(hit, dict):
+                    continue
+                file_name = str(hit.get("file") or "")
+                snippets = hit.get("snippets") or hit.get("match") or []
+                snippet_text = ""
+                if isinstance(snippets, list) and snippets:
+                    snippet_text = str(snippets[0])
+                lines.append(f"- {file_name}: {snippet_text}")
+            if lines:
+                return "\n".join(lines)
+        if tool_name == "project.inspect":
+            return "```json\n" + json.dumps(payload, indent=2, ensure_ascii=False)[:12000] + "\n```"
+        return "```json\n" + json.dumps(payload, indent=2, ensure_ascii=False)[:12000] + "\n```"
+    if isinstance(payload, list):
+        return "```json\n" + json.dumps(payload, indent=2, ensure_ascii=False)[:12000] + "\n```"
+    return str(payload)[:12000]
 
 
 def _append_text_block(blocks: list[dict[str, Any]], text: str) -> None:
@@ -103,6 +147,7 @@ def _upsert_tool_item(
     error: str | None = None,
     started_at_ms: int | None = None,
     finished_at_ms: int | None = None,
+    result_preview: str | None = None,
 ) -> None:
     call_id_str = str(call_id or tool_name)
     for block in blocks:
@@ -117,6 +162,8 @@ def _upsert_tool_item(
                     item["cached"] = cached
                 if error:
                     item["error"] = error
+                if result_preview is not None:
+                    item["result_preview"] = result_preview
                 if started_at_ms is not None:
                     item["started_at_ms"] = started_at_ms
                 if finished_at_ms is not None:
@@ -134,6 +181,7 @@ def _upsert_tool_item(
             "error": error,
             "started_at_ms": started_at_ms,
             "finished_at_ms": finished_at_ms,
+            "result_preview": result_preview,
         }
     )
 
@@ -228,7 +276,7 @@ def run_mtp_prompt(
             max_rounds=max_rounds,
             stream_final=True,
             stream_tool_events=True,
-            stream_tool_results=False,
+            stream_tool_results=True,
             run_id=run_id,
         ):
             event_type = event.get("type")
@@ -351,6 +399,8 @@ def run_mtp_prompt(
                     "reasoning": event.get("reasoning"),
                     "finished_at_ms": observed_at_ms,
                     "error": event.get("error"),
+                    "output": event.get("output"),
+                    "result_preview": _format_tool_result_preview(tool_name, event.get("output") if success else event.get("error")),
                 }
                 tool_details.append(detail)
                 tool_phase_finished_at = observed_at_ms
@@ -363,6 +413,7 @@ def run_mtp_prompt(
                     cached=event.get("cached"),
                     error=event.get("error"),
                     finished_at_ms=observed_at_ms,
+                    result_preview=detail["result_preview"],
                 )
                 if success:
                     msg = f"  {SYM_OK} {tool_name} completed"
