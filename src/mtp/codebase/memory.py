@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import threading
 from typing import Any
 
 
@@ -86,6 +87,8 @@ class CodebaseMemory:
     """Persistent codebase index stored under ``<project>/.mtp/memory``."""
 
     schema_version = 1
+    _lock_guard = threading.Lock()
+    _scan_locks: dict[str, threading.Lock] = {}
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).expanduser().resolve()
@@ -248,41 +251,42 @@ class CodebaseMemory:
         progress: Callable[[ScanStats], None] | None = None,
     ) -> ScanStats:
         stats = ScanStats(root=self.root)
-        candidates = list(self._iter_candidate_files())
-        total = max(len(candidates), 1)
-        seen_paths: set[str] = set()
-        with self._connect() as conn:
-            self._ensure_schema(conn)
-            self._set_meta(conn, "schema_version", str(self.schema_version))
-            self._set_meta(conn, "root", str(self.root))
-            for idx, path in enumerate(candidates, start=1):
-                stats.files_seen += 1
-                rel = self._rel(path)
-                seen_paths.add(rel)
-                stats.percent = min(99, int((idx / total) * 100))
-                try:
-                    indexed = self._index_file(conn, path, rel)
-                except Exception:
-                    stats.files_skipped += 1
+        with self._workspace_scan_lock():
+            candidates = list(self._iter_candidate_files())
+            total = max(len(candidates), 1)
+            seen_paths: set[str] = set()
+            with self._connect() as conn:
+                self._ensure_schema(conn)
+                self._set_meta(conn, "schema_version", str(self.schema_version))
+                self._set_meta(conn, "root", str(self.root))
+                for idx, path in enumerate(candidates, start=1):
+                    stats.files_seen += 1
+                    rel = self._rel(path)
+                    seen_paths.add(rel)
+                    stats.percent = min(99, int((idx / total) * 100))
+                    try:
+                        indexed = self._index_file(conn, path, rel)
+                    except Exception:
+                        stats.files_skipped += 1
+                        self._emit(progress, stats)
+                        continue
+                    if indexed:
+                        stats.changed_files += 1
+                    stats.files_indexed += 1
                     self._emit(progress, stats)
-                    continue
-                if indexed:
-                    stats.changed_files += 1
-                stats.files_indexed += 1
-                self._emit(progress, stats)
 
-            existing = [row[0] for row in conn.execute("select path from files")]
-            for rel in existing:
-                if rel not in seen_paths:
-                    conn.execute("delete from chunks where path = ?", (rel,))
-                    conn.execute("delete from files where path = ?", (rel,))
-                    stats.files_deleted += 1
+                existing = [row[0] for row in conn.execute("select path from files")]
+                for rel in existing:
+                    if rel not in seen_paths:
+                        conn.execute("delete from chunks where path = ?", (rel,))
+                        conn.execute("delete from files where path = ?", (rel,))
+                        stats.files_deleted += 1
 
-            stats.chunks_indexed = self._count(conn, "chunks")
-            stats.percent = 100
-            self._set_meta(conn, "last_scan_at", _utc_now())
-            self._set_meta(conn, "enabled", "1" if enable else "0")
-            conn.commit()
+                stats.chunks_indexed = self._count(conn, "chunks")
+                stats.percent = 100
+                self._set_meta(conn, "last_scan_at", _utc_now())
+                self._set_meta(conn, "enabled", "1" if enable else "0")
+                conn.commit()
         self._emit(progress, stats)
         return stats
 
@@ -295,8 +299,6 @@ class CodebaseMemory:
         query = query.strip()
         if not query:
             return []
-        if refresh and self.is_enabled():
-            self.refresh_changed()
         if not self.db_path.exists():
             return []
         q_terms = _tokens(query)
@@ -525,6 +527,15 @@ class CodebaseMemory:
     def _emit(self, progress: Callable[[ScanStats], None] | None, stats: ScanStats) -> None:
         if progress is not None:
             progress(stats)
+
+    def _workspace_scan_lock(self) -> threading.Lock:
+        key = str(self.root).lower()
+        with self._lock_guard:
+            lock = self._scan_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._scan_locks[key] = lock
+            return lock
 
 
 def _build_chunks(path: str, text: str) -> list[tuple[int, int, str, str]]:
