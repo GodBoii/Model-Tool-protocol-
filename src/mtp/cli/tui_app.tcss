@@ -83,7 +83,7 @@ ChatLog {
 InputPanel {
     dock: bottom;
     height: auto;
-    max-height: 30;
+    max-height: 36;
     padding: 0 1;
     background: $surface;
 }
@@ -97,8 +97,8 @@ PromptLabel {
 
 InputArea {
     height: auto;
-    min-height: 3;
-    max-height: 10;
+    min-height: 5;
+    max-height: 14;
     border: round $border;
     background: $surface-1;
     padding: 0 1;
@@ -129,6 +129,12 @@ InputArea:focus {
 
 #attachment-container.visible {
     display: block;
+}
+
+#input-hints {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
 }
 
 AttachmentBadge {
@@ -166,7 +172,7 @@ StatusBar {
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 
 Sidebar {
-    width: 36;
+    width: 40;
     dock: right;
     background: $surface;
     border-left: tall $border;

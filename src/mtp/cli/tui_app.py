@@ -28,7 +28,7 @@ from .tui_thinking import apply_thinking_value, get_thinking_capability
 from .tui_widgets.chat_log import ChatLog, ChatMessage
 from .tui_widgets.input_area import InputPanel, InputArea, PromptLabel, AttachmentBadge
 from .tui_widgets.status_bar import StatusBar, ThinkingBadge
-from .tui_widgets.sidebar import Sidebar, SessionInfo, ToolEventLog
+from .tui_widgets.sidebar import Sidebar, SessionInfo, ToolEventLog, RunMetrics, ShortcutHints, WorkspaceTree
 from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
@@ -199,7 +199,7 @@ class MTPApp(App):
             chat_log.add_user_message(self._pending_display_prompt, self._pending_display_attachments)
             chat_log.add_system_message(self._current_turn_banner())
             if self._live_message_active():
-                chat_log.add_assistant_message(
+                chat_log.set_live_assistant_message(
                     ChatMessage(
                         role="assistant",
                         text="",
@@ -259,6 +259,9 @@ class MTPApp(App):
             self.query_one("#tool-event-log", ToolEventLog).update_events(
                 self._state.last_tool_events
             )
+            self.query_one("#run-metrics", RunMetrics).update_metrics(self._state.last_usage_lines)
+            self.query_one("#shortcut-hints", ShortcutHints).update_hints()
+            self.query_one("#workspace-tree", WorkspaceTree).refresh_tree(self._state.cwd)
         except Exception:
             pass
 
@@ -895,6 +898,8 @@ class MTPApp(App):
                     item["reasoning"] = detail.get("reasoning")
                     item["cached"] = detail.get("cached")
                     item["error"] = detail.get("error")
+                    if detail.get("result_preview") is not None:
+                        item["result_preview"] = detail.get("result_preview")
                     if detail.get("started_at_ms") is not None:
                         item["started_at_ms"] = detail.get("started_at_ms")
                     if detail.get("finished_at_ms") is not None:
@@ -912,6 +917,7 @@ class MTPApp(App):
                 "error": detail.get("error"),
                 "started_at_ms": detail.get("started_at_ms"),
                 "finished_at_ms": detail.get("finished_at_ms"),
+                "result_preview": detail.get("result_preview"),
             }
         )
 
@@ -927,13 +933,34 @@ class MTPApp(App):
         self._live_tool_details = []
         self._live_warnings = []
         self._last_live_render_at = 0.0
+        try:
+            self.query_one("#chat-log", ChatLog).clear_live_assistant_message()
+        except Exception:
+            pass
 
     def _render_live_preview(self, *, force: bool = False) -> None:
         now = time.monotonic()
-        if not force and now - self._last_live_render_at < 0.05:
+        if not force and now - self._last_live_render_at < 0.10:
             return
         self._last_live_render_at = now
-        self._rebuild_chat_log()
+        if not self._pending_display_prompt:
+            return
+        self.query_one("#chat-log", ChatLog).set_live_assistant_message(
+            ChatMessage(
+                role="assistant",
+                text="",
+                model=active_model_name(self._state),
+                backend=self._state.backend,
+                tool_events=list(self._live_tool_events),
+                tool_details=list(self._live_tool_details),
+                warnings=list(self._live_warnings),
+                thinking=self._live_thinking_text.strip(),
+                show_tool_details=self._show_tool_details,
+                assistant_blocks=list(self._live_blocks),
+                collapse_thinking=False,
+                is_live=True,
+            )
+        )
 
     def _handle_live_event(self, kind: str, message: Any) -> None:
         spinner = self.query_one("#spinner", SpinnerWidget)
