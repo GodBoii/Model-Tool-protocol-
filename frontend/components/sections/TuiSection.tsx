@@ -7,16 +7,18 @@ import { Terminal, ArrowRight } from "lucide-react";
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.7, delay: i * 0.1, ease: [0.16, 1, 0.3, 1] as any } }) };
 
 const COMMANDS = [
-  { cmd: "/backend groq",   desc: "Switch provider mid-session" },
-  { cmd: "/backend claude", desc: "Swap to Claude instantly"    },
-  { cmd: "/sessions",       desc: "Browse all saved sessions"   },
-  { cmd: "/new my-agent",   desc: "Start a labeled session"     },
-  { cmd: "/nerdfont on",    desc: "Enable Nerd Font icons"      },
-  { cmd: "/cat show",       desc: "Show animated cat companion" },
+  { cmd: "/backend groq",      desc: "Switch provider mid-session" },
+  { cmd: "/backend claude",    desc: "Swap to Claude instantly"    },
+  { cmd: "/backend ollama",    desc: "Switch to local Ollama model" },
+  { cmd: "/sessions",          desc: "Browse all saved sessions"   },
+  { cmd: "/new my-agent",      desc: "Start a labeled session"     },
+  { cmd: "/mode plan",         desc: "Switch harness mode"         },
+  { cmd: "/nerdfont on",       desc: "Enable Nerd Font icons"      },
+  { cmd: "/cat show",          desc: "Show animated cat companion" },
 ];
 
 const FEATURES = [
-  "13 provider backends — cloud & local",
+  "15 provider backends — cloud & local",
   "Auto-generated session titles from first message",
   "Centralized sessions in ~/.mtp/sessions/",
   "Context window progress bar (token usage)",
@@ -24,6 +26,10 @@ const FEATURES = [
   "Phosphor Decay streaming text effect",
   "Animated cat companion with cursor tracking",
   "Nerd Font & emoji glyph support",
+  "mtp new scaffolding from templates",
+  "mtp doctor environment diagnostics",
+  "Codebase memory indexing (mtp codebase)",
+  "Autoresearch mode for deep workflows",
 ];
 
 export function TuiSection() {
@@ -35,7 +41,7 @@ export function TuiSection() {
           A terminal interface that doesn&apos;t compromise.
         </h2>
         <p className="text-white/50 max-w-2xl mx-auto text-sm leading-relaxed">
-          <code className="font-mono text-[#facc15]">mtp tui</code> launches a premium terminal chat experience — switch between 13 AI providers, manage persistent sessions, stream tool events in real-time, and track context window usage.
+          <code className="font-mono text-[#facc15]">mtp tui</code> launches a premium terminal chat experience — switch between 15 AI providers, manage persistent sessions, stream tool events in real-time, and track context window usage. Scaffold projects with <code className="font-mono text-[#facc15]">mtp new</code>, diagnose with <code className="font-mono text-[#facc15]">mtp doctor</code>, and index your codebase with <code className="font-mono text-[#facc15]">mtp codebase</code>.
         </p>
       </motion.div>
 

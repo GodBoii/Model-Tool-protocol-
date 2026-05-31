@@ -32,7 +32,7 @@ export function HeroSection() {
         <a href="https://pypi.org/project/mtpx/" target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#facc15]/25 text-[#facc15] text-xs font-medium tracking-wide"
           style={{ background: "rgba(250,204,21,0.06)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
-          <Star className="size-3 fill-current" /> v0.1.17 on PyPI — protocol-first agent orchestration
+          <Star className="size-3 fill-current" /> v0.1.30 on PyPI — protocol-first agent orchestration
         </a>
       </motion.div>
 
@@ -48,7 +48,7 @@ export function HeroSection() {
       {/* Sub */}
       <motion.p custom={2} initial="hidden" animate="visible" variants={fadeUp}
         className="text-base md:text-xl text-white/55 max-w-2xl mb-12 leading-relaxed font-light">
-        Protocol-first Python SDK for AI agent tool orchestration. Structured DAG execution plans, 13+ provider adapters, safety policies, and persistent sessions — production-ready from day one.
+        Protocol-first Python SDK for AI agent tool orchestration. DAG execution plans, 16 provider adapters, safety policies, multi-agent teams, and persistent sessions — production-ready.
       </motion.p>
 
       {/* CTAs */}
@@ -76,7 +76,7 @@ export function HeroSection() {
 
       {/* Social proof */}
       <motion.div custom={5} initial="hidden" animate="visible" variants={fadeUp} className="mt-10 flex flex-wrap items-center justify-center gap-6 text-xs text-white/25">
-        {["13+ Providers", "OpenAI · Anthropic · Groq · Gemini", "MCP Compatible", "MIT License"].map(t => (
+        {["16 Providers", "OpenAI · Anthropic · Groq · Gemini · Cerebras · Xiaomi", "MCP Compatible", "MIT License"].map(t => (
           <span key={t} className="flex items-center gap-1.5"><span className="size-1 rounded-full bg-white/20 inline-block" />{t}</span>
         ))}
       </motion.div>

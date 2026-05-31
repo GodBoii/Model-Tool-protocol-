@@ -5,14 +5,14 @@ import { Layers, GitMerge, Bot, Shield, Database, Zap, Network, Terminal } from 
 const fadeUp = { hidden: { opacity: 0, y: 20 }, visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.6, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] as any } }) };
 
 const FEATURES = [
-  { icon: GitMerge, color: "#facc15", title: "DAG Execution Plans", desc: "Models emit structured JSON execution plans. The MTP runtime resolves step dependencies via $ref before executing any tool — enabling safe parallelism and verifiable ordering." },
-  { icon: Bot,      color: "#4f8ef7", title: "13+ Provider Adapters", desc: "Groq, OpenAI, Anthropic, Gemini, Mistral, Cohere, DeepSeek, OpenRouter, Ollama, LM Studio, and more. Swap without refactoring. Every adapter implements the same interface." },
-  { icon: Layers,   color: "#8b5cf6", title: "Lazy Toolkit Loading", desc: "Toolkits load on-demand by prefix (e.g. github.*). Spec previews are available before handlers load, so providers discover tools without paying loading costs upfront." },
-  { icon: Shield,   color: "#f43f5e", title: "Safety Policy Engine", desc: "Per-tool, per-parameter execution policies: allow, ask (human approval), or deny. Destructive operations like delete_file or shell commands get explicit guardrails." },
-  { icon: Database, color: "#10b981", title: "Session Persistence", desc: "Conversation history persists across process restarts via JsonSessionStore, PostgresSessionStore, or MySQLSessionStore. Sessions keyed by session_id and user_id." },
+  { icon: GitMerge, color: "#facc15", title: "DAG Execution Plans", desc: "Models emit structured JSON execution plans with batches of tool calls. The MTP runtime resolves $ref dependencies before executing any tool — enabling safe parallelism and verifiable ordering." },
+  { icon: Bot,      color: "#4f8ef7", title: "16 Provider Adapters", desc: "Groq, OpenAI, Anthropic, Gemini, Mistral, Cohere, DeepSeek, OpenRouter, Ollama, LM Studio, Cerebras, Xiaomi, and more. Swap without refactoring. Every adapter implements the same interface." },
+  { icon: Layers,   color: "#8b5cf6", title: "Lazy Toolkit Loading", desc: "Toolkits load on-demand by prefix (e.g. calculator.*). Spec previews are available before handlers load, so providers discover tools without paying loading costs upfront." },
+  { icon: Shield,   color: "#f43f5e", title: "Safety Policy Engine", desc: "Per-tool execution policies: allow, ask (human approval), or deny. Destructive operations get explicit guardrails with configurable approval handlers." },
+  { icon: Database, color: "#10b981", title: "Session Persistence", desc: "Conversation history persists across restarts via JsonSessionStore, PostgresSessionStore, or MySQLSessionStore. Sessions keyed by session_id and user_id." },
   { icon: Zap,      color: "#22d3ee", title: "Streaming & Events", desc: "run_loop_stream() for token streaming. run_loop_events() for structured runtime events. Compatible with streaming UI and real-time tool execution dashboards." },
-  { icon: Network,  color: "#f97316", title: "MCP Interoperability", desc: "Experimental JSON-RPC adapter exposes ToolRegistry as an MCP server. Supports stdio and HTTP transports with auth hooks, progress notifications, and cancellation." },
-  { icon: Terminal, color: "#a78bfa", title: "Autoresearch Mode", desc: "Enable persistent execution where the agent loops autonomously until it calls agent.terminate() with a reason. Ideal for deep research and multi-step workflows." },
+  { icon: Network,  color: "#f97316", title: "MCP Interoperability", desc: "JSON-RPC adapter exposes ToolRegistry as an MCP-compatible server. Supports stdio and HTTP transports with auth hooks, progress notifications, and cancellation." },
+  { icon: Terminal, color: "#a78bfa", title: "Multi-Agent Teams", desc: "Orchestrator mode lets a lead agent delegate subtasks to member agents. Each member has its own tools and instructions, returning results for final synthesis." },
 ];
 
 const STEPS = [
@@ -60,29 +60,41 @@ export function FeaturesSection() {
               <span className="ml-2 text-[11px] font-mono text-white/30">execution_plan.json</span>
             </div>
             <pre className="p-5 text-[12px] font-mono leading-relaxed overflow-x-auto text-white/60">{`{
-  "plan": [
+  "batches": [
     {
-      "step_id": "fetch_logs",
-      "tool": "read_file",
-      "args": {
-        "path": "/var/log/app.log"
-      }
+      "mode": "parallel",
+      "calls": [
+        {
+          "id": "fetch_logs",
+          "name": "file.read",
+          "arguments": { "path": "/var/log/app.log" }
+        },
+        {
+          "id": "fetch_config",
+          "name": "file.read",
+          "arguments": { "path": "/etc/app.conf" }
+        }
+      ]
     },
     {
-      "step_id": "analyze",
-      "tool": "diagnose_trace",
-      "args": {
-        "log_data": {
-          "$ref": "fetch_logs"
+      "mode": "sequential",
+      "calls": [
+        {
+          "id": "analyze",
+          "name": "diagnose.run",
+          "arguments": {
+            "log_data": { "$ref": "fetch_logs" },
+            "config": { "$ref": "fetch_config" }
+          },
+          "depends_on": ["fetch_logs", "fetch_config"]
         }
-      },
-      "depends_on": ["fetch_logs"]
+      ]
     }
   ]
 }`}
             </pre>
             <div className="px-5 pb-5">
-              <div className="text-[10px] text-[#facc15]/50 font-mono uppercase tracking-wider">↑ $ref resolves step output as next step input</div>
+              <div className="text-[10px] text-[#facc15]/50 font-mono uppercase tracking-wider">↑ $ref resolves prior call output as input; parallel batches run concurrently</div>
             </div>
           </motion.div>
         </div>
