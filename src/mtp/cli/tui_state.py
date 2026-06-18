@@ -27,13 +27,14 @@ MAX_ATTACHMENTS = 8
 MAX_ATTACHMENT_CHARS = 16_000
 
 MODEL_PRESETS: list[tuple[str, str]] = [
+    ("gpt-5.5", "Latest frontier coding model"),
     ("gpt-5.4", "Frontier general coding model"),
     ("gpt-5.4-mini", "Faster/cheaper coding model"),
     ("gpt-5.3-codex", "Codex-optimized coding model"),
     ("gpt-5.2", "Previous frontier model"),
 ]
 
-MODEL_SHORTCUTS = {"1": "gpt-5.4", "2": "gpt-5.4-mini", "3": "gpt-5.3-codex", "4": "gpt-5.2"}
+MODEL_SHORTCUTS = {"1": "gpt-5.5", "2": "gpt-5.4", "3": "gpt-5.4-mini", "4": "gpt-5.3-codex"}
 
 REASONING_SHORTCUTS = {"0": "none", "1": "low", "2": "medium", "3": "high", "4": "xhigh"}
 

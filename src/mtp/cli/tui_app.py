@@ -513,7 +513,8 @@ class MTPApp(App):
             "/cd": "Change directory",
             "/autoresearch": "Toggle auto-research",
             "/research": "Set research instructions",
-            "/codebase": "Codebase memory"
+            "/codebase": "Codebase memory",
+            "/codex": "Codex auth and diagnostics",
         }
         
         matches = []
@@ -592,6 +593,10 @@ class MTPApp(App):
                 matches = [item for item in ["on", "off"] if item.startswith(tail)]
             else:
                 matches = [m for m in ["memory", "status"] if m.startswith(normalized)]
+        elif cmd == "codex":
+            normalized = partial.strip().lower()
+            options = ["login", "logout", "status", "account", "doctor", "repair-config"]
+            matches = [item for item in options if item.startswith(normalized)]
             
         if not matches:
             try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
@@ -604,7 +609,7 @@ class MTPApp(App):
     def _command_supports_arguments(cmd: str) -> bool:
         return cmd in {
             "backend", "model", "load", "sessions", "open", "mode",
-            "reasoning", "details", "sandbox", "codebase",
+            "reasoning", "details", "sandbox", "codebase", "codex",
         }
 
     def _show_next_command_suggestions(self, input_area: InputArea) -> None:
@@ -1349,14 +1354,10 @@ class MTPApp(App):
                 chat_log.add_command_result("Usage: /open <session_id>")
             else:
                 chat_log.add_system_message(self._build_session_open_text(arg))
+        elif cmd == "codex":
+            self._handle_codex_auth(arg, chat_log)
         elif cmd == "codex-login":
-            from . import tui_codex_backend as codex_backend
-            codex_bin = s.codex_bin or codex_backend.detect_codex_bin()
-            if codex_bin:
-                rc = codex_backend.run_codex_login(codex_bin)
-                chat_log.add_command_result("✓ Login completed" if rc == 0 else f"Login exited: {rc}")
-            else:
-                chat_log.add_command_result("Codex CLI not found")
+            self._handle_codex_auth("login", chat_log)
         elif cmd == "compose":
             chat_log.add_system_message("Compose: use Shift+Enter for newlines, Enter to submit.")
         elif cmd == "unknown":
@@ -1365,6 +1366,166 @@ class MTPApp(App):
             chat_log.add_command_result(f"Unknown: /{cmd}")
 
     # ── Model / Sandbox / API key handlers ───────────────────────────────
+
+    def _handle_codex_auth(self, arg: str, chat_log: Any) -> None:
+        import os
+        import shlex
+        from contextlib import nullcontext
+
+        from . import tui_codex_backend as codex_backend
+
+        parts = shlex.split(arg or "", posix=(os.name != "nt"))
+        action = parts[0].lower() if parts else ""
+        extra_args = parts[1:]
+        if action not in {"login", "logout", "status", "account", "doctor", "repair-config"}:
+            chat_log.add_command_result("Usage: /codex <login|logout|status|account|doctor|repair-config> [codex CLI flags]")
+            return
+
+        codex_bin = self._state.codex_bin or codex_backend.detect_codex_bin()
+        if not codex_bin:
+            chat_log.add_command_result("Codex CLI not found. Install: npm install -g @openai/codex")
+            return
+        self._state.codex_bin = codex_bin
+
+        def _format_result(result: Any, *, fallback: str) -> str:
+            output = str(getattr(result, "output", "") or "").strip()
+            if output:
+                issue = codex_backend.detect_codex_config_issue(output)
+                if issue in {
+                    codex_backend.CodexConfigIssue.INVALID_SERVICE_TIER_DEFAULT,
+                    codex_backend.CodexConfigIssue.UNSUPPORTED_SERVICE_TIER,
+                }:
+                    return (
+                        f"{output}\n\n"
+                        "Known fix: run /codex repair-config, then retry /codex status or your prompt."
+                    )
+                return output
+            return fallback
+
+        try:
+            if action == "status":
+                result = codex_backend.run_codex_login_status(codex_bin, extra_args)
+                chat_log.add_command_result(
+                    _format_result(
+                        result,
+                        fallback="Codex is logged in." if result.return_code == 0 else f"Codex status exited: {result.return_code}",
+                    )
+                )
+                return
+
+            if action == "doctor":
+                suspend_context = self.suspend() if hasattr(self, "suspend") else nullcontext()
+                chat_log.add_command_result("Starting codex doctor...")
+                with suspend_context:
+                    result = codex_backend.run_codex_doctor(codex_bin, extra_args)
+                chat_log.add_command_result(
+                    "Codex doctor completed." if result.return_code == 0 else f"Codex doctor exited: {result.return_code}"
+                )
+                return
+
+            if action == "account":
+                status = codex_backend.run_codex_login_status(codex_bin)
+                info = codex_backend.build_codex_account_info(
+                    codex_bin=codex_bin,
+                    last_usage_lines=list(self._state.last_usage_lines),
+                    last_warnings=list(self._state.last_warnings),
+                )
+                chat_log.add_command_result(self._build_codex_account_view(info, status.output))
+                return
+
+            if action == "repair-config":
+                message = codex_backend.repair_codex_config_issue(
+                    codex_backend.CodexConfigIssue.INVALID_SERVICE_TIER_DEFAULT
+                )
+                chat_log.add_command_result(message)
+                return
+
+            preflight = codex_backend.run_codex_login_status(codex_bin)
+            issue = codex_backend.detect_codex_config_issue(preflight.output)
+            if issue is not None:
+                chat_log.add_command_result(_format_result(preflight, fallback=f"Codex config check exited: {preflight.return_code}"))
+                return
+
+            suspend_context = self.suspend() if hasattr(self, "suspend") else nullcontext()
+            chat_log.add_command_result(f"Starting codex {action}...")
+            with suspend_context:
+                if action == "login":
+                    result = codex_backend.run_codex_login(codex_bin, extra_args)
+                else:
+                    result = codex_backend.run_codex_logout(codex_bin, extra_args)
+
+            self._state.codex_session_id = None
+            save_tui_session(self._state)
+            if result.return_code == 0:
+                chat_log.add_command_result(f"Codex {action} completed.")
+            else:
+                chat_log.add_command_result(
+                    _format_result(result, fallback=f"Codex {action} exited: {result.return_code}")
+                )
+        except Exception as exc:
+            chat_log.add_command_result(f"Codex {action} failed: {exc}")
+
+    def _build_codex_account_view(self, info: Any, status_output: str = "") -> Any:
+        from rich.console import Group
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        account = Table(show_header=False, box=None, padding=(0, 2))
+        account.add_column("Key", style="bold #38bdf8", no_wrap=True)
+        account.add_column("Value", style="#f4f4f6")
+        if status_output:
+            account.add_row("status", status_output.strip())
+        account.add_row("auth", getattr(info, "auth_mode", "unknown"))
+        account.add_row("email", getattr(info, "email", "unknown"))
+        if getattr(info, "name", None):
+            account.add_row("name", info.name)
+        if getattr(info, "account_id", None):
+            account.add_row("account", info.account_id)
+        if getattr(info, "last_refresh", None):
+            account.add_row("refreshed", info.last_refresh)
+        if getattr(info, "access_token_expires", None):
+            account.add_row("access expires", info.access_token_expires)
+        if getattr(info, "id_token_expires", None):
+            account.add_row("id expires", info.id_token_expires)
+
+        config = Table(show_header=True, header_style="bold #c084fc", box=None, padding=(0, 2))
+        config.add_column("Setting", style="#38bdf8")
+        config.add_column("Value", style="#f4f4f6")
+        config_values = getattr(info, "config_values", {}) or {}
+        if config_values:
+            for key, value in config_values.items():
+                config.add_row(str(key), str(value))
+        else:
+            config.add_row("(none)", "No readable Codex config values")
+        config.add_row("config file", str(getattr(info, "config_file", "")))
+        config.add_row("auth file", str(getattr(info, "auth_file", "")))
+        if getattr(info, "codex_bin", None):
+            config.add_row("cli", str(info.codex_bin))
+
+        usage = Table(show_header=False, box=None, padding=(0, 2))
+        usage.add_column("Metric", style="#38bdf8", no_wrap=True)
+        usage.add_column("Value", style="#f4f4f6")
+        usage_lines = list(getattr(info, "usage_lines", []) or [])
+        if usage_lines:
+            for line in usage_lines:
+                key, sep, value = str(line).partition("=")
+                usage.add_row(key if sep else "usage", value if sep else str(line))
+        else:
+            usage.add_row("usage", "No run usage captured in this MTP session yet")
+        for warning in list(getattr(info, "limit_warnings", []) or []):
+            usage.add_row("limit warning", str(warning))
+
+        note = Text(str(getattr(info, "quota_note", "")), style="dim #71717a")
+        return Panel(
+            Group(
+                Panel(account, title="[bold #34d399]Account[/]", border_style="#334155"),
+                Panel(config, title="[bold #a78bfa]Configuration[/]", border_style="#334155"),
+                Panel(Group(usage, note), title="[bold #fbbf24]Usage & Limits[/]", border_style="#334155"),
+            ),
+            title="[bold #38bdf8]Codex[/]",
+            border_style="#3f3f46",
+        )
 
     def _handle_codebase(self, arg: str, chat_log: Any) -> None:
         from mtp.codebase import CodebaseMemory
@@ -1616,6 +1777,10 @@ class MTPApp(App):
         table.add_row("", "/model <name>", "Switch model")
         table.add_row("", "/models", "Show all models")
         table.add_row("", "/apikey", "Manage API keys")
+        table.add_row("", "/codex <login|logout|status>", "Manage Codex ChatGPT auth")
+        table.add_row("", "/codex account", "Show Codex email, profile, usage")
+        table.add_row("", "/codex doctor", "Run Codex diagnostics")
+        table.add_row("", "/codex repair-config", "Repair known Codex config issues")
         table.add_row("", "/reasoning", "Set reasoning level / thinking mode")
         table.add_row("", "/thinking", "Set thinking mode")
         table.add_row("", "/mode", "Set harness mode")

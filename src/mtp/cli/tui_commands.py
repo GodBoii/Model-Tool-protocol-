@@ -49,7 +49,12 @@ COMMANDS: list[tuple[str, str, str, str]] = [
     # Other
     ("Auto Research On", "Enable autoresearch", "autoresearch", "on"),
     ("Auto Research Off", "Disable autoresearch", "autoresearch", "off"),
-    ("Codex Login", "Run official codex login flow", "codex-login", ""),
+    ("Codex Login", "Run official codex login flow", "codex", "login"),
+    ("Codex Logout", "Remove stored Codex credentials", "codex", "logout"),
+    ("Codex Status", "Show Codex login status", "codex", "status"),
+    ("Codex Account", "Show Codex account, profile, and usage summary", "codex", "account"),
+    ("Codex Doctor", "Run Codex diagnostics", "codex", "doctor"),
+    ("Codex Repair Config", "Repair known Codex config problems", "codex", "repair-config"),
 ]
 
 
@@ -109,6 +114,7 @@ SLASH_WITH_ARG = {
     "/backend", "/model", "/apikey", "/reasoning", "/mode",
     "/rounds", "/autoresearch", "/research", "/cd", "/load",
     "/open", "/sandbox", "/new", "/history", "/codebase", "/details",
+    "/codex",
 }
 
 
@@ -124,10 +130,13 @@ def parse_slash_command(raw: str) -> tuple[str, str] | None:
     if cmd in SLASH_COMMANDS or cmd in SLASH_WITH_ARG:
         return cmd[1:], arg  # Strip the leading /
 
+    if cmd == "/codex-login":
+        return "codex", "login"
+
     command_heads = {
         "help", "exit", "compose", "new", "reset", "clear", "status",
         "history", "sessions", "load", "backend", "apikey", "models",
-        "model", "reasoning", "thinking", "rounds", "codex-login", "autoresearch",
+        "model", "reasoning", "thinking", "rounds", "codex", "codex-login", "autoresearch",
         "research", "cd", "tools", "details", "sandbox", "codebase", "open",
     }
     head = raw[1:].split(" ", 1)[0].strip().lower()

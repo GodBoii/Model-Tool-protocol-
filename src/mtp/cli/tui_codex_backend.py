@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
+from datetime import datetime
+from enum import Enum
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from typing import Any, Callable
 
 
 _REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "gpt-5.5": 400_000,
     "gpt-5.4": 400_000,
     "gpt-5.4-mini": 400_000,
     "gpt-5.3-codex": 400_000,
@@ -33,6 +39,36 @@ class CodexRunResult:
     return_code: int
 
 
+@dataclass(slots=True)
+class CodexCommandResult:
+    return_code: int
+    output: str
+    command: list[str]
+
+
+@dataclass(slots=True)
+class CodexAccountInfo:
+    codex_bin: str | None
+    auth_file: Path
+    config_file: Path
+    auth_mode: str
+    email: str
+    name: str | None
+    account_id: str | None
+    last_refresh: str | None
+    access_token_expires: str | None
+    id_token_expires: str | None
+    config_values: dict[str, Any]
+    usage_lines: list[str]
+    limit_warnings: list[str]
+    quota_note: str
+
+
+class CodexConfigIssue(str, Enum):
+    INVALID_SERVICE_TIER_DEFAULT = "invalid_service_tier_default"
+    UNSUPPORTED_SERVICE_TIER = "unsupported_service_tier"
+
+
 def detect_codex_bin() -> str | None:
     for candidate in ("codex.cmd", "codex"):
         resolved = shutil.which(candidate)
@@ -41,10 +77,272 @@ def detect_codex_bin() -> str | None:
     return None
 
 
-def run_codex_login(codex_bin: str) -> int:
-    proc = subprocess.run([codex_bin, "login"], text=True)
-    return int(proc.returncode)
+def _join_process_output(stdout: str | None, stderr: str | None) -> str:
+    return "\n".join(part.strip() for part in (stdout, stderr) if part and part.strip())
 
+
+def _run_codex_capture(cmd: list[str]) -> CodexCommandResult:
+    proc = subprocess.run(
+        cmd,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return CodexCommandResult(
+        return_code=int(proc.returncode),
+        output=_join_process_output(proc.stdout, proc.stderr),
+        command=cmd,
+    )
+
+
+def run_codex_login(codex_bin: str, args: list[str] | None = None, *, capture: bool = False) -> CodexCommandResult:
+    cmd = [codex_bin, "login", *(args or [])]
+    if capture:
+        return _run_codex_capture(cmd)
+    proc = subprocess.run(cmd, text=True)
+    return CodexCommandResult(return_code=int(proc.returncode), output="", command=cmd)
+
+
+def run_codex_logout(codex_bin: str, args: list[str] | None = None, *, capture: bool = False) -> CodexCommandResult:
+    cmd = [codex_bin, "logout", *(args or [])]
+    if capture:
+        return _run_codex_capture(cmd)
+    proc = subprocess.run(cmd, text=True)
+    return CodexCommandResult(return_code=int(proc.returncode), output="", command=cmd)
+
+
+def run_codex_login_status(codex_bin: str, args: list[str] | None = None) -> CodexCommandResult:
+    return _run_codex_capture([codex_bin, "login", "status", *(args or [])])
+
+
+def run_codex_doctor(codex_bin: str, args: list[str] | None = None, *, capture: bool = False) -> CodexCommandResult:
+    cmd = [codex_bin, "doctor", *(args or [])]
+    if capture:
+        return _run_codex_capture(cmd)
+    proc = subprocess.run(cmd, text=True)
+    return CodexCommandResult(return_code=int(proc.returncode), output="", command=cmd)
+
+
+def codex_config_path() -> Path:
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        return Path(codex_home).expanduser() / "config.toml"
+    return Path.home() / ".codex" / "config.toml"
+
+
+def codex_auth_path() -> Path:
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        return Path(codex_home).expanduser() / "auth.json"
+    return Path.home() / ".codex" / "auth.json"
+
+
+def _decode_jwt_payload(token: str | None) -> dict[str, Any]:
+    if not isinstance(token, str) or token.count(".") < 2:
+        return {}
+    payload = token.split(".", 2)[1]
+    payload += "=" * ((4 - len(payload) % 4) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+        data = json.loads(decoded.decode("utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _format_epoch(value: Any) -> str | None:
+    if not isinstance(value, (int, float)):
+        return None
+    try:
+        return datetime.fromtimestamp(value).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def _mask_identifier(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_auth(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_codex_account_info(
+    *,
+    codex_bin: str | None,
+    auth_path: Path | None = None,
+    config_path: Path | None = None,
+    last_usage_lines: list[str] | None = None,
+    last_warnings: list[str] | None = None,
+) -> str:
+    auth_file = auth_path or codex_auth_path()
+    config_file = config_path or codex_config_path()
+    auth = _read_auth(auth_file)
+    tokens = auth.get("tokens") if isinstance(auth.get("tokens"), dict) else {}
+    id_claims = _decode_jwt_payload(tokens.get("id_token"))
+    access_claims = _decode_jwt_payload(tokens.get("access_token"))
+    profile = access_claims.get("https://api.openai.com/profile")
+    profile = profile if isinstance(profile, dict) else {}
+    config = _read_toml(config_file)
+
+    email = id_claims.get("email") or profile.get("email")
+    name = id_claims.get("name") or id_claims.get("nickname") or id_claims.get("preferred_username")
+    account_id = tokens.get("account_id")
+    auth_mode = auth.get("auth_mode")
+    access_exp = _format_epoch(access_claims.get("exp"))
+    id_exp = _format_epoch(id_claims.get("exp"))
+    masked_account = _mask_identifier(account_id)
+
+    config_values: dict[str, Any] = {}
+    for key in ("model", "model_reasoning_effort", "approval_policy", "sandbox_mode", "service_tier", "web_search"):
+        value = config.get(key)
+        if value is not None:
+            config_values[key] = value
+    windows = config.get("windows")
+    if isinstance(windows, dict) and windows.get("sandbox") is not None:
+        config_values["windows.sandbox"] = windows["sandbox"]
+
+    usage = [line for line in (last_usage_lines or []) if isinstance(line, str) and line.strip()]
+    limit_warnings = [
+        line.strip()
+        for line in (last_warnings or [])
+        if isinstance(line, str)
+        and line.strip()
+        and any(token in line.lower() for token in ("usage", "rate", "limit", "quota", "credit"))
+    ]
+    return CodexAccountInfo(
+        codex_bin=codex_bin,
+        auth_file=auth_file,
+        config_file=config_file,
+        auth_mode=str(auth_mode or "unknown"),
+        email=str(email or "unknown"),
+        name=str(name) if name else None,
+        account_id=masked_account,
+        last_refresh=str(auth.get("last_refresh")) if auth.get("last_refresh") else None,
+        access_token_expires=access_exp,
+        id_token_expires=id_exp,
+        config_values=config_values,
+        usage_lines=usage,
+        limit_warnings=limit_warnings[-3:],
+        quota_note="Codex CLI does not expose a separate quota/rate-limit endpoint here; live quota errors and JSON event usage are shown after runs.",
+    )
+
+
+def build_codex_account_summary(
+    *,
+    codex_bin: str | None,
+    auth_path: Path | None = None,
+    config_path: Path | None = None,
+    last_usage_lines: list[str] | None = None,
+    last_warnings: list[str] | None = None,
+) -> str:
+    info = build_codex_account_info(
+        codex_bin=codex_bin,
+        auth_path=auth_path,
+        config_path=config_path,
+        last_usage_lines=last_usage_lines,
+        last_warnings=last_warnings,
+    )
+    lines = ["Codex account"]
+    if info.codex_bin:
+        lines.append(f"cli={info.codex_bin}")
+    lines.append(f"auth_file={info.auth_file}")
+    lines.append(f"config_file={info.config_file}")
+    lines.append(f"auth_mode={info.auth_mode}")
+    lines.append(f"email={info.email}")
+    if info.name:
+        lines.append(f"name={info.name}")
+    if info.account_id:
+        lines.append(f"account_id={info.account_id}")
+    if info.last_refresh:
+        lines.append(f"last_refresh={info.last_refresh}")
+    if info.access_token_expires:
+        lines.append(f"access_token_expires={info.access_token_expires}")
+    if info.id_token_expires:
+        lines.append(f"id_token_expires={info.id_token_expires}")
+
+    lines.append("")
+    lines.append("Codex config")
+    for key, value in info.config_values.items():
+        lines.append(f"{key}={value}")
+
+    lines.append("")
+    lines.append("Usage and limits")
+    if info.usage_lines:
+        lines.extend(info.usage_lines)
+    else:
+        lines.append("No run usage captured in this MTP session yet.")
+    if info.limit_warnings:
+        lines.append("Recent limit warnings:")
+        lines.extend(info.limit_warnings)
+    lines.append(info.quota_note)
+    return "\n".join(lines)
+
+
+def detect_codex_config_issue(output: str) -> CodexConfigIssue | None:
+    normalized = " ".join(output.lower().split())
+    if (
+        "service_tier" in normalized
+        and "unknown variant" in normalized
+        and "default" in normalized
+        and "fast" in normalized
+        and "flex" in normalized
+    ):
+        return CodexConfigIssue.INVALID_SERVICE_TIER_DEFAULT
+    if "unsupported service_tier" in normalized:
+        return CodexConfigIssue.UNSUPPORTED_SERVICE_TIER
+    return None
+
+
+def _codex_failure_hint(details: str) -> str:
+    issue = detect_codex_config_issue(details)
+    if issue is not None:
+        return "Fix Codex config: run /codex repair-config, then /codex status."
+    normalized = " ".join(details.lower().split())
+    if "usage limit" in normalized:
+        return "Codex is logged in, but the ChatGPT/Codex usage limit is currently exhausted. Wait until the reset time shown above or use another authorized account."
+    if "not logged in" in normalized or "login" in normalized and "required" in normalized:
+        return "Try: /codex login"
+    return "Try: /codex status or /codex doctor"
+
+
+def repair_codex_config_issue(issue: CodexConfigIssue, *, config_path: Path | None = None) -> str:
+    path = config_path or codex_config_path()
+    if issue not in {CodexConfigIssue.INVALID_SERVICE_TIER_DEFAULT, CodexConfigIssue.UNSUPPORTED_SERVICE_TIER}:
+        raise ValueError(f"Unsupported Codex config issue: {issue}")
+    if not path.exists():
+        raise FileNotFoundError(f"Codex config not found: {path}")
+    original = path.read_text(encoding="utf-8", errors="replace")
+    pattern = re.compile(r'(?m)^(\s*)service_tier\s*=\s*["\']([^"\']+)["\'](\s*(?:#.*)?)$')
+    if not pattern.search(original):
+        return f"No active service_tier entry found in {path}"
+    backup = path.with_suffix(path.suffix + ".bak")
+    if not backup.exists():
+        backup.write_text(original, encoding="utf-8")
+    repaired = pattern.sub(r'\1# service_tier = "\2"\3  # disabled by MTP: let Codex choose the supported account default', original)
+    path.write_text(repaired, encoding="utf-8")
+    return f"Updated {path}: commented out active service_tier. Backup: {backup}"
 
 def _format_int(n: int | None) -> str:
     if n is None:
@@ -670,9 +968,11 @@ def _build_codex_exec_command(
             str(output_path),
         ]
     
-    # Add sandbox mode flag
-    # Valid modes: read-only, workspace-write, danger-full-access
-    if sandbox_mode in ("read-only", "workspace-write", "danger-full-access"):
+    # Fresh `codex exec` accepts --sandbox. `codex exec resume` does not, but
+    # it does accept config overrides, so use the documented config key there.
+    if sandbox_mode in ("read-only", "workspace-write", "danger-full-access") and session_id:
+        cmd.extend(["-c", f'sandbox_mode="{sandbox_mode}"'])
+    elif sandbox_mode in ("read-only", "workspace-write", "danger-full-access"):
         cmd.extend(["--sandbox", sandbox_mode])
     
     if model:
@@ -750,13 +1050,8 @@ def run_codex_prompt(
         emit_live(kind, message)
 
     try:
-        # CRITICAL INSIGHT: codex exec resume maintains Codex's internal thread state,
-        # but our TUI has its own transcript that Codex doesn't know about.
-        # We need to ALWAYS inject history when available, regardless of session ID.
-        
-        # Build prompt with history if we have conversation history
         effective_prompt = prompt
-        if conversation_history and len(conversation_history) > 0:
+        if not previous_session_id and conversation_history:
             effective_prompt = _build_prompt_with_history(prompt, conversation_history)
             if emit_live:
                 emit_live("status", f"Injecting {len(conversation_history)} previous turns for context")
@@ -831,7 +1126,7 @@ def run_codex_prompt(
 
         if return_code != 0:
             details = stdout_text.strip()
-            hint = "Try: codex login"
+            hint = _codex_failure_hint(details)
             if details:
                 return CodexRunResult(
                     text=f"Codex exec failed (exit {return_code}).\n{details}\n{hint}",

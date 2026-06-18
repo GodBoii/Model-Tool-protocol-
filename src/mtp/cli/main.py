@@ -291,7 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tui_cmd.add_argument(
         "--codex-model",
-        default="gpt-5.3-codex",
+        default="gpt-5.5",
         help="Model for Codex backend.",
     )
     tui_cmd.add_argument("--openai-model", default="gpt-5.4-mini", help="Initial model for the OpenAI MTP backend.")
