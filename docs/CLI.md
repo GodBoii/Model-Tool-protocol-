@@ -248,7 +248,7 @@ Codex continuity behavior:
 - If a saved Codex thread is no longer resumable, TUI falls back to a fresh Codex session and records a warning.
 
 Default TUI model settings:
-- codex backend model: `gpt-5.4-codex`
+- codex backend model: `gpt-5.5`
 - MTP providers: Each has a default model (e.g., `gpt-4o` for OpenAI, `llama-3.3-70b-versatile` for Groq)
 - default reasoning effort: `medium` (Codex only)
 - default autoresearch: `off` (MTP providers only)
@@ -301,14 +301,20 @@ Inside TUI:
 
 **Session & Info:**
 - `/status` - Show current session status
-- `/codex-login` - Run official codex login flow
+- `/codex login` - Run official Codex ChatGPT login flow
+- `/codex logout` - Remove stored Codex credentials
+- `/codex status` - Show Codex login status
+- `/codex account` - Show Codex login email, profile metadata, config, and last captured usage/rate lines
+- `/codex doctor` - Run Codex diagnostics
+- `/codex repair-config` - Repair known Codex config issues
+- `/codex-login` - Compatibility alias for `/codex login`
 - `/exit` - Exit TUI
 
 Model shortcuts (Codex only):
-- `1 -> gpt-5.4`
-- `2 -> gpt-5.4-mini`
-- `3 -> gpt-5.3-codex`
-- `4 -> gpt-5.2`
+- `1 -> gpt-5.5`
+- `2 -> gpt-5.4`
+- `3 -> gpt-5.4-mini`
+- `4 -> gpt-5.3-codex`
 
 For MTP providers, use full model names or add custom models with `/model add <provider> <name>`.
 
