@@ -264,10 +264,6 @@ class MCPHTTPTransportServer:
                     break
 
         token = _parse_bearer_token(headers.get("Authorization", ""))
-        if token is None:
-            values = qs.get("auth_token")
-            if values and values[0]:
-                token = _normalize_optional_string(values[0])
         return session_id, _token_fingerprint(token)
 
     def start(self) -> None:
@@ -553,10 +549,6 @@ class MCPWebSocketTransportServer:
                     break
 
         token = _parse_bearer_token(headers.get("Authorization", ""))
-        if token is None:
-            values = qs.get("auth_token")
-            if values and values[0]:
-                token = _normalize_optional_string(values[0])
         auth_fingerprint = _token_fingerprint(token)
         since_id = self._parse_resume_cursor(qs, headers)
         return session_id, auth_fingerprint, since_id

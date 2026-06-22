@@ -113,6 +113,11 @@ class MCPJsonRpcServer:
         self.instructions = instructions or (
             "This MCP compatibility server exposes MTP tools through JSON-RPC methods."
         )
+        if require_auth and auth_token is None and auth_validator is None and auth_provider is None:
+            raise ValueError(
+                "require_auth=True requires auth_token, auth_validator, or auth_provider. "
+                "Refusing to accept arbitrary non-empty tokens."
+            )
         self.require_auth = require_auth
         self.auth_token = auth_token
         self.auth_validator = auth_validator
@@ -327,7 +332,7 @@ class MCPJsonRpcServer:
             return bool(self.auth_validator(token, request))
         if self.auth_token is not None:
             return token == self.auth_token
-        return token is not None
+        return False
 
     def _extract_auth_token(self, request: JsonDict) -> str | None:
         token: str | None = None
@@ -392,7 +397,7 @@ class MCPJsonRpcServer:
             return MCPAuthDecision(allowed=bool(self.auth_validator(token, request)))
         if self.auth_token is not None:
             return MCPAuthDecision(allowed=token == self.auth_token)
-        return MCPAuthDecision(allowed=token is not None)
+        return MCPAuthDecision(allowed=False)
 
     async def _authorized_async(
         self,
@@ -414,7 +419,7 @@ class MCPJsonRpcServer:
             return MCPAuthDecision(allowed=bool(self.auth_validator(token, request)))
         if self.auth_token is not None:
             return MCPAuthDecision(allowed=token == self.auth_token)
-        return MCPAuthDecision(allowed=token is not None)
+        return MCPAuthDecision(allowed=False)
 
     def _dispatch(self, method: str, params: JsonDict, *, request_id: Any = None) -> JsonDict:
         if method == "ping":

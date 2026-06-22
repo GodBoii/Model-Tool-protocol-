@@ -49,8 +49,10 @@ PROVIDER_LABELS: dict[str, str] = {
 }
 
 DEFAULT_SHELL_COMMANDS = (
-    "echo,pwd,ls,dir,cat,type,python,py,pip,pytest,node,npm,npx,git,rg"
+    "echo,pwd,ls,dir,cat,type,rg"
 )
+
+DEFAULT_ENABLED_TOOLKITS = ("calculator", "file")
 
 TOOLKIT_LABELS: dict[str, str] = {
     "calculator": "Calculator",
@@ -719,7 +721,7 @@ def _sidebar_config() -> AppConfig:
         max_rounds = st.slider("Max Rounds", min_value=1, max_value=100, value=8, step=1)
 
         st.subheader("Tools")
-        enabled_toolkits = _tool_multiselect(default_enabled=list(TOOLKIT_LABELS))
+        enabled_toolkits = _tool_multiselect(default_enabled=list(DEFAULT_ENABLED_TOOLKITS))
         shell_allowed_commands = st.text_input(
             "Shell Allowed Commands",
             value=DEFAULT_SHELL_COMMANDS,
