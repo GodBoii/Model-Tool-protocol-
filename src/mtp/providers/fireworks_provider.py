@@ -5,18 +5,15 @@ from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
-from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     USAGE_METRICS_RICH,
-    calls_to_dependency_batches,
-    extract_refs,
     extract_usage_metrics,
     format_openai_like_message,
-    normalize_refs,
-    safe_load_arguments,
+    openai_like_tool_call_plan_payload,
 )
 
 
@@ -179,48 +176,18 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             action_meta["usage"] = usage
 
         if tool_calls:
-            mtp_calls: list[ToolCall] = []
-            id_by_index: dict[int, str] = {}
-            serialized_tool_calls: list[dict[str, Any]] = []
-
-            for idx, tc in enumerate(tool_calls):
-                call_id = tc.id or f"call_{idx}"
-                id_by_index[idx] = call_id
-                parsed_args = safe_load_arguments(tc.function.arguments)
-                normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
-                depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
-                mtp_calls.append(
-                    ToolCall(
-                        id=call_id,
-                        name=tc.function.name,
-                        arguments=normalized_args,
-                        depends_on=depends_on,
-                    )
-                )
-                serialized_tool_calls.append(
-                    {
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments or "{}",
-                        },
-                    }
-                )
-
-            plan = ExecutionPlan(
-                batches=calls_to_dependency_batches(mtp_calls),
-                metadata={"provider": "fireworks", "model": self.model},
+            payload = openai_like_tool_call_plan_payload(
+                provider="fireworks",
+                model=self.model,
+                tool_calls=list(tool_calls),
+                content=message.content or "",
+                use_current_index_refs=True,
             )
             return AgentAction(
-                plan=plan,
+                plan=payload["plan"],
                 metadata={
                     **action_meta,
-                    "assistant_tool_message": {
-                        "role": "assistant",
-                        "content": message.content or "",
-                        "tool_calls": serialized_tool_calls,
-                    },
+                    **payload["metadata"],
                 },
             )
 

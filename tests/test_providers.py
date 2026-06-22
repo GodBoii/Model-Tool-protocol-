@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from mtp.providers.simple_planner import SimplePlannerProvider
 from mtp.providers.mock import MockPlannerProvider
+from mtp.providers.fireworks_provider import FireworksAIToolCallingProvider
 from mtp.providers.groq_provider import GroqToolCallingProvider
+from mtp.providers.together_provider import TogetherAIToolCallingProvider
 from mtp.protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from mtp.providers.common import ProviderCapabilities
 from mtp.providers.common import openai_like_tool_call_plan_payload
@@ -123,3 +127,53 @@ class TestGroqProviderTranslation:
         assert second_call.depends_on == ["call_0"]
         assert action.metadata["raw_tool_call_count"] == 2
         assert action.metadata["assistant_tool_message"]["reasoning"] == "calculate then save"
+
+
+class _FakeChatClient:
+    def __init__(self, response):
+        self.response = response
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+        self.requests: list[dict] = []
+
+    def _create(self, **kwargs):
+        self.requests.append(kwargs)
+        return self.response
+
+
+def _tool_call_response():
+    first = SimpleNamespace(
+        id="call_0",
+        function=SimpleNamespace(name="math.add", arguments='{"a": 1, "b": 2}'),
+    )
+    second = SimpleNamespace(
+        id="call_1",
+        function=SimpleNamespace(name="store.save", arguments='{"value": {"$ref": "last"}}'),
+    )
+    message = SimpleNamespace(content="using tools", tool_calls=[first, second])
+    return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+
+@pytest.mark.parametrize(
+    ("provider_cls", "provider_name"),
+    [
+        (TogetherAIToolCallingProvider, "together"),
+        (FireworksAIToolCallingProvider, "fireworks"),
+    ],
+)
+def test_openai_compatible_provider_next_action_uses_shared_translation(provider_cls, provider_name):
+    client = _FakeChatClient(_tool_call_response())
+    provider = provider_cls(model="unit-model", client=client)
+
+    action = provider.next_action(
+        [{"role": "user", "content": "add then save"}],
+        [ToolSpec(name="math.add", description="add"), ToolSpec(name="store.save", description="save")],
+    )
+
+    assert action.plan is not None
+    assert action.plan.metadata == {"provider": provider_name, "model": "unit-model"}
+    assert action.metadata["raw_tool_call_count"] == 2
+    assert action.metadata["derived_batch_modes"] == ["sequential", "sequential"]
+    assert action.metadata["assistant_tool_message"]["content"] == "using tools"
+    second_call = action.plan.batches[1].calls[0]
+    assert second_call.arguments == {"value": {"$ref": "call_0"}}
+    assert second_call.depends_on == ["call_0"]
