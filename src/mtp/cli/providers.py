@@ -30,7 +30,7 @@ PROVIDERS: list[ProviderInfo] = [
     ProviderInfo("sambanova", "SambaNova", "SambaNovaToolCallingProvider", "openai", "SAMBANOVA_API_KEY"),
     ProviderInfo("cerebras", "Cerebras", "CerebrasToolCallingProvider", "openai", "CEREBRAS_API_KEY"),
     ProviderInfo("deepseek", "DeepSeek", "DeepSeekToolCallingProvider", "openai", "DEEPSEEK_API_KEY"),
-    ProviderInfo("mistral", "Mistral", "MistralToolCallingProvider", "openai", "MISTRAL_API_KEY"),
+    ProviderInfo("mistral", "Mistral", "MistralToolCallingProvider", "mistralai", "MISTRAL_API_KEY"),
     ProviderInfo("cohere", "Cohere", "CohereToolCallingProvider", "cohere", "COHERE_API_KEY"),
     ProviderInfo("togetherai", "TogetherAI", "TogetherAIToolCallingProvider", "openai", "TOGETHER_API_KEY"),
     ProviderInfo("fireworksai", "FireworksAI", "FireworksAIToolCallingProvider", "openai", "FIREWORKS_API_KEY"),

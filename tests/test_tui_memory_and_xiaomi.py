@@ -6,6 +6,8 @@ import pytest
 
 from mtp.codebase.memory import CodebaseMemory
 from mtp.providers.xiaomi_provider import XiaomiToolCallingProvider
+from mtp.cli.providers import get_provider
+from mtp.cli.tui_state import BACKENDS
 
 
 def test_codebase_memory_search_does_not_auto_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,6 +23,17 @@ def test_codebase_memory_search_does_not_auto_refresh(tmp_path: Path, monkeypatc
     monkeypatch.setattr(memory, "refresh_changed", _unexpected_refresh)
     hits = memory.search("greet")
     assert hits
+
+
+def test_tui_state_includes_local_backends() -> None:
+    assert "ollama" in BACKENDS
+    assert "lmstudio" in BACKENDS
+
+
+def test_mistral_provider_metadata_uses_mistralai_sdk() -> None:
+    provider = get_provider("mistral")
+    assert provider is not None
+    assert provider.sdk_module == "mistralai"
 
 
 @pytest.mark.asyncio

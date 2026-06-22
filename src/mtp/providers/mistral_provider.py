@@ -17,7 +17,6 @@ from .common import (
     normalize_refs,
     safe_load_arguments,
 )
-from mistralai.client import Mistral
 
 class MistralToolCallingProvider(ProviderAdapter):
     """
@@ -42,6 +41,15 @@ class MistralToolCallingProvider(ProviderAdapter):
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            try:
+                from mistralai.client import Mistral  # type: ignore[no-redef]
+            except ImportError as exc:
+                raise ImportError(
+                    "`mistralai` not installed. Please install using `pip install mistralai`"
+                ) from exc
         key = api_key or require_env("MISTRAL_API_KEY")
         return Mistral(api_key=key)
 
