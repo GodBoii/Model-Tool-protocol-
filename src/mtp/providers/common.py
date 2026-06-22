@@ -10,7 +10,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 from ..media import Audio, File, Image, Video
-from ..protocol import ToolBatch, ToolCall, ToolSpec
+from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolSpec
 
 USAGE_METRICS_NONE = "none"
 USAGE_METRICS_BASIC = "basic"
@@ -309,6 +309,87 @@ def calls_to_dependency_batches(calls: list[ToolCall]) -> list[ToolBatch]:
         done.update(ready_ids)
 
     return batches
+
+
+def openai_like_tool_call_plan_payload(
+    *,
+    provider: str,
+    model: str,
+    tool_calls: list[Any],
+    content: str = "",
+    reasoning: str | None = None,
+    tool_call_source: str | None = None,
+    use_current_index_refs: bool = False,
+) -> dict[str, Any]:
+    mtp_calls: list[ToolCall] = []
+    serialized_tool_calls: list[dict[str, Any]] = []
+    parsed_calls: list[tuple[int, str, str, dict[str, Any], str]] = []
+    id_by_index: dict[int, str] = {}
+    call_reasoning = reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
+
+    for idx, tc in enumerate(tool_calls):
+        if isinstance(tc, dict):
+            function = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+            fn_name = str(function.get("name") or tc.get("name") or "")
+            raw_args_value = function.get("arguments") or tc.get("arguments") or "{}"
+            parsed_args = tc.get("arguments") if isinstance(tc.get("arguments"), dict) else None
+            raw_args = raw_args_value if isinstance(raw_args_value, str) else json.dumps(raw_args_value, default=str)
+            call_id = str(tc.get("id") or f"call_{idx}")
+        else:
+            function = getattr(tc, "function", None)
+            fn_name = str(getattr(function, "name", "") or "")
+            raw_args_value = getattr(function, "arguments", None) or "{}"
+            parsed_args = None
+            raw_args = raw_args_value if isinstance(raw_args_value, str) else json.dumps(raw_args_value, default=str)
+            call_id = str(getattr(tc, "id", None) or f"call_{idx}")
+        if not fn_name:
+            raise RuntimeError(f"{provider} tool call {call_id!r} is missing a function name.")
+        id_by_index[idx] = call_id
+        if parsed_args is None:
+            parsed_args = safe_load_arguments(raw_args)
+        parsed_calls.append((idx, call_id, fn_name, parsed_args, raw_args))
+        serialized_tool_calls.append(
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": fn_name, "arguments": raw_args or "{}"},
+                "reasoning": call_reasoning,
+            }
+        )
+
+    for idx, call_id, fn_name, parsed_args, _raw_args in parsed_calls:
+        current_idx = idx if use_current_index_refs else None
+        normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=current_idx)
+        depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
+        mtp_calls.append(
+            ToolCall(
+                id=call_id,
+                name=fn_name,
+                arguments=normalized_args,
+                depends_on=depends_on,
+                reasoning=call_reasoning,
+            )
+        )
+
+    plan = ExecutionPlan(
+        batches=calls_to_dependency_batches(mtp_calls),
+        metadata={"provider": provider, "model": model},
+    )
+    metadata: dict[str, Any] = {
+        "raw_tool_call_count": len(tool_calls),
+        "derived_batch_count": len(plan.batches),
+        "derived_batch_modes": [batch.mode for batch in plan.batches],
+        "assistant_tool_message": {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": serialized_tool_calls,
+        },
+    }
+    if tool_call_source:
+        metadata["tool_call_source"] = tool_call_source
+    if call_reasoning:
+        metadata["assistant_tool_message"]["reasoning"] = call_reasoning
+    return {"plan": plan, "metadata": metadata}
 
 
 def _message_content_text(content: Any) -> str:

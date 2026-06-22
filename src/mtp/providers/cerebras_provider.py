@@ -13,6 +13,7 @@ from .common import (
     extract_refs,
     extract_usage_metrics,
     format_openai_like_message,
+    openai_like_tool_call_plan_payload,
     normalize_refs,
     safe_load_arguments,
 )
@@ -136,49 +137,17 @@ class CerebrasToolCallingProvider(ProviderAdapter):
             action_meta["usage"] = usage
 
         if tool_calls:
-            mtp_calls: list[ToolCall] = []
-            id_by_index: dict[int, str] = {}
-            serialized_tool_calls: list[dict[str, Any]] = []
-
-            for idx, tc in enumerate(tool_calls):
-                call_id = tc.id or f"call_{idx}"
-                id_by_index[idx] = call_id
-                parsed_args = safe_load_arguments(tc.function.arguments)
-                normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
-                depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
-                mtp_calls.append(
-                    ToolCall(
-                        id=call_id,
-                        name=tc.function.name,
-                        arguments=normalized_args,
-                        depends_on=depends_on,
-                    )
-                )
-                serialized_tool_calls.append(
-                    {
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments or "{}",
-                        },
-                    }
-                )
-
-            plan = ExecutionPlan(
-                batches=calls_to_dependency_batches(mtp_calls),
-                metadata={"provider": "cerebras", "model": self.model},
+            payload = openai_like_tool_call_plan_payload(
+                provider="cerebras",
+                model=self.model,
+                tool_calls=list(tool_calls),
+                content=message.content or "",
+                tool_call_source="native_tool_calls",
+                use_current_index_refs=True,
             )
             return AgentAction(
-                plan=plan,
-                metadata={
-                    **action_meta,
-                    "assistant_tool_message": {
-                        "role": "assistant",
-                        "content": message.content or "",
-                        "tool_calls": serialized_tool_calls,
-                    },
-                },
+                plan=payload["plan"],
+                metadata={**action_meta, **payload["metadata"]},
             )
 
         return AgentAction(response_text=message.content or "", metadata=action_meta)
