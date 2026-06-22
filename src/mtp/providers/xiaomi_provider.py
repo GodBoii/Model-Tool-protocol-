@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Iterator
 from typing import Any
 
@@ -19,6 +20,8 @@ from .common import (
     safe_load_arguments,
 )
 
+DEFAULT_XIAOMI_BASE_URL = "https://token-plan-ams.xiaomimimo.com/v1"
+
 
 class XiaomiToolCallingProvider(ProviderAdapter):
     """
@@ -33,19 +36,24 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         *,
         model: str = "mimo-v2.5-pro",
         api_key: str | None = None,
-        base_url: str = "https://token-plan-ams.xiaomimimo.com/v1",
+        base_url: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
         thinking_mode: str = "adaptive",
         final_thinking_mode: str | None = "enabled",
+        timeout_seconds: float = 60.0,
         client: Any | None = None,
     ) -> None:
         self.model = model
-        self.base_url = base_url.rstrip("/")
+        resolved_base_url = base_url or os.getenv("MIMO_BASE_URL") or DEFAULT_XIAOMI_BASE_URL
+        self.base_url = resolved_base_url.strip().rstrip("/")
+        if not self.base_url:
+            raise ValueError("Xiaomi base_url cannot be empty.")
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self.timeout_seconds = float(timeout_seconds)
         self.thinking_mode = self._normalize_thinking_mode(thinking_mode, field_name="thinking_mode")
         self.final_thinking_mode = self._normalize_thinking_mode(
             final_thinking_mode,
@@ -89,7 +97,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
             ) from exc
 
         key = api_key or require_env("MIMO_API_KEY")
-        return OpenAI(base_url=self.base_url, api_key=key, timeout=60.0)
+        return OpenAI(base_url=self.base_url, api_key=key, timeout=self.timeout_seconds)
 
     def _to_xiaomi_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         formatted: list[dict[str, Any]] = []
@@ -178,8 +186,11 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         try:
             return self._client.chat.completions.create(**request_args)
         except TypeError:
-            request_args.pop("parallel_tool_calls", None)
-            return self._client.chat.completions.create(**request_args)
+            if "parallel_tool_calls" not in request_args:
+                raise
+            fallback_args = dict(request_args)
+            fallback_args.pop("parallel_tool_calls", None)
+            return self._client.chat.completions.create(**fallback_args)
 
     @staticmethod
     def _first_choice_message(response: Any) -> Any:
