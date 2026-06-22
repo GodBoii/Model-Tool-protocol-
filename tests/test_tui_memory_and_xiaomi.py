@@ -87,3 +87,32 @@ def test_xiaomi_parallel_tool_fallback_does_not_mutate_request_args() -> None:
     assert request_args["parallel_tool_calls"] is True
     assert "parallel_tool_calls" in client.chat.completions.calls[0]
     assert "parallel_tool_calls" not in client.chat.completions.calls[1]
+
+
+def test_xiaomi_tool_action_uses_shared_translation_and_preserves_reasoning_content() -> None:
+    provider = XiaomiToolCallingProvider(api_key="test-key", client=object())
+
+    action = provider._tool_action_from_calls(
+        tool_calls=[
+            {
+                "id": "call_0",
+                "function": {"name": "math.add", "arguments": '{"a": 1, "b": 2}'},
+            },
+            {
+                "id": "call_1",
+                "function": {"name": "store.save", "arguments": '{"value": {"$ref": "last"}}'},
+            },
+        ],
+        content="using tools",
+        reasoning="reason through the call",
+        usage={"total_tokens": 12},
+        tool_call_source="native_tool_calls",
+    )
+
+    assert action.plan is not None
+    assert action.metadata["usage"] == {"total_tokens": 12}
+    assert action.metadata["assistant_tool_message"]["reasoning"] == "reason through the call"
+    assert action.metadata["assistant_tool_message"]["reasoning_content"] == "reason through the call"
+    second_call = action.plan.batches[1].calls[0]
+    assert second_call.arguments == {"value": {"$ref": "call_0"}}
+    assert second_call.depends_on == ["call_0"]

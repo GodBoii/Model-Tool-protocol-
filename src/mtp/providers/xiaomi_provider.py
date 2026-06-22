@@ -7,17 +7,14 @@ from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
-from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     USAGE_METRICS_RICH,
-    calls_to_dependency_batches,
-    extract_refs,
     extract_usage_metrics,
     format_openai_like_message,
-    normalize_refs,
-    safe_load_arguments,
+    openai_like_tool_call_plan_payload,
 )
 
 DEFAULT_XIAOMI_BASE_URL = "https://token-plan-ams.xiaomimimo.com/v1"
@@ -242,69 +239,22 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         if reasoning:
             action_meta["reasoning"] = reasoning
 
-        mtp_calls: list[ToolCall] = []
-        id_by_index: dict[int, str] = {}
-        serialized_tool_calls: list[dict[str, Any]] = []
-        call_reasoning = reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
-
-        for idx, tc in enumerate(tool_calls):
-            if isinstance(tc, dict):
-                call_id = str(tc.get("id") or f"call_{idx}")
-                function = tc.get("function") if isinstance(tc.get("function"), dict) else {}
-                tool_name = str(function.get("name") or tc.get("name") or "")
-                raw_arguments = function.get("arguments") or tc.get("arguments") or "{}"
-            else:
-                function = getattr(tc, "function", None)
-                call_id = getattr(tc, "id", None) or f"call_{idx}"
-                tool_name = getattr(function, "name", "")
-                raw_arguments = getattr(function, "arguments", None) or "{}"
-            if not tool_name:
-                raise RuntimeError(f"Xiaomi tool call {call_id!r} is missing a function name.")
-            id_by_index[idx] = call_id
-            parsed_args = safe_load_arguments(raw_arguments)
-            if isinstance(tc, dict) and isinstance(tc.get("arguments"), dict):
-                parsed_args = tc["arguments"]
-            normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
-            depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
-            mtp_calls.append(
-                ToolCall(
-                    id=call_id,
-                    name=tool_name,
-                    arguments=normalized_args,
-                    depends_on=depends_on,
-                    reasoning=call_reasoning,
-                )
-            )
-            serialized_tool_calls.append(
-                {
-                    "id": call_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": raw_arguments if isinstance(raw_arguments, str) else "{}",
-                    },
-                    "reasoning": call_reasoning,
-                }
-            )
-
-        plan = ExecutionPlan(
-            batches=calls_to_dependency_batches(mtp_calls),
-            metadata={"provider": "xiaomi", "model": self.model},
+        payload = openai_like_tool_call_plan_payload(
+            provider="xiaomi",
+            model=self.model,
+            tool_calls=tool_calls,
+            content=content,
+            reasoning=reasoning,
+            tool_call_source=tool_call_source,
+            use_current_index_refs=True,
         )
-        derived_batch_modes = [batch.mode for batch in plan.batches]
+        if reasoning:
+            payload["metadata"]["assistant_tool_message"]["reasoning_content"] = reasoning
         return AgentAction(
-            plan=plan,
+            plan=payload["plan"],
             metadata={
                 **action_meta,
-                "tool_call_source": tool_call_source,
-                "raw_tool_call_count": len(tool_calls),
-                "derived_batch_count": len(plan.batches),
-                "derived_batch_modes": derived_batch_modes,
-                "assistant_tool_message": self._assistant_message(
-                    content=content,
-                    tool_calls=serialized_tool_calls,
-                    reasoning=reasoning,
-                ),
+                **payload["metadata"],
             },
         )
 
