@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
-from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     USAGE_METRICS_RICH,
-    calls_to_dependency_batches,
-    extract_refs,
     extract_usage_metrics,
     format_openai_like_message,
-    normalize_refs,
-    safe_load_arguments,
+    openai_like_tool_call_plan_payload,
 )
 
 
@@ -195,73 +191,20 @@ class GroqToolCallingProvider(ProviderAdapter):
         action_meta: dict[str, Any],
         tool_call_source: str,
     ) -> AgentAction:
-        mtp_calls: list[ToolCall] = []
-        serialized_tool_calls: list[dict[str, Any]] = []
-        parsed_calls: list[tuple[int, str, str, dict[str, Any], str]] = []
-        id_by_index: dict[int, str] = {}
-        call_reasoning = reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
-
-        for idx, tc in enumerate(tool_calls):
-            if isinstance(tc, dict):
-                function = tc.get("function") if isinstance(tc.get("function"), dict) else {}
-                fn_name = str(function.get("name") or tc.get("name") or "")
-                raw_args_value = function.get("arguments") or tc.get("arguments") or "{}"
-                parsed_args = tc.get("arguments") if isinstance(tc.get("arguments"), dict) else None
-                raw_args = raw_args_value if isinstance(raw_args_value, str) else json.dumps(raw_args_value, default=str)
-                call_id = str(tc.get("id") or f"call_{idx}")
-            else:
-                function = getattr(tc, "function", None)
-                fn_name = getattr(function, "name", "")
-                raw_args = getattr(function, "arguments", None) or "{}"
-                parsed_args = None
-                call_id = getattr(tc, "id", None) or f"call_{idx}"
-            if not fn_name:
-                raise RuntimeError(f"Groq tool call {call_id!r} is missing a function name.")
-            id_by_index[idx] = call_id
-            if parsed_args is None:
-                parsed_args = safe_load_arguments(raw_args)
-            parsed_calls.append((idx, call_id, fn_name, parsed_args, raw_args))
-            serialized_tool_calls.append(
-                {
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": fn_name, "arguments": raw_args},
-                    "reasoning": call_reasoning,
-                }
-            )
-
-        for idx, call_id, fn_name, parsed_args, _raw_args in parsed_calls:
-            normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
-            depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
-            mtp_calls.append(
-                ToolCall(
-                    id=call_id,
-                    name=fn_name,
-                    arguments=normalized_args,
-                    depends_on=depends_on,
-                    reasoning=call_reasoning,
-                )
-            )
-
-        plan = ExecutionPlan(
-            batches=calls_to_dependency_batches(mtp_calls),
-            metadata={"provider": "groq", "model": self.model},
+        payload = openai_like_tool_call_plan_payload(
+            provider="groq",
+            model=self.model,
+            tool_calls=tool_calls,
+            content=content,
+            reasoning=reasoning,
+            tool_call_source=tool_call_source,
+            use_current_index_refs=True,
         )
-        derived_batch_modes = [batch.mode for batch in plan.batches]
         return AgentAction(
-            plan=plan,
+            plan=payload["plan"],
             metadata={
                 **action_meta,
-                "tool_call_source": tool_call_source,
-                "raw_tool_call_count": len(tool_calls),
-                "derived_batch_count": len(plan.batches),
-                "derived_batch_modes": derived_batch_modes,
-                "assistant_tool_message": {
-                    "role": "assistant",
-                    "content": content,
-                    "tool_calls": serialized_tool_calls,
-                    "reasoning": reasoning,
-                },
+                **payload["metadata"],
             },
         )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from mtp.providers.simple_planner import SimplePlannerProvider
 from mtp.providers.mock import MockPlannerProvider
+from mtp.providers.groq_provider import GroqToolCallingProvider
 from mtp.protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from mtp.providers.common import ProviderCapabilities
 from mtp.providers.common import openai_like_tool_call_plan_payload
@@ -93,3 +94,32 @@ class TestProviderTranslationHelpers:
         assert metadata["raw_tool_call_count"] == 1
         assert metadata["derived_batch_modes"] == ["sequential"]
         assert metadata["assistant_tool_message"]["content"] == "using a tool"
+
+
+class TestGroqProviderTranslation:
+    def test_tool_action_uses_shared_openai_like_translation(self):
+        provider = GroqToolCallingProvider(model="unit-model", client=object())
+        action = provider._tool_action_from_calls(
+            tool_calls=[
+                {
+                    "id": "call_0",
+                    "function": {"name": "math.add", "arguments": '{"a": 1, "b": 2}'},
+                },
+                {
+                    "id": "call_1",
+                    "function": {"name": "store.save", "arguments": '{"value": {"$ref": "last"}}'},
+                },
+            ],
+            content="using tools",
+            reasoning="calculate then save",
+            action_meta={"provider": "groq", "model": "unit-model"},
+            tool_call_source="native_tool_calls",
+        )
+
+        assert action.plan is not None
+        assert [batch.calls[0].id for batch in action.plan.batches] == ["call_0", "call_1"]
+        second_call = action.plan.batches[1].calls[0]
+        assert second_call.arguments == {"value": {"$ref": "call_0"}}
+        assert second_call.depends_on == ["call_0"]
+        assert action.metadata["raw_tool_call_count"] == 2
+        assert action.metadata["assistant_tool_message"]["reasoning"] == "calculate then save"
