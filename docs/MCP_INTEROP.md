@@ -65,6 +65,14 @@ Progress/Cancellation:
 
 This enables OAuth-style challenge responses without hard-coding one auth backend into core MCP code.
 
+`require_auth=True` is fail-closed. You must also pass one of:
+
+- `auth_token="shared-secret"`
+- `auth_validator=callable`
+- `auth_provider=provider`
+
+MTP refuses `require_auth=True` by itself because accepting any non-empty token is not meaningful authentication.
+
 Example:
 
 ```python
@@ -129,6 +137,7 @@ Important:
   - request/response header: `MCP-Session-Id`
 - bearer token propagation:
   - `Authorization: Bearer <token>` -> `params.auth_token`
+  - query-string auth tokens are intentionally ignored; do not put bearer tokens in URLs
 - auth challenge propagation:
   - JSON-RPC auth error `error.data.www_authenticate` -> HTTP `WWW-Authenticate` header
 - progress event polling endpoint:

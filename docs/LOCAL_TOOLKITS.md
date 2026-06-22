@@ -80,6 +80,11 @@ Dependency:
 Dependencies:
 - `pip install requests beautifulsoup4`
 
+`WebsiteToolkit` accepts only `http` and `https` URLs. By default it refuses
+localhost, private, link-local, multicast, reserved, and unresolved targets to
+reduce SSRF risk when agents can choose URLs. Use `allowed_hosts={...}` for a
+public allowlist, or `allow_private_hosts=True` only in trusted local workflows.
+
 ## `newspaper.*`
 - `newspaper.get_article_text`
 

@@ -60,6 +60,10 @@ agent.run("Remember my codename is Atlas.", session_id="chat-1", user_id="u1")
 agent.run("What is my codename?", session_id="chat-1", user_id="u1")
 ```
 
+When a stored session has `user_id`, later reads must provide the same `user_id`.
+This applies to JSON, PostgreSQL, and MySQL stores and prevents accidental
+cross-user reads when session IDs are reused or exposed.
+
 **TUI Default Storage:**
 The MTP TUI uses centralized JSON storage by default:
 - **Location**: `~/.mtp/sessions/` (user home directory)
