@@ -1,270 +1,230 @@
- MTPX (Model Tool Protocol Extended)
+# MTPX
 
 [![PyPI version](https://badge.fury.io/py/mtpx.svg)](https://pypi.org/project/mtpx/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-MTPX is a protocol-first Python library for agent tool orchestration, built to support:
-- Lazy tool loading by toolkit/category.
-- Dependency-aware batch tool execution.
-- Policy-aware execution based on tool risk.
-- Multi-round model-tool-model loops.
-- Provider adapters (now including Groq, Gemini, OpenAi, Anthropic, Openrouter, etc.).
-- Transport primitives (stdio + HTTP + optional WebSocket envelope transport).
-- Experimental MCP JSON-RPC adapter over the same runtime core.
+MTPX is a Python SDK and CLI for building agents that can use tools without turning your application into a pile of prompt glue.
 
-## Direction
+It gives you a small runtime for model-tool-model loops, provider adapters for popular LLM APIs, local toolkits for files and code work, session storage, streaming events, and MCP-compatible transports when you need interoperability.
 
-This project has two explicit layers:
+## Why MTPX
 
-- `MTP protocol`: protocol entities and execution semantics.
-- `MTP Agent SDK`: framework/runtime/providers/toolkits/transports built on top of MTP.
+- Build agents with explicit tool contracts instead of hidden ad hoc callbacks.
+- Run dependency-aware batches of tool calls, including references between calls.
+- Swap providers without rewriting your agent loop.
+- Stream text, reasoning, tool events, and usage metadata from one runtime.
+- Persist sessions in JSON, Postgres, or MySQL.
+- Expose the same tools through SDK code, a CLI/TUI, Streamlit Agent OS, or MCP JSON-RPC.
 
-MCP support is an interoperability capability, not the product identity.
-
-Canonical direction document:
-- [Project Direction](docs/PROJECT_DIRECTION.md)
-
-## Quickstart
+MTPX is still alpha, but the shape is practical: install it, register tools, choose a provider, and start building.
 
 ## Install
-
-### From PyPI (recommended)
 
 ```bash
 pip install mtpx
 ```
 
-Common optional installs:
+Common extras:
 
 ```bash
-# Groq + dotenv helper
 pip install "mtpx[groq,dotenv]"
-
-# LM Studio local inference
-pip install "mtpx[lmstudio]"
-
-# Ollama local inference
-pip install "mtpx[ollama]"
-
-# OpenAI + Anthropic providers
 pip install "mtpx[openai,anthropic,dotenv]"
-
-# Web toolkits
+pip install "mtpx[ollama,lmstudio]"
 pip install "mtpx[toolkits-web]"
-
-# Database session stores
 pip install "mtpx[stores-db]"
-
-# Everything optional
 pip install "mtpx[all]"
 ```
 
-`python-dotenv` is optional. MTP does not auto-read `.env` files unless you install the dotenv extra and call `Agent.load_dotenv_if_available()`, or you load env vars yourself.
-
-Verify installation:
-```bash
-python -c "import mtp; print(f'MTPX version {mtp.__version__} installed successfully!')"
-```
-
-### From source (for development)
+From source:
 
 ```bash
-git clone https://github.com/yourusername/MTP.git  # Replace with your actual repo URL
-cd MTP
+git clone https://github.com/GodBoii/Model-Tool-protocol-.git
+cd Model-Tool-protocol-
 python -m venv .venv
-.venv\Scripts\activate  # On Windows
-# source .venv/bin/activate  # On Linux/Mac
-pip install -e .
+.venv\Scripts\activate
+pip install -e ".[dotenv,groq]"
 ```
 
-### Provider SDKs and dotenv (explicit alternative)
+MTPX does not load `.env` automatically. Install `python-dotenv` and call `Agent.load_dotenv_if_available()`, or export provider keys in your shell.
 
-```bash
-pip install "mtpx[groq,dotenv]"
-```
-
-Copy `.env.example` to `.env` and set your key, or export the key in your shell/session:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-```
-
-## Create an agent (local toolkits + Groq)
+## SDK Quickstart
 
 ```python
 from mtp import Agent
 from mtp.providers import Groq
-from mtp.toolkits import CalculatorToolkit, FileToolkit, PythonToolkit, ShellToolkit
+from mtp.toolkits import CalculatorToolkit, FileToolkit
 
 Agent.load_dotenv_if_available()
 
 tools = Agent.ToolRegistry()
 tools.register_toolkit_loader("calculator", CalculatorToolkit())
 tools.register_toolkit_loader("file", FileToolkit(base_dir="."))
-tools.register_toolkit_loader("python", PythonToolkit(base_dir="."))
-tools.register_toolkit_loader("shell", ShellToolkit(base_dir="."))
-
-provider = Groq(model="llama-3.3-70b-versatile")
 
 agent = Agent.MTPAgent(
-    provider=provider,
+    provider=Groq(model="llama-3.3-70b-versatile"),
     tools=tools,
-    instructions="Use tools when needed and return concise answers.",
-    debug_mode=True,
+    instructions="Use tools when they improve correctness. Keep answers concise.",
     strict_dependency_mode=True,
 )
-response = agent.run("Calculate 25*4+10 and list files in current directory.", max_rounds=4)
-print(response)
 
-# Stream final response tokens:
-agent.print_response("Give me a short summary.", max_rounds=4, stream=True)
-
-# Stream structured runtime events (readable terminal logs by default):
-agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stream_events=True)
-# Raw JSON lines:
-agent.print_response("Give me a short summary.", max_rounds=4, stream=True, stream_events=True, event_format="json")
+print(agent.run("What is 25 * 4 + 10? Then list the project files.", max_rounds=4))
 ```
 
-If you do not call `Agent.load_dotenv_if_available()`, the provider will only read API keys that already exist in the process environment, such as `GROQ_API_KEY`, `OPENAI_API_KEY`, or `MIMO_API_KEY`.
-
-### Autoresearch mode (persistent execution)
-
-`autoresearch=True` enables persistent run behavior. The model is expected to end only when it calls `agent.terminate(...)`, or when user/system limits stop the run.
+Streaming:
 
 ```python
-agent = Agent.MTPAgent(
-    provider=provider,
-    tools=tools,
-    autoresearch=True,
-    research_instructions=(
-        "Keep working until requirements are satisfied and verified. "
-        "Call agent.terminate with reason+summary only when complete."
-    ),
-    debug_mode=True,
-)
-
 agent.print_response(
-    "Compute the result and verify with tools. Terminate only after completion.",
-    max_rounds=12,
+    "Inspect this project and summarize the CLI entry points.",
+    max_rounds=6,
     stream=True,
     stream_events=True,
 )
 ```
 
-## Persist conversation sessions (JSON database)
+Persistent sessions:
 
 ```python
 from mtp import Agent, JsonSessionStore
 from mtp.providers import OpenAI
 
-session_store = JsonSessionStore(db_path="tmp/mtp_json_db")
-agent = Agent.MTPAgent(provider=OpenAI(model="gpt-4o"), tools=tools, session_store=session_store)
+store = JsonSessionStore(db_path="tmp/mtp_json_db")
+agent = Agent.MTPAgent(provider=OpenAI(model="gpt-4o"), tools=tools, session_store=store)
 
-agent.run("Remember this: project codename is Atlas.", session_id="chat-1", user_id="u1")
+agent.run("Remember: project codename is Atlas.", session_id="chat-1", user_id="u1")
 agent.run("What is the project codename?", session_id="chat-1", user_id="u1")
 ```
 
-PostgreSQL and MySQL session stores are also available:
+User-owned sessions must be read with the same `user_id`; this prevents accidental cross-user session reads.
 
-```python
-from mtp import PostgresSessionStore, MySQLSessionStore
-
-pg_store = PostgresSessionStore(db_url="postgresql://user:pass@localhost:5432/mtp")
-my_store = MySQLSessionStore(
-    host="localhost",
-    user="root",
-    password="secret",
-    database="mtp",
-    port=3306,
-)
-```
-
-**TUI Session Management:**
-The MTP TUI provides enhanced session management with:
-- **Auto-generated titles** from your first message (e.g., "How do I implement" from "How do I implement authentication")
-- **Centralized storage** in `~/.mtp/sessions/` - all sessions from all projects in one place
-- **Directory grouping** - sessions organized by project when listed
-- **Cross-project access** - resume sessions from any directory
-- Use `/sessions` to list all sessions, `/new [label]` to start a new session with optional custom label
-
-## Run examples
+## CLI Quickstart
 
 ```bash
-python examples/quickstart.py
-python examples/groq_agent.py
-python examples/groq_agent_events.py
-python examples/ollama_agent.py
-python examples/lmstudio_agent.py
-python examples/mcp_stdio_server.py
+mtp --help
+mtp providers list
+mtp doctor
+mtp new my-agent --template minimal
+mtp run my-agent
 ```
 
-### Interactive TUI with Local Inference
+Interactive terminal agent:
 
 ```bash
-# Install with local inference support
-pip install -e ".[ollama,lmstudio]"
-
-# Start TUI
+pip install "mtpx[groq,dotenv]"
 mtp tui
-
-# Switch to local provider
-/backend ollama
-
-# Follow interactive setup to select model
-# Start chatting with your local LLM!
 ```
 
-### Streamlit UI
+Streamlit Agent OS:
 
 ```bash
-pip install -e ".[groq,dotenv,ui-streamlit]"
-streamlit run examples/streamlit_groq_agent_chat.py
-```
-
-### Agent OS
-
-```bash
-pip install -e ".[dotenv,ui-streamlit,groq,openai,openrouter]"
+pip install "mtpx[dotenv,ui-streamlit,groq,openai,openrouter]"
 mtp agent-os
 ```
 
-## Docs map
+Agent OS starts with safer defaults: calculator and file tools are enabled first, while shell/Python/web tools are opt-in from the sidebar.
+
+## Providers
+
+Supported adapters include:
+
+- OpenAI
+- Groq
+- Anthropic
+- Gemini
+- OpenRouter
+- Mistral
+- Cohere
+- Cerebras
+- DeepSeek
+- SambaNova
+- Together AI
+- Fireworks AI
+- Xiaomi MiMo
+- Ollama
+- LM Studio
+- Mock planner for deterministic tests
+
+Xiaomi MiMo uses `MIMO_API_KEY`. You can override its endpoint with `MIMO_BASE_URL`, and live tests require both `MIMO_API_KEY` and `RUN_LIVE_XIAOMI=1`.
+
+## Toolkits
+
+Built-in toolkit loaders:
+
+- `CalculatorToolkit`: arithmetic helpers.
+- `FileToolkit`: scoped file listing, reading, writing, and search.
+- `PythonToolkit`: isolated subprocess execution for code snippets/files.
+- `ShellToolkit`: bare-command allowlist execution in a scoped directory.
+- `WebsiteToolkit`: public HTTP/HTTPS page text extraction with private-network blocking by default.
+- `WikipediaToolkit`, `NewspaperToolkit`, `Newspaper4kToolkit`, `Crawl4aiToolkit`: optional web research helpers.
+
+Local code execution tools are powerful. Keep their base directory narrow, use policy controls, and do not expose them to untrusted users without an approval layer.
+
+## MCP And Transports
+
+MTPX includes:
+
+- line-delimited stdio envelopes
+- HTTP envelope transport
+- optional WebSocket transport
+- MCP-compatible JSON-RPC server
+- MCP HTTP and WebSocket transports with progress replay
+
+MCP auth is explicit: `require_auth=True` must be paired with an `auth_token`, `auth_validator`, or `auth_provider`.
+
+## Testing
+
+Fast local checks:
+
+```bash
+python -m pytest -q -m "not integration and not live"
+python -m compileall -q src tests
+```
+
+Integration checks:
+
+```bash
+python -m pytest -q -m "integration and not live"
+```
+
+Live provider tests are opt-in. For Xiaomi:
+
+```bash
+set RUN_LIVE_XIAOMI=1
+set MIMO_API_KEY=...
+python -m pytest -q tests/test_e2e_xiaomi.py
+```
+
+## Docs
+
 - [Quickstart](docs/QUICKSTART.md)
 - [Agent API Reference](docs/AGENT_API.md)
 - [Storage and Sessions](docs/STORAGE.md)
 - [Providers](docs/PROVIDERS.md)
-- [Local Inference (LM Studio + Ollama)](docs/LOCAL_INFERENCE.md)
+- [Provider Guides](docs/PROVIDER_GUIDES.md)
+- [Local Inference](docs/LOCAL_INFERENCE.md)
+- [Local Toolkits](docs/LOCAL_TOOLKITS.md)
 - [Creating Tools](docs/CREATING_TOOLS.md)
 - [Events Contract](docs/EVENTS.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Project Direction](docs/PROJECT_DIRECTION.md)
-- [Protocol Spec](docs/PROTOCOL_SPEC.md)
-- [Local Toolkits](docs/LOCAL_TOOLKITS.md)
-- [Groq Integration](docs/GROQ_INTEGRATION.md)
 - [Transport](docs/TRANSPORT.md)
 - [MCP Interop Adapter](docs/MCP_INTEROP.md)
-- [Publishing](docs/PUBLISHING.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Testing](docs/TESTING.md)
+- [Publishing](docs/PUBLISHING.md)
 
-## Repository structure
-- `src/mtp/protocol.py`: Core protocol entities (`ToolSpec`, `ToolCall`, `ExecutionPlan`, etc.).
-- `src/mtp/schema.py`: Versioned envelope + execution plan validation.
-- `src/mtp/policy.py`: Risk policy (`allow` / `ask` / `deny`).
-- `src/mtp/runtime.py`: Tool registry, lazy loading, caching, batch execution.
-- `src/mtp/agent.py`: Agent loop around provider + runtime.
-- `src/mtp/toolkits/`: Local toolkits (`calculator`, `file`, `python`, `shell`).
-- `src/mtp/transport/`: Envelope transport over stdio and HTTP.
-- `src/mtp/mcp.py`: MCP-compatible JSON-RPC adapter around `ToolRegistry`.
-- `src/mtp/providers/`: Provider adapters (`MockPlannerProvider` + OpenAI/LMStudio/Ollama/Groq/OpenRouter/Gemini/Anthropic/SambaNova/Cerebras/DeepSeek/Mistral/Cohere/TogetherAI/FireworksAI).
-- `docs/`: documentation and implementation guides.
+## Repository Map
 
-## Contributors
-
-Created by [Prajwal Ghadge](mailto:prajwalghadge2005@gmail.com) with contributions from Himesh Mehta.
-
-See [CONTRIBUTORS.md](CONTRIBUTORS.md) for the full list of contributors.
+- `src/mtp/agent.py`: agent loop, streaming, sessions, orchestration modes.
+- `src/mtp/runtime.py`: tool registry, lazy toolkit loading, policy checks, execution plans.
+- `src/mtp/protocol.py`: protocol dataclasses.
+- `src/mtp/schema.py`: envelope and argument validation.
+- `src/mtp/providers/`: LLM provider adapters.
+- `src/mtp/toolkits/`: local and web toolkit loaders.
+- `src/mtp/cli/`: CLI, TUI, scaffolding, doctor, Agent OS launcher.
+- `src/mtp/mcp.py`: MCP-compatible JSON-RPC adapter.
+- `src/mtp/mcp_transport.py`: MCP HTTP/WebSocket transports.
+- `docs/`: guides and reference material.
+- `examples/`: runnable provider and toolkit examples.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License. See [LICENSE](LICENSE).
