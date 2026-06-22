@@ -1063,6 +1063,7 @@ class Agent:
         cancelled = False
         total_tool_calls = 0
         paused = False
+        seen_cacheable_tool_calls: set[tuple[str, str]] = set()
 
         for round_idx in self._round_indices(max_rounds):
             if self._is_cancelled(run_id):
@@ -1136,6 +1137,23 @@ class Agent:
                         }
                     )
                     continue
+
+            plan_before_trim = sum(len(batch.calls) for batch in action.plan.batches)
+            action.plan = self._trim_cacheable_repeated_tool_calls(action.plan, seen_cacheable_tool_calls)
+            plan_after_trim = sum(len(batch.calls) for batch in action.plan.batches)
+            if plan_after_trim < plan_before_trim:
+                self._debug(
+                    "tool_plan_trimmed "
+                    f"removed={plan_before_trim - plan_after_trim} remaining={plan_after_trim}"
+                )
+            if plan_after_trim == 0:
+                self._append_message(
+                    {
+                        "role": "system",
+                        "content": "All proposed tool calls repeated cached work. Use the available tool results and respond.",
+                    }
+                )
+                continue
 
             assistant_tool_message = action_metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
@@ -1455,6 +1473,7 @@ class Agent:
         cancelled = False
         total_tool_calls = 0
         paused = False
+        seen_cacheable_tool_calls: set[tuple[str, str]] = set()
 
         for _round_idx in self._round_indices(max_rounds):
             if self._is_cancelled(run_id):
@@ -1499,6 +1518,23 @@ class Agent:
                         }
                     )
                     continue
+
+            plan_before_trim = sum(len(batch.calls) for batch in action.plan.batches)
+            action.plan = self._trim_cacheable_repeated_tool_calls(action.plan, seen_cacheable_tool_calls)
+            plan_after_trim = sum(len(batch.calls) for batch in action.plan.batches)
+            if plan_after_trim < plan_before_trim:
+                self._debug(
+                    "tool_plan_trimmed "
+                    f"removed={plan_before_trim - plan_after_trim} remaining={plan_after_trim}"
+                )
+            if plan_after_trim == 0:
+                self._append_message(
+                    {
+                        "role": "system",
+                        "content": "All proposed tool calls repeated cached work. Use the available tool results and respond.",
+                    }
+                )
+                continue
 
             assistant_tool_message = action_metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
@@ -1781,8 +1817,11 @@ class Agent:
         )
         self._enforce_streaming_request(stream_requested=True)
         normalized_input = self._normalize_input(user_input)
-        _ = self._validate_input_schema(normalized_input, input_schema)
+        input_validation_error = self._validate_input_schema(normalized_input, input_schema)
         serialized_input = self._serialize_input_for_message(normalized_input)
+        if input_validation_error is not None:
+            yield input_validation_error
+            return
         resolved_run_id = run_id or str(uuid4())
         self._register_run(resolved_run_id)
         try:

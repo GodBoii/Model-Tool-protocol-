@@ -133,6 +133,26 @@ class TestAgentRunLoop:
         result = agent.run_loop("test", tool_call_limit=2)
         assert result is not None
 
+    def test_plain_run_trims_repeated_cacheable_tool_calls_like_events(self):
+        reg = ToolRegistry()
+        spec = make_tool_spec("test.cached", cache_ttl_seconds=60)
+        reg.register_tool(spec, make_echo_handler())
+        plan = make_plan(make_call("c1", name="test.cached", args={"text": "same"}))
+        provider = _MultiRoundProvider(
+            [AgentAction(plan=plan), AgentAction(plan=plan)],
+            final_text="Done.",
+        )
+        agent = Agent(provider=provider, tools=reg)
+
+        output = agent.run_output("repeat cached", max_rounds=2)
+
+        assert output.final_text == "Done."
+        assert any(
+            msg.get("role") == "system"
+            and "repeated cached work" in str(msg.get("content", ""))
+            for msg in output.messages
+        )
+
     def test_messages_accumulate(self):
         reg = ToolRegistry()
         provider = _TextOnlyProvider("ok")
@@ -171,6 +191,25 @@ class TestAgentRunLoopEvents:
         types = [e["type"] for e in events]
         assert "tool_started" in types
         assert "tool_finished" in types
+
+    def test_stream_input_schema_failure_returns_validation_error(self):
+        reg = ToolRegistry()
+        provider = _TextOnlyProvider("should not be used")
+        agent = Agent(provider=provider, tools=reg)
+
+        chunks = list(
+            agent.run_loop_stream(
+                {"wrong": "field"},
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            )
+        )
+
+        assert len(chunks) == 1
+        assert "Input does not match schema" in chunks[0]
 
 
 class TestAgentRunOutput:
