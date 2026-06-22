@@ -156,6 +156,13 @@ class TestJsonSessionStore:
         assert len(fetched.runs) == 1
         assert fetched.runs[0].run_id == "r1"
 
+    def test_lock_file_removed_after_access(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path)
+        store.upsert_session(SessionRecord(session_id="s1"))
+        assert not store.lock_path.exists()
+        assert store.get_session("s1") is not None
+        assert not store.lock_path.exists()
+
 
 class TestValidateSqlIdentifier:
     def test_valid(self):

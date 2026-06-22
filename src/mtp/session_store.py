@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 import re
 import threading
+import time
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -123,14 +126,48 @@ class SessionStore(Protocol):
 
 
 class JsonSessionStore:
-    def __init__(self, *, db_path: str | Path = "tmp/mtp_json_db", session_table: str = "mtp_sessions") -> None:
+    def __init__(
+        self,
+        *,
+        db_path: str | Path = "tmp/mtp_json_db",
+        session_table: str = "mtp_sessions",
+        lock_timeout_seconds: float = 10.0,
+    ) -> None:
         self.db_path = Path(db_path)
         self.session_table = session_table
+        self.lock_timeout_seconds = max(0.1, float(lock_timeout_seconds))
         self._lock = threading.RLock()
 
     @property
     def file_path(self) -> Path:
         return self.db_path / f"{self.session_table}.json"
+
+    @property
+    def lock_path(self) -> Path:
+        return self.db_path / f".{self.session_table}.lock"
+
+    @contextmanager
+    def _file_lock(self):
+        self.db_path.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + self.lock_timeout_seconds
+        fd: int | None = None
+        while fd is None:
+            try:
+                fd = os.open(str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode("ascii", errors="ignore"))
+            except FileExistsError as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Timed out waiting for session store lock: {self.lock_path}") from exc
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            if fd is not None:
+                os.close(fd)
+            try:
+                self.lock_path.unlink()
+            except FileNotFoundError:
+                pass
 
     def _read_all(self) -> list[dict[str, Any]]:
         self.db_path.mkdir(parents=True, exist_ok=True)
@@ -156,32 +193,34 @@ class JsonSessionStore:
 
     def get_session(self, session_id: str, *, user_id: str | None = None) -> SessionRecord | None:
         with self._lock:
-            for row in self._read_all():
-                if row.get("session_id") != session_id:
-                    continue
-                stored_user_id = row.get("user_id")
-                if not _session_user_matches(stored_user_id, user_id):
-                    continue
-                return SessionRecord.from_dict(row)
+            with self._file_lock():
+                for row in self._read_all():
+                    if row.get("session_id") != session_id:
+                        continue
+                    stored_user_id = row.get("user_id")
+                    if not _session_user_matches(stored_user_id, user_id):
+                        continue
+                    return SessionRecord.from_dict(row)
         return None
 
     def upsert_session(self, session: SessionRecord) -> SessionRecord:
         with self._lock:
-            rows = self._read_all()
-            serialized = session.to_dict()
-            serialized["updated_at"] = _utc_now_iso()
-            if not serialized.get("created_at"):
-                serialized["created_at"] = serialized["updated_at"]
+            with self._file_lock():
+                rows = self._read_all()
+                serialized = session.to_dict()
+                serialized["updated_at"] = _utc_now_iso()
+                if not serialized.get("created_at"):
+                    serialized["created_at"] = serialized["updated_at"]
 
-            for idx, row in enumerate(rows):
-                if row.get("session_id") == session.session_id:
-                    rows[idx] = serialized
-                    break
-            else:
-                rows.append(serialized)
+                for idx, row in enumerate(rows):
+                    if row.get("session_id") == session.session_id:
+                        rows[idx] = serialized
+                        break
+                else:
+                    rows.append(serialized)
 
-            self._write_all(rows)
-            return SessionRecord.from_dict(serialized)
+                self._write_all(rows)
+                return SessionRecord.from_dict(serialized)
 
 
 def _validate_sql_identifier(value: str) -> str:
