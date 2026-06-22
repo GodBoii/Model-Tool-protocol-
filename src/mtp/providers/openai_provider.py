@@ -5,13 +5,11 @@ from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
-from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     USAGE_METRICS_RICH,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-    calls_to_dependency_batches,
-    extract_refs,
     extract_usage_metrics,
     format_openai_like_message,
     openai_like_tool_call_plan_payload,
