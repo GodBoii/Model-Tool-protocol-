@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import threading
 from typing import Any, Protocol
+from uuid import uuid4
 
 from .media import coerce_audios, coerce_files, coerce_images, coerce_videos
 
@@ -149,7 +150,9 @@ class JsonSessionStore:
 
     def _write_all(self, rows: list[dict[str, Any]]) -> None:
         self.db_path.mkdir(parents=True, exist_ok=True)
-        self.file_path.write_text(json.dumps(rows, indent=2, ensure_ascii=True), encoding="utf-8")
+        tmp_path = self.file_path.with_name(f".{self.file_path.name}.{uuid4().hex}.tmp")
+        tmp_path.write_text(json.dumps(rows, indent=2, ensure_ascii=True), encoding="utf-8")
+        tmp_path.replace(self.file_path)
 
     def get_session(self, session_id: str, *, user_id: str | None = None) -> SessionRecord | None:
         with self._lock:
@@ -157,7 +160,7 @@ class JsonSessionStore:
                 if row.get("session_id") != session_id:
                     continue
                 stored_user_id = row.get("user_id")
-                if user_id is not None and stored_user_id is not None and stored_user_id != user_id:
+                if not _session_user_matches(stored_user_id, user_id):
                     continue
                 return SessionRecord.from_dict(row)
         return None
@@ -203,6 +206,14 @@ def _parse_json_blob(value: Any, *, fallback: Any) -> Any:
             return fallback
         return parsed
     return fallback
+
+
+def _session_user_matches(stored_user_id: Any, requested_user_id: str | None) -> bool:
+    if stored_user_id is None:
+        return True
+    if requested_user_id is None:
+        return False
+    return str(stored_user_id) == requested_user_id
 
 
 class PostgresSessionStore:
@@ -261,7 +272,7 @@ class PostgresSessionStore:
             if row is None:
                 return None
             stored_user_id = row.get("user_id")
-            if user_id is not None and stored_user_id is not None and stored_user_id != user_id:
+            if not _session_user_matches(stored_user_id, user_id):
                 return None
             payload = {
                 "session_id": row.get("session_id"),
@@ -410,7 +421,7 @@ class MySQLSessionStore:
             if row is None:
                 return None
             stored_user_id = row.get("user_id")
-            if user_id is not None and stored_user_id is not None and stored_user_id != user_id:
+            if not _session_user_matches(stored_user_id, user_id):
                 return None
             payload = {
                 "session_id": row.get("session_id"),
