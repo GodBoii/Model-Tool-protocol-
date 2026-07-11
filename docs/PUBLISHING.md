@@ -56,9 +56,10 @@ python -m zipfile -l dist/*.whl
 python -m tarfile -l dist/*.tar.gz
 ```
 
-Verify the wheel contains the `mtp` package, CLI styles/templates, license, and
-package metadata, and does not contain credentials, caches, tests generated at
-runtime, or unrelated workspace files.
+Verify the wheel contains the `mtp` package, CLI styles/templates (including
+each scaffold's `.env.example.tpl`), license, and package metadata, and does
+not contain credentials, caches, tests generated at runtime, or unrelated
+workspace files.
 
 ## 3. Test the built wheel
 

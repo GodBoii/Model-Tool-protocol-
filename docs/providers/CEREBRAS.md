@@ -8,7 +8,7 @@ Cerebras runs Llama models on wafer-scale chips, delivering the fastest inferenc
 pip install "mtpx[cerebras]"
 ```
 
-This installs the `openai` SDK (used for the OpenAI-compatible API). Alternatively, install the native Cerebras SDK:
+This installs the native Cerebras SDK. To install it directly:
 
 ```bash
 pip install cerebras-cloud-sdk
