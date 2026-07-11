@@ -30,6 +30,10 @@ class ExecutionCancelledError(RuntimeError):
     """Raised when an in-flight execution plan is cancelled."""
 
 
+class ToolExecutionTimeoutError(TimeoutError):
+    """Raised when a tool exceeds the registry execution timeout."""
+
+
 class ToolRetryError(RuntimeError):
     """Raised when a tool requests retrying the run with feedback."""
 
@@ -84,6 +88,7 @@ class ToolRegistry:
         *,
         max_cache_entries: int = 1024,
         max_concurrency: int = 16,
+        tool_timeout_seconds: float | None = None,
         approval_handler: ApprovalHandler | None = None,
     ) -> None:
         self._tools: dict[str, RegisteredTool] = {}
@@ -99,6 +104,9 @@ class ToolRegistry:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
         self.max_concurrency = max_concurrency
+        if tool_timeout_seconds is not None and tool_timeout_seconds <= 0:
+            raise ValueError("tool_timeout_seconds must be greater than 0 or None")
+        self.tool_timeout_seconds = tool_timeout_seconds
         self.approval_handler = approval_handler
 
     def register_tool(self, spec: ToolSpec, handler: ToolHandler) -> None:
@@ -254,9 +262,22 @@ class ToolRegistry:
         *,
         cancel_checker: CancelChecker | None = None,
         cancel_event: threading.Event | None = None,
+        timeout_seconds: float | None = None,
     ) -> Any:
+        deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
         while True:
-            done, _pending = await asyncio.wait({task}, timeout=0.05)
+            wait_seconds = 0.05
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    if cancel_event is not None:
+                        cancel_event.set()
+                    task.cancel()
+                    raise ToolExecutionTimeoutError(
+                        f"Tool execution exceeded {timeout_seconds:g} seconds."
+                    )
+                wait_seconds = min(wait_seconds, remaining)
+            done, _pending = await asyncio.wait({task}, timeout=wait_seconds)
             if task in done:
                 return await task
             if cancel_checker is not None and cancel_checker():
@@ -292,6 +313,7 @@ class ToolRegistry:
                 task,
                 cancel_checker=cancel_checker,
                 cancel_event=cancel_event,
+                timeout_seconds=self.tool_timeout_seconds,
             )
 
         # Sync handlers run in a worker thread. In-flight cancellation is cooperative
@@ -300,7 +322,8 @@ class ToolRegistry:
         return await self._await_with_cancellation(
             task,
             cancel_checker=cancel_checker,
-            cancel_event=cancel_event,
+                cancel_event=cancel_event,
+                timeout_seconds=self.tool_timeout_seconds,
         )
 
     async def _should_allow_ask(self, spec: ToolSpec, call: ToolCall, args: dict[str, Any]) -> bool:
@@ -491,6 +514,15 @@ class ToolRegistry:
             raise
         except ExecutionCancelledError:
             raise
+        except ToolExecutionTimeoutError as exc:
+            return ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                output=None,
+                success=False,
+                error=str(exc),
+                approval=decision.value,
+            )
         except RetryAgentRun as exc:
             message = str(exc).strip() or "Tool requested a retry."
             raise ToolRetryError(call_id=call.id, tool_name=call.name, message=message) from exc

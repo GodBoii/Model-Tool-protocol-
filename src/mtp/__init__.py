@@ -28,7 +28,14 @@ from .protocol import (
     ToolSpec,
 )
 from .media import Audio, File, Image, Video
-from .runtime import ExecutionCancelledError, ToolRegistry, ToolkitLoader, ToolRetryError, ToolStopError
+from .runtime import (
+    ExecutionCancelledError,
+    ToolExecutionTimeoutError,
+    ToolRegistry,
+    ToolkitLoader,
+    ToolRetryError,
+    ToolStopError,
+)
 from .schema import (
     CURRENT_MTP_VERSION,
     MessageEnvelope,
