@@ -47,7 +47,7 @@ mistral = ["mistralai"]
 ollama = ["ollama"]
 openrouter = ["openai"]
 sambanova = ["openai"]
-cerebras = ["openai"]
+cerebras = ["cerebras-cloud-sdk"]
 deepseek = ["openai"]
 togetherai = ["openai"]
 fireworksai = ["openai"]
@@ -78,6 +78,7 @@ providers = [
     "google-genai",
     "cohere",
     "mistralai",
+    "cerebras-cloud-sdk",
 ]
 all = [
     "python-dotenv",
@@ -89,6 +90,7 @@ all = [
     "google-genai",
     "cohere",
     "mistralai",
+    "cerebras-cloud-sdk",
     "requests",
     "beautifulsoup4",
     "wikipedia",
@@ -111,7 +113,12 @@ Issues = "https://github.com/GodBoii/Model-Tool-protocol-/issues"
 package-dir = { "" = "src" }
 
 [tool.setuptools.package-data]
-"mtp.cli" = ["templates/**/*.tpl", "*.tcss"]
+"mtp.cli" = [
+    "*.tcss",
+    "templates/**/*.tpl",
+    # setuptools globs intentionally do not match leading-dot filenames.
+    "templates/*/.env.example.tpl",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
