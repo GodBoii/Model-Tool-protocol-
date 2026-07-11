@@ -277,7 +277,12 @@ def _normalize_ref_value(ref_value: Any, id_by_index: dict[int, str], current_id
 
     call_match = re.fullmatch(r"call_(\d+)", lowered)
     if call_match:
-        return id_by_index.get(int(call_match.group(1)), stripped)
+        # Prompt examples and most models use one-based placeholders
+        # (call_1 means the first call). Preserve call_0 as a pragmatic
+        # zero-based alias for older integrations.
+        ordinal = int(call_match.group(1))
+        target_idx = 0 if ordinal == 0 else ordinal - 1
+        return id_by_index.get(target_idx, stripped)
 
     c_match = re.fullmatch(r"c(\d+)", lowered)
     if c_match:
