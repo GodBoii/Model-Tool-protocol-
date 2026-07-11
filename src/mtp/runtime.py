@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Protocol
@@ -66,9 +68,13 @@ class RegisteredTool:
 class _CacheEntry:
     value: Any
     expires_at: datetime
+    expires_at_monotonic: float
 
     def valid(self) -> bool:
-        return datetime.now(UTC) < self.expires_at
+        # Wall clocks can jump forwards or backwards (NTP, sleep/resume, or a
+        # manual clock change). TTLs describe elapsed time, so use a monotonic
+        # clock for correctness while retaining ``expires_at`` for API display.
+        return time.monotonic() < self.expires_at_monotonic
 
 
 class ToolRegistry:
@@ -84,6 +90,9 @@ class ToolRegistry:
         self._toolkit_loaders: dict[str, ToolkitLoader] = {}
         self._loaded_toolkits: set[str] = set()
         self._cache: dict[tuple[str, str], _CacheEntry] = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._cache_evictions = 0
         self._tool_specs_cache: list[ToolSpec] | None = None
         self.policy = policy or RiskPolicy()
         self.max_cache_entries = max_cache_entries
@@ -142,17 +151,52 @@ class ToolRegistry:
         expired = [key for key, entry in self._cache.items() if not entry.valid()]
         for key in expired:
             self._cache.pop(key, None)
+        self._cache_evictions += len(expired)
 
     def _enforce_cache_limit(self) -> None:
         if self.max_cache_entries <= 0:
+            self._cache_evictions += len(self._cache)
             self._cache.clear()
             return
         if len(self._cache) <= self.max_cache_entries:
             return
-        ordered = sorted(self._cache.items(), key=lambda item: item[1].expires_at)
+        ordered = sorted(self._cache.items(), key=lambda item: item[1].expires_at_monotonic)
         overflow = len(self._cache) - self.max_cache_entries
         for key, _ in ordered[:overflow]:
             self._cache.pop(key, None)
+        self._cache_evictions += overflow
+
+    def clear_cache(self, tool_name: str | None = None) -> int:
+        """Remove cached results and return the number of entries removed.
+
+        Passing a tool name only clears entries belonging to that tool. Cache
+        lifetime counters are intentionally retained; call :meth:`cache_stats`
+        with ``reset_stats=True`` when a fresh measurement window is needed.
+        """
+        if tool_name is None:
+            removed = len(self._cache)
+            self._cache.clear()
+            return removed
+        keys = [key for key in self._cache if key[0] == tool_name]
+        for key in keys:
+            self._cache.pop(key, None)
+        return len(keys)
+
+    def cache_stats(self, *, reset_stats: bool = False) -> dict[str, int]:
+        """Return a snapshot of cache occupancy and lifetime activity."""
+        self._evict_expired_cache_entries()
+        stats = {
+            "entries": len(self._cache),
+            "max_entries": self.max_cache_entries,
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "evictions": self._cache_evictions,
+        }
+        if reset_stats:
+            self._cache_hits = 0
+            self._cache_misses = 0
+            self._cache_evictions = 0
+        return stats
 
     def _load_toolkit(self, toolkit_name: str) -> None:
         if toolkit_name in self._loaded_toolkits:
@@ -349,7 +393,10 @@ class ToolRegistry:
             self._evict_expired_cache_entries()
             cached = self._cache.get(cache_key)
             if cached and cached.valid():
-                cached_output = cached.value
+                self._cache_hits += 1
+                # A caller must not be able to mutate the value retained for
+                # future callers. This also isolates duplicate calls in a plan.
+                cached_output = copy.deepcopy(cached.value)
                 cached_content = cached_output
                 cached_images = None
                 cached_videos = None
@@ -373,6 +420,7 @@ class ToolRegistry:
                     audios=cached_audios,
                     files=cached_files,
                 )
+            self._cache_misses += 1
 
         try:
             output = await self._invoke(
@@ -413,8 +461,20 @@ class ToolRegistry:
                         "audios": [aud.to_dict() for aud in audios or []],
                         "files": [file.to_dict() for file in files or []],
                     }
-                self._cache[cache_key] = _CacheEntry(value=cache_value, expires_at=expires_at)
-                self._enforce_cache_limit()
+                try:
+                    isolated_cache_value = copy.deepcopy(cache_value)
+                except Exception:  # noqa: BLE001 - arbitrary tool return types
+                    # Some third-party return objects cannot be copied safely.
+                    # Returning the result is still useful; silently avoid an
+                    # unsafe cache entry rather than sharing mutable state.
+                    expires_at = None
+                else:
+                    self._cache[cache_key] = _CacheEntry(
+                        value=isolated_cache_value,
+                        expires_at=expires_at,
+                        expires_at_monotonic=time.monotonic() + ttl,
+                    )
+                    self._enforce_cache_limit()
             return ToolResult(
                 call_id=call.id,
                 tool_name=call.name,
