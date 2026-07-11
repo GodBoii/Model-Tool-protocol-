@@ -77,6 +77,8 @@ print(reply)
 | `site_name` | `str \| None` | `None` | Your app name (sent as `X-Title` header) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
+| `parallel_tool_calls` | `bool` | `True` | Allow supported routed models to request multiple tools |
+| `response_format` | `dict \| None` | `None` | Native `json_object` or `json_schema` response format |
 | `client` | `Any \| None` | `None` | Pre-configured `openai.OpenAI` client instance |
 
 ## Capabilities

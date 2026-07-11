@@ -90,7 +90,7 @@ print(reply)
 | Streaming | Fallback |
 | Usage metrics | Rich |
 | Reasoning metadata | No |
-| Structured output | Native JSON schema (when `response_format` set) |
+| Structured output | Native JSON object or JSON schema (according to `response_format.type`) |
 | Native async | No (uses thread fallback) |
 
 ## Recommended Models
@@ -155,7 +155,7 @@ print(reply)
 - Fireworks prefers the native `fireworks-ai` SDK, falls back to OpenAI client at `https://api.fireworks.ai/inference/v1`.
 - Model IDs must be account-qualified (e.g., `accounts/fireworks/models/...`).
 - `firefunction-v2` is purpose-built for function/tool calling and may give better results for agent workflows.
-- When `response_format` is set, `structured_output_support` reports `native_json_schema` capability.
+- Capability metadata distinguishes `json_object` from the stricter `json_schema` response mode.
 
 ## Source
 

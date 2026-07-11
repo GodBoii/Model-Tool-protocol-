@@ -53,7 +53,7 @@ print(reply)
 | `options` | `dict \| None` | `None` | Ollama-specific options (e.g., `{"temperature": 0, "num_ctx": 4096}`) |
 | `format` | `dict \| str \| None` | `None` | Output format constraint (e.g., `"json"` or a JSON schema dict) |
 | `keep_alive` | `float \| str \| None` | `None` | How long to keep model in memory (e.g., `"5m"`, `300`) |
-| `think` | `bool \| None` | `None` | Enable thinking/reasoning traces (for models that support it) |
+| `think` | `bool \| str \| None` | `None` | Enable thinking or select `low`, `medium`, or `high` effort |
 | `client` | `Any \| None` | `None` | Pre-configured `ollama.Client` instance |
 
 ## Capabilities
@@ -65,7 +65,7 @@ print(reply)
 | Input modalities | text, image |
 | Streaming | Yes (both `stream_next_action` and `finalize_stream`) |
 | Usage metrics | Rich |
-| Reasoning metadata | Yes (when `think=True`) |
+| Reasoning metadata | Yes (when thinking is enabled or an effort level is selected) |
 | Native async | No (uses thread fallback) |
 
 ## Recommended Models

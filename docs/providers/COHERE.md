@@ -77,6 +77,7 @@ print(reply)
 | `max_tokens` | `int` | `4096` | Maximum response tokens |
 | `preamble` | `str \| None` | `None` | System prompt (Cohere's term for system instructions) |
 | `force_single_step` | `bool` | `False` | Force single-step tool execution |
+| `strict_tools` | `bool` | `True` | Enforce tool argument schemas through Cohere Chat V2 |
 | `client` | `Any \| None` | `None` | Pre-configured `cohere.ClientV2` instance |
 
 ## Capabilities
