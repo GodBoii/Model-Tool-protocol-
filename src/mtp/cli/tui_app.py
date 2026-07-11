@@ -33,6 +33,7 @@ from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_commands import MTPCommandProvider, parse_slash_command
+from .workspace_file_index import WorkspaceFileIndex
 from .tui_workers import (
     save_tui_session, record_turn, collect_prompt_attachments,
     run_prompt_blocking, switch_backend,
@@ -104,6 +105,7 @@ class MTPApp(App):
         self._memory_refresh_dirty = False
         self._memory_launch_scan_done = False
         self._current_run_id: str | None = None
+        self._workspace_file_index = WorkspaceFileIndex()
 
     @property
     def state(self) -> TUIState:
@@ -458,28 +460,10 @@ class MTPApp(App):
             self._show_command_suggestions(partial)
 
     def _show_file_suggestions(self, partial: str) -> None:
-        import os
-        from pathlib import Path
-        cwd = self._state.cwd
-        matches = []
         try:
-            for root, dirs, files in os.walk(cwd):
-                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in {"__pycache__", "node_modules", "venv", ".venv", ".git"}]
-                rel_root = Path(root).relative_to(cwd)
-                if str(rel_root) == ".":
-                    rel_root = Path("")
-                for f in files:
-                    if f.startswith("."): continue
-                    rel_path = (rel_root / f).as_posix()
-                    if partial.lower() in rel_path.lower():
-                        matches.append(rel_path)
-                if len(rel_root.parts) >= 2:
-                    dirs.clear()
-        except Exception:
-            pass
-            
-        matches.sort()
-        matches = matches[:20]
+            matches = self._workspace_file_index.suggest(self._state.cwd, partial)
+        except (OSError, ValueError):
+            matches = []
         if not matches:
             try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
             except Exception: pass
