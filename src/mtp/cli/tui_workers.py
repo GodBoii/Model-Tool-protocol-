@@ -112,13 +112,26 @@ def _token_looks_like_file_ref(token: str) -> bool:
 
 
 def collect_prompt_attachments(
-    prompt: str, cwd: Path
+    prompt: str, cwd: Path, *, allow_external: bool = False
 ) -> tuple[str, list[str], list[str]]:
-    """Expand @file references in a prompt."""
-    from .tui_state import MAX_ATTACHMENTS, MAX_ATTACHMENT_CHARS
+    """Expand bounded, text-only ``@file`` references in a prompt.
+
+    References are restricted to *cwd* by default.  Files are read through a
+    byte-limited binary stream before decoding, so a large or binary file
+    cannot cause an unbounded allocation merely by being mentioned.
+    """
+    from .tui_state import (
+        MAX_ATTACHMENTS,
+        MAX_ATTACHMENT_BYTES,
+        MAX_ATTACHMENT_CHARS,
+        MAX_ATTACHMENTS_TOTAL_BYTES,
+    )
+    workspace = cwd.resolve()
     attachments: list[str] = []
     warnings: list[str] = []
     appended: list[str] = []
+    seen: set[Path] = set()
+    total_bytes = 0
 
     for token in re.findall(r"(?<!\S)@[^\s]+", prompt):
         if not _token_looks_like_file_ref(token):
@@ -128,24 +141,51 @@ def collect_prompt_attachments(
             break
         raw_path = token[1:]
         path = Path(raw_path)
-        resolved = (cwd / path).resolve() if not path.is_absolute() else path.resolve()
+        try:
+            resolved = (workspace / path).resolve() if not path.is_absolute() else path.resolve()
+        except (OSError, RuntimeError) as exc:
+            warnings.append(f"Invalid path {raw_path}: {exc}")
+            continue
+        if not allow_external and not resolved.is_relative_to(workspace):
+            warnings.append(f"Outside workspace: {raw_path}")
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
         if not resolved.exists():
             warnings.append(f"Not found: {raw_path}")
             continue
         if not resolved.is_file():
             warnings.append(f"Not a file: {raw_path}")
             continue
+        remaining = MAX_ATTACHMENTS_TOTAL_BYTES - total_bytes
+        if remaining <= 0:
+            warnings.append(
+                f"Attachment byte limit ({MAX_ATTACHMENTS_TOTAL_BYTES}); skipping remaining files."
+            )
+            break
+        read_limit = min(MAX_ATTACHMENT_BYTES, remaining)
         try:
-            text = resolved.read_text(encoding="utf-8", errors="replace")
+            with resolved.open("rb") as file:
+                data = file.read(read_limit + 1)
         except Exception as exc:
             warnings.append(f"Read error {raw_path}: {exc}")
             continue
+        truncated_bytes = len(data) > read_limit
+        data = data[:read_limit]
+        if _looks_binary(data):
+            warnings.append(f"Binary file skipped: {raw_path}")
+            continue
+        total_bytes += len(data)
+        text = data.decode("utf-8", errors="replace")
         if len(text) > MAX_ATTACHMENT_CHARS:
             text = text[:MAX_ATTACHMENT_CHARS]
+            truncated_bytes = True
+        if truncated_bytes:
             warnings.append(f"Truncated: {raw_path}")
         display_path = (
-            str(resolved.relative_to(cwd))
-            if resolved.is_relative_to(cwd) else str(resolved)
+            str(resolved.relative_to(workspace))
+            if resolved.is_relative_to(workspace) else str(resolved)
         )
         attachments.append(display_path)
         appended.append(
@@ -154,6 +194,19 @@ def collect_prompt_attachments(
     if not appended:
         return prompt, attachments, warnings
     return f"{prompt}\n\n" + "\n\n".join(appended), attachments, warnings
+
+
+def _looks_binary(data: bytes) -> bool:
+    """Conservatively identify binary input without decoding the whole file."""
+    sample = data[:8192]
+    if not sample:
+        return False
+    if b"\x00" in sample:
+        return True
+    # Permit common text whitespace; a high concentration of other C0 control
+    # bytes is a reliable signal for binary formats while retaining UTF-8.
+    controls = sum(byte < 32 and byte not in (8, 9, 10, 12, 13) for byte in sample)
+    return controls / len(sample) > 0.10
 
 
 # ── LLM execution (runs in Worker thread) ────────────────────────────────────

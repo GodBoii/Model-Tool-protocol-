@@ -25,6 +25,8 @@ BACKENDS = {
 REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 MAX_ATTACHMENTS = 8
 MAX_ATTACHMENT_CHARS = 16_000
+MAX_ATTACHMENT_BYTES = 64 * 1024
+MAX_ATTACHMENTS_TOTAL_BYTES = 256 * 1024
 
 MODEL_PRESETS: list[tuple[str, str]] = [
     ("gpt-5.5", "Latest frontier coding model"),
