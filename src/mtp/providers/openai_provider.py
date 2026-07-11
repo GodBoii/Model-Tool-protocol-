@@ -10,6 +10,8 @@ from .common import (
     ProviderCapabilities,
     USAGE_METRICS_RICH,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+    STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     extract_usage_metrics,
     format_openai_like_message,
     openai_like_tool_call_plan_payload,
@@ -30,12 +32,20 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
+        strict_tools: bool = False,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+        timeout: float | None = None,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self.strict_tools = strict_tools
+        self.response_format = response_format
+        self.max_completion_tokens = max_completion_tokens
+        self.timeout = timeout
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_rate_limits: dict[str, Any] | None = None
         self._last_finalize_rate_limits: dict[str, Any] | None = None
@@ -67,17 +77,30 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         return formatted
 
     def _to_openai_tools(self, tools: list[ToolSpec]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema or {"type": "object", "properties": {}},
-                },
+        converted: list[dict[str, Any]] = []
+        for tool in tools:
+            function = {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema or {"type": "object", "properties": {}},
             }
-            for tool in tools
-        ]
+            if self.strict_tools:
+                function["strict"] = True
+            converted.append({
+                "type": "function",
+                "function": function,
+            })
+        return converted
+
+    def _request_options(self) -> dict[str, Any]:
+        options: dict[str, Any] = {}
+        if self.response_format is not None:
+            options["response_format"] = self.response_format
+        if self.max_completion_tokens is not None:
+            options["max_completion_tokens"] = self.max_completion_tokens
+        if self.timeout is not None:
+            options["timeout"] = self.timeout
+        return options
 
     def _extract_rate_limits(self, headers: Any) -> dict[str, Any] | None:
         if headers is None:
@@ -114,6 +137,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             "model": self.model,
             "messages": openai_messages,
             "temperature": self.temperature,
+            **self._request_options(),
         }
         if openai_tools:
             request_args["tools"] = openai_tools
@@ -153,6 +177,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
                 "model": self.model,
                 "messages": openai_messages,
                 "temperature": self.temperature,
+                **self._request_options(),
             }
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
@@ -163,6 +188,13 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         return message.content or "Done."
 
     def capabilities(self) -> ProviderCapabilities:
+        structured_output_support = STRUCTURED_OUTPUT_CLIENT_VALIDATED
+        if isinstance(self.response_format, dict):
+            response_type = self.response_format.get("type")
+            if response_type == "json_schema":
+                structured_output_support = STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA
+            elif response_type == "json_object":
+                structured_output_support = STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT
         return ProviderCapabilities(
             provider="openai",
             supports_tool_calling=True,
@@ -172,7 +204,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             supports_finalize_streaming=False,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
-            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            structured_output_support=structured_output_support,
             supports_native_async=False,
             allow_finalize_stream_fallback=True,
         )
