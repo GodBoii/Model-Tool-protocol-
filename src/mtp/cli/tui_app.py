@@ -34,6 +34,7 @@ from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_commands import MTPCommandProvider, parse_slash_command
 from .workspace_file_index import WorkspaceFileIndex
+from .tui_limits import TUILimits, append_bounded, bounded_detail, bounded_tail, trim_display_blocks
 from .tui_workers import (
     save_tui_session, record_turn, collect_prompt_attachments,
     run_prompt_blocking, switch_backend,
@@ -106,6 +107,7 @@ class MTPApp(App):
         self._memory_launch_scan_done = False
         self._current_run_id: str | None = None
         self._workspace_file_index = WorkspaceFileIndex()
+        self._limits = TUILimits.from_env()
 
     @property
     def state(self) -> TUIState:
@@ -294,7 +296,7 @@ class MTPApp(App):
         self._history_draft = ""
         
         if raw and (not self._input_history or self._input_history[-1] != raw):
-            self._input_history.append(raw)
+            append_bounded(self._input_history, raw, self._limits.input_history)
             
         try:
             cmd_log = self.query_one("#cmd-log", RichLog)
@@ -844,19 +846,35 @@ class MTPApp(App):
     def _append_live_thinking_block(self, text: str) -> None:
         if not text:
             return
-        self._live_thinking_text += text
+        self._live_thinking_text = bounded_tail(
+            self._live_thinking_text + text, self._limits.live_thinking_chars
+        )
         if self._live_blocks and self._live_blocks[-1].get("type") == "thinking":
-            self._live_blocks[-1]["text"] = str(self._live_blocks[-1].get("text") or "") + text
-            return
-        self._live_blocks.append({"type": "thinking", "text": text})
+            self._live_blocks[-1]["text"] = bounded_tail(
+                str(self._live_blocks[-1].get("text") or "") + text,
+                self._limits.live_thinking_chars,
+            )
+        else:
+            append_bounded(self._live_blocks, {"type": "thinking", "text": text}, self._limits.live_blocks)
+        trim_display_blocks(
+            self._live_blocks, max_blocks=self._limits.live_blocks,
+            max_chars=self._limits.live_text_chars + self._limits.live_thinking_chars,
+        )
 
     def _append_live_text_block(self, text: str) -> None:
         if not text:
             return
         if self._live_blocks and self._live_blocks[-1].get("type") == "text":
-            self._live_blocks[-1]["text"] = str(self._live_blocks[-1].get("text") or "") + text
-            return
-        self._live_blocks.append({"type": "text", "text": text})
+            self._live_blocks[-1]["text"] = bounded_tail(
+                str(self._live_blocks[-1].get("text") or "") + text,
+                self._limits.live_text_chars,
+            )
+        else:
+            append_bounded(self._live_blocks, {"type": "text", "text": text}, self._limits.live_blocks)
+        trim_display_blocks(
+            self._live_blocks, max_blocks=self._limits.live_blocks,
+            max_chars=self._limits.live_text_chars + self._limits.live_thinking_chars,
+        )
 
     def _ensure_live_tool_group(self, *, batch_index: Any = None, mode: str | None = None) -> dict[str, Any]:
         if self._live_blocks and self._live_blocks[-1].get("type") == "tool_group":
@@ -866,7 +884,7 @@ class MTPApp(App):
                     block["mode"] = mode
                 return block
         block = {"type": "tool_group", "batch_index": batch_index, "mode": mode or "unknown", "items": []}
-        self._live_blocks.append(block)
+        append_bounded(self._live_blocks, block, self._limits.live_blocks)
         return block
 
     def _upsert_live_tool_item(self, detail: dict[str, Any]) -> None:
@@ -896,8 +914,9 @@ class MTPApp(App):
                     return
 
         block = self._ensure_live_tool_group(batch_index=detail.get("batch_index"))
-        block["items"].append(
-            {
+        append_bounded(
+            block["items"],
+            bounded_detail({
                 "call_id": call_id,
                 "tool_name": str(detail.get("tool_name") or "tool"),
                 "status": "running" if dtype == "tool_started" else ("completed" if detail.get("success") else "failed"),
@@ -907,7 +926,12 @@ class MTPApp(App):
                 "started_at_ms": detail.get("started_at_ms"),
                 "finished_at_ms": detail.get("finished_at_ms"),
                 "result_preview": detail.get("result_preview"),
-            }
+            }, self._limits.tool_preview_chars),
+            self._limits.live_details,
+        )
+        trim_display_blocks(
+            self._live_blocks, max_blocks=self._limits.live_blocks,
+            max_chars=self._limits.live_text_chars + self._limits.live_thinking_chars,
         )
 
     @staticmethod
@@ -960,7 +984,7 @@ class MTPApp(App):
                 self._live_status = message
                 spinner.update_label(message or "Thinking")
         elif kind in {"tool", "tool_end"}:
-            self._live_tool_events.append(message)
+            append_bounded(self._live_tool_events, str(message), self._limits.live_events)
             self._state.last_tool_events = list(self._live_tool_events)
             self._refresh_sidebar()
         elif kind == "tool_detail":
@@ -968,7 +992,8 @@ class MTPApp(App):
                 detail = dict(message)  # type: ignore[arg-type]
             except Exception:
                 detail = {"type": "detail", "message": str(message)}
-            self._live_tool_details.append(detail)
+            detail = bounded_detail(detail, self._limits.tool_preview_chars)
+            append_bounded(self._live_tool_details, detail, self._limits.live_details)
             self._state.last_tool_details = list(self._live_tool_details)
             self._upsert_live_tool_item(detail)
             if (
@@ -978,7 +1003,7 @@ class MTPApp(App):
             ):
                 self._memory_refresh_dirty = True
         elif kind == "warn":
-            self._live_warnings.append(message)
+            append_bounded(self._live_warnings, str(message), self._limits.live_warnings)
         elif kind == "reasoning":
             self._append_live_thinking_block(str(message))
             if not self._live_status:
