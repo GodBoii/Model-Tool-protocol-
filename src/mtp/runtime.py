@@ -77,6 +77,7 @@ class ToolRegistry:
         policy: RiskPolicy | None = None,
         *,
         max_cache_entries: int = 1024,
+        max_concurrency: int = 16,
         approval_handler: ApprovalHandler | None = None,
     ) -> None:
         self._tools: dict[str, RegisteredTool] = {}
@@ -86,6 +87,9 @@ class ToolRegistry:
         self._tool_specs_cache: list[ToolSpec] | None = None
         self.policy = policy or RiskPolicy()
         self.max_cache_entries = max_cache_entries
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
+        self.max_concurrency = max_concurrency
         self.approval_handler = approval_handler
 
     def register_tool(self, spec: ToolSpec, handler: ToolHandler) -> None:
@@ -454,6 +458,23 @@ class ToolRegistry:
         results: dict[str, ToolResult] = {}
         ordered: list[ToolResult] = []
 
+        def failed_dependencies(call: ToolCall) -> list[str]:
+            return [
+                dependency
+                for dependency in call.depends_on
+                if dependency in results and not results[dependency].success
+            ]
+
+        def dependency_failure(call: ToolCall, dependencies: list[str]) -> ToolResult:
+            return ToolResult(
+                call_id=call.id,
+                tool_name=call.name,
+                output=None,
+                success=False,
+                error=f"Skipped because dependencies failed: {dependencies}",
+                skipped=True,
+            )
+
         for batch in plan.batches:
             if cancel_checker is not None and cancel_checker():
                 raise ExecutionCancelledError("Execution plan cancelled before batch execution.")
@@ -467,6 +488,12 @@ class ToolRegistry:
                             raise ValueError(
                                 f"Call {call.id} depends on unresolved calls: {unresolved}"
                             )
+                        failed = failed_dependencies(call)
+                        if failed:
+                            result = dependency_failure(call, failed)
+                            results[call.id] = result
+                            ordered.append(result)
+                            continue
                     result = await self.execute_call(
                         call,
                         results,
@@ -487,44 +514,57 @@ class ToolRegistry:
 
             if cancel_checker is not None and cancel_checker():
                 raise ExecutionCancelledError("Execution plan cancelled before parallel tool execution.")
-            unique_calls: dict[tuple[str, str], ToolCall] = {}
-            call_keys: dict[str, tuple[str, str]] = {}
+            runnable_calls: list[ToolCall] = []
             for call in batch.calls:
-                key = self._cache_key(call.name, self._resolve_refs(call.arguments, results))
-                call_keys[call.id] = key
-                unique_calls.setdefault(key, call)
+                failed = failed_dependencies(call)
+                if failed:
+                    result = dependency_failure(call, failed)
+                    results[call.id] = result
+                else:
+                    runnable_calls.append(call)
 
-            unique_results = await asyncio.gather(
-                *[
-                    self.execute_call(
+            semaphore = asyncio.Semaphore(self.max_concurrency)
+
+            async def execute_limited(call: ToolCall) -> ToolResult:
+                async with semaphore:
+                    return await self.execute_call(
                         call,
                         results,
                         media_context=media_context,
                         cancel_checker=cancel_checker,
                     )
-                    for call in unique_calls.values()
-                ]
+
+            unique_calls: dict[tuple[str, str], ToolCall] = {}
+            call_keys: dict[str, tuple[str, str]] = {}
+            for call in runnable_calls:
+                key = self._cache_key(call.name, self._resolve_refs(call.arguments, results))
+                call_keys[call.id] = key
+                unique_calls.setdefault(key, call)
+
+            unique_results = await asyncio.gather(
+                *[execute_limited(call) for call in unique_calls.values()]
             )
             result_by_key = dict(zip(unique_calls.keys(), unique_results, strict=True))
             for call in batch.calls:
-                result = result_by_key[call_keys[call.id]]
-                if result.call_id != call.id:
-                    result = ToolResult(
-                        call_id=call.id,
-                        tool_name=result.tool_name,
-                        output=result.output,
-                        success=result.success,
-                        error=result.error,
-                        cached=True,
-                        approval=result.approval,
-                        skipped=result.skipped,
-                        expires_at=result.expires_at,
-                        images=result.images,
-                        videos=result.videos,
-                        audios=result.audios,
-                        files=result.files,
-                    )
-                results[call.id] = result
-                ordered.append(result)
+                if call.id not in results:
+                    result = result_by_key[call_keys[call.id]]
+                    if result.call_id != call.id:
+                        result = ToolResult(
+                            call_id=call.id,
+                            tool_name=result.tool_name,
+                            output=result.output,
+                            success=result.success,
+                            error=result.error,
+                            cached=True,
+                            approval=result.approval,
+                            skipped=result.skipped,
+                            expires_at=result.expires_at,
+                            images=result.images,
+                            videos=result.videos,
+                            audios=result.audios,
+                            files=result.files,
+                        )
+                    results[call.id] = result
+                ordered.append(results[call.id])
 
         return ordered
