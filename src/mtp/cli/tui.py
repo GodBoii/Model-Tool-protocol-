@@ -18,6 +18,7 @@ from .tui_settings import (
     delete_provider_api_key,
     ensure_provider_entry,
     load_provider_settings,
+    mask_api_key,
     provider_settings_path,
     save_provider_settings,
     set_provider_api_key,
@@ -144,7 +145,7 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
         save_provider_settings(settings_path, settings)
         if state.backend == provider_name:
             state.agent = None
-        masked = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "*" * len(api_key)
+        masked = mask_api_key(api_key)
         return f"API key for {provider_name} set to {masked}"
 
     if command == "delete":
@@ -167,7 +168,7 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
             return f"Unknown provider: {provider_name}"
         entry = ensure_provider_entry(settings, provider_name)
         api_key = entry.get("api_key")
-        return f"{provider_name}: {api_key}" if api_key else f"No API key set for {provider_name}"
+        return f"{provider_name}: {mask_api_key(api_key)}" if api_key else f"No API key set for {provider_name}"
 
     return "Unknown subcommand. Available: set, delete, show"
 

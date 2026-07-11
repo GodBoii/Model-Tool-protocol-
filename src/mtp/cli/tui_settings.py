@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 
@@ -67,7 +69,36 @@ def load_provider_settings(path: Path) -> dict[str, Any]:
 
 def save_provider_settings(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    serialized = json.dumps(payload, indent=2, ensure_ascii=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary_path = Path(handle.name)
+        temporary_path.chmod(0o600)
+        os.replace(temporary_path, path)
+        path.chmod(0o600)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def mask_api_key(api_key: str) -> str:
+    """Return a display-safe representation that never reveals the full secret."""
+    if not api_key:
+        return ""
+    if len(api_key) <= 8:
+        return "*" * len(api_key)
+    return f"{api_key[:4]}...{api_key[-4:]}"
 
 
 def ensure_provider_entry(payload: dict[str, Any], provider_name: str) -> dict[str, Any]:
