@@ -145,6 +145,7 @@ class MistralToolCallingProvider(ProviderAdapter):
         if mistral_tools:
             request_args["tools"] = mistral_tools
             request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
         
         response = self._client.chat.complete(**request_args)
         message = response.choices[0].message
@@ -216,7 +217,7 @@ class MistralToolCallingProvider(ProviderAdapter):
         return ProviderCapabilities(
             provider="mistral",
             supports_tool_calling=True,
-            supports_parallel_tool_calls=False,
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text"],
             supports_tool_media_output=False,
             supports_finalize_streaming=False,
