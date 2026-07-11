@@ -315,6 +315,9 @@ class AssistantMessageWidget(Vertical):
         self._text_widgets: list[Static] = []
         self._warning_widgets: list[Static] = []
         self._detail_widgets: list[Static] = []
+        self._block_types: list[str] = []
+        self._block_widgets: list[ThinkingBlockWidget | ToolGroupWidget | Static] = []
+        self._header_signature: tuple[str, str] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(classes="assistant-header")
@@ -324,20 +327,15 @@ class AssistantMessageWidget(Vertical):
 
     def update_message(self, msg: ChatMessage) -> None:
         self._msg = msg
-        header = Text()
-        header.append("  < ", style="bold #8b5cf6")
-        header.append("Agent", style="bold #c084fc")
-        if self._msg.model:
-            header.append(f"  {self._msg.model}", style="dim #71717a")
-        self.query_one(".assistant-header", Static).update(header)
-
-        for widget in [*self._thinking_widgets, *self._tool_group_widgets, *self._text_widgets, *self._warning_widgets, *self._detail_widgets]:
-            widget.remove()
-        self._thinking_widgets = []
-        self._tool_group_widgets = []
-        self._text_widgets = []
-        self._warning_widgets = []
-        self._detail_widgets = []
+        header_signature = (self._msg.model, self._msg.backend)
+        if header_signature != self._header_signature:
+            header = Text()
+            header.append("  < ", style="bold #8b5cf6")
+            header.append("Agent", style="bold #c084fc")
+            if self._msg.model:
+                header.append(f"  {self._msg.model}", style="dim #71717a")
+            self.query_one(".assistant-header", Static).update(header)
+            self._header_signature = header_signature
 
         blocks = list(self._msg.assistant_blocks)
         if not blocks:
@@ -346,26 +344,68 @@ class AssistantMessageWidget(Vertical):
             if self._msg.text:
                 blocks.append({"type": "text", "text": self._msg.text})
 
-        for block in blocks:
+        blocks = [block for block in blocks if str(block.get("type") or "") in {"thinking", "tool_group", "text"}]
+        block_types = [str(block.get("type") or "") for block in blocks]
+        existing_count = len(self._block_types)
+        can_reconcile = self._block_types == block_types[:existing_count]
+        if not can_reconcile:
+            for widget in self._block_widgets:
+                widget.remove()
+            self._thinking_widgets = []
+            self._tool_group_widgets = []
+            self._text_widgets = []
+            self._block_widgets = []
+            existing_count = 0
+        self._block_types = block_types
+
+        for index, block in enumerate(blocks):
             block_type = str(block.get("type") or "")
             if block_type == "thinking":
-                widget = ThinkingBlockWidget(
-                    str(block.get("text") or ""),
-                    collapsed=self._msg.collapse_thinking and not self._msg.is_live,
-                )
-                self.mount(widget)
-                self._thinking_widgets.append(widget)
+                text = str(block.get("text") or "")
+                collapsed = self._msg.collapse_thinking and not self._msg.is_live
+                if index < existing_count:
+                    widget = self._block_widgets[index]
+                    assert isinstance(widget, ThinkingBlockWidget)
+                    widget.update_block(text, collapsed=collapsed)
+                else:
+                    widget = ThinkingBlockWidget(text, collapsed=collapsed)
+                    self.mount(widget)
+                    self._thinking_widgets.append(widget)
+                    self._block_widgets.append(widget)
             elif block_type == "tool_group":
-                widget = ToolGroupWidget(block)
-                self.mount(widget)
-                self._tool_group_widgets.append(widget)
+                if index < existing_count:
+                    widget = self._block_widgets[index]
+                    assert isinstance(widget, ToolGroupWidget)
+                    widget.update_group(block)
+                else:
+                    widget = ToolGroupWidget(block)
+                    self.mount(widget)
+                    self._tool_group_widgets.append(widget)
+                    self._block_widgets.append(widget)
             elif block_type == "text":
                 text = str(block.get("text") or "")
-                if text:
-                    renderable: Any = RichMarkdown(text, code_theme="monokai")
+                # Parsing an ever-growing Markdown document for every token is
+                # quadratic in practice. Keep streaming updates cheap, then do
+                # one rich render when the completed message is installed.
+                renderable: Any = (
+                    Text(text) if self._msg.is_live else RichMarkdown(text, code_theme="monokai")
+                )
+                if index < existing_count:
+                    widget = self._block_widgets[index]
+                    assert isinstance(widget, Static)
+                    widget.update(renderable)
+                else:
                     widget = Static(renderable)
                     self.mount(widget)
                     self._text_widgets.append(widget)
+                    self._block_widgets.append(widget)
+
+        # Warnings and optional diagnostics are small and infrequent; rebuild
+        # only these auxiliary rows without disturbing the streaming blocks.
+        for widget in [*self._warning_widgets, *self._detail_widgets]:
+            widget.remove()
+        self._warning_widgets = []
+        self._detail_widgets = []
 
         for warning in self._msg.warnings[:3]:
             widget = Static(f"  ! {warning}")
