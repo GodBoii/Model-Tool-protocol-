@@ -132,10 +132,13 @@ class JsonSessionStore:
         db_path: str | Path = "tmp/mtp_json_db",
         session_table: str = "mtp_sessions",
         lock_timeout_seconds: float = 10.0,
+        stale_lock_seconds: float = 60.0,
     ) -> None:
         self.db_path = Path(db_path)
-        self.session_table = session_table
+        # The table name becomes a filename, so reject separators and traversal.
+        self.session_table = _validate_sql_identifier(session_table)
         self.lock_timeout_seconds = max(0.1, float(lock_timeout_seconds))
+        self.stale_lock_seconds = max(self.lock_timeout_seconds, float(stale_lock_seconds))
         self._lock = threading.RLock()
 
     @property
@@ -151,11 +154,15 @@ class JsonSessionStore:
         self.db_path.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + self.lock_timeout_seconds
         fd: int | None = None
+        lock_token = json.dumps({"pid": os.getpid(), "created_at": time.time(), "token": uuid4().hex})
         while fd is None:
             try:
-                fd = os.open(str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, str(os.getpid()).encode("ascii", errors="ignore"))
+                fd = os.open(str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.write(fd, lock_token.encode("ascii"))
+                os.fsync(fd)
             except FileExistsError as exc:
+                if self._remove_stale_lock():
+                    continue
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"Timed out waiting for session store lock: {self.lock_path}") from exc
                 time.sleep(0.05)
@@ -164,15 +171,37 @@ class JsonSessionStore:
         finally:
             if fd is not None:
                 os.close(fd)
+            # Only remove the lock we acquired. This avoids deleting a successor's
+            # lock if an administrator recovered/replaced ours while it was held.
             try:
-                self.lock_path.unlink()
+                if self.lock_path.read_text(encoding="ascii") == lock_token:
+                    self.lock_path.unlink()
             except FileNotFoundError:
                 pass
+
+    def _remove_stale_lock(self) -> bool:
+        """Best-effort recovery for abandoned locks without stealing live locks."""
+        try:
+            stat = self.lock_path.stat()
+            if time.time() - stat.st_mtime < self.stale_lock_seconds:
+                return False
+            raw = self.lock_path.read_text(encoding="ascii")
+            payload = json.loads(raw)
+            pid = int(payload.get("pid", 0))
+            if pid > 0 and _process_is_alive(pid):
+                return False
+            # Re-check identity after inspection to limit races with replacement.
+            if self.lock_path.read_text(encoding="ascii") != raw:
+                return False
+            self.lock_path.unlink()
+            return True
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return False
 
     def _read_all(self) -> list[dict[str, Any]]:
         self.db_path.mkdir(parents=True, exist_ok=True)
         if not self.file_path.exists():
-            self.file_path.write_text("[]", encoding="utf-8")
+            self._write_all([])
             return []
         raw = self.file_path.read_text(encoding="utf-8")
         if not raw.strip():
@@ -188,8 +217,24 @@ class JsonSessionStore:
     def _write_all(self, rows: list[dict[str, Any]]) -> None:
         self.db_path.mkdir(parents=True, exist_ok=True)
         tmp_path = self.file_path.with_name(f".{self.file_path.name}.{uuid4().hex}.tmp")
-        tmp_path.write_text(json.dumps(rows, indent=2, ensure_ascii=True), encoding="utf-8")
-        tmp_path.replace(self.file_path)
+        try:
+            fd = os.open(str(tmp_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(rows, handle, indent=2, ensure_ascii=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, self.file_path)
+            try:
+                os.chmod(self.file_path, 0o600)
+            except OSError:
+                pass
+            _fsync_directory(self.db_path)
+        finally:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
 
     def get_session(self, session_id: str, *, user_id: str | None = None) -> SessionRecord | None:
         with self._lock:
@@ -213,7 +258,7 @@ class JsonSessionStore:
                     serialized["created_at"] = serialized["updated_at"]
 
                 for idx, row in enumerate(rows):
-                    if row.get("session_id") == session.session_id:
+                    if row.get("session_id") == session.session_id and row.get("user_id") == session.user_id:
                         rows[idx] = serialized
                         break
                 else:
@@ -221,6 +266,68 @@ class JsonSessionStore:
 
                 self._write_all(rows)
                 return SessionRecord.from_dict(serialized)
+
+    def list_sessions(
+        self,
+        *,
+        user_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[SessionRecord]:
+        """Return newest sessions first, optionally scoped to one user."""
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be non-negative")
+        with self._lock:
+            with self._file_lock():
+                records = [
+                    SessionRecord.from_dict(row)
+                    for row in self._read_all()
+                    if user_id is None or row.get("user_id") == user_id
+                ]
+        records.sort(key=lambda record: record.updated_at, reverse=True)
+        return records if limit is None else records[:limit]
+
+    def delete_session(self, session_id: str, *, user_id: str | None = None) -> bool:
+        """Delete an exact session identity and report whether it existed."""
+        with self._lock:
+            with self._file_lock():
+                rows = self._read_all()
+                kept = [
+                    row
+                    for row in rows
+                    if not (row.get("session_id") == session_id and row.get("user_id") == user_id)
+                ]
+                if len(kept) == len(rows):
+                    return False
+                self._write_all(kept)
+                return True
+
+
+def _process_is_alive(pid: int) -> bool:
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _fsync_directory(path: Path) -> None:
+    """Persist a rename on platforms that support opening directories."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _validate_sql_identifier(value: str) -> str:

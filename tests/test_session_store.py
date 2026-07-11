@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 import pytest
 from pathlib import Path
 
@@ -160,6 +162,54 @@ class TestJsonSessionStore:
         store = JsonSessionStore(db_path=tmp_path)
         store.upsert_session(SessionRecord(session_id="s1"))
         assert not store.lock_path.exists()
+
+    def test_same_session_id_is_isolated_by_user(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path)
+        store.upsert_session(SessionRecord(session_id="shared", user_id="alice", metadata={"n": 1}))
+        store.upsert_session(SessionRecord(session_id="shared", user_id="bob", metadata={"n": 2}))
+
+        assert store.get_session("shared", user_id="alice").metadata == {"n": 1}
+        assert store.get_session("shared", user_id="bob").metadata == {"n": 2}
+
+    def test_list_sessions_filters_sorts_and_limits(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path)
+        store.upsert_session(SessionRecord(session_id="old", user_id="u", updated_at="2000-01-01T00:00:00+00:00"))
+        store.upsert_session(SessionRecord(session_id="other", user_id="v"))
+        store.upsert_session(SessionRecord(session_id="new", user_id="u"))
+
+        sessions = store.list_sessions(user_id="u", limit=1)
+        assert [record.session_id for record in sessions] == ["new"]
+        with pytest.raises(ValueError, match="non-negative"):
+            store.list_sessions(limit=-1)
+
+    def test_delete_session_uses_exact_user_identity(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path)
+        store.upsert_session(SessionRecord(session_id="shared", user_id="alice"))
+        store.upsert_session(SessionRecord(session_id="shared", user_id="bob"))
+
+        assert store.delete_session("shared", user_id="alice") is True
+        assert store.delete_session("shared", user_id="alice") is False
+        assert store.get_session("shared", user_id="bob") is not None
+
+    def test_recovers_abandoned_stale_lock(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path, lock_timeout_seconds=0.1, stale_lock_seconds=0.1)
+        store.db_path.mkdir(parents=True, exist_ok=True)
+        store.lock_path.write_text(json.dumps({"pid": 99999999, "token": "old"}), encoding="ascii")
+        old = time.time() - 10
+        os.utime(store.lock_path, (old, old))
+
+        store.upsert_session(SessionRecord(session_id="recovered"))
+        assert store.get_session("recovered") is not None
+
+    def test_rejects_unsafe_session_table(self, tmp_path):
+        with pytest.raises(ValueError, match="Invalid"):
+            JsonSessionStore(db_path=tmp_path, session_table="../escape")
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_session_file_is_private(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path)
+        store.upsert_session(SessionRecord(session_id="private"))
+        assert store.file_path.stat().st_mode & 0o777 == 0o600
         assert store.get_session("s1") is not None
         assert not store.lock_path.exists()
 
