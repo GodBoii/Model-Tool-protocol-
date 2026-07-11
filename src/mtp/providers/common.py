@@ -6,6 +6,7 @@ import json
 import mimetypes
 import re
 from pathlib import Path
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -210,6 +211,34 @@ def extract_usage_metrics(response: Any) -> dict[str, int]:
     if tool_use_prompt_tokens is not None:
         metrics["tool_use_prompt_tokens"] = tool_use_prompt_tokens
     return metrics
+
+
+def iter_openai_like_stream_content(
+    stream: Iterable[Any],
+    *,
+    on_usage: Callable[[dict[str, int]], None] | None = None,
+) -> Iterator[str]:
+    """Yield text deltas from an OpenAI-compatible chat completion stream.
+
+    Providers commonly emit a final usage-only chunk with no choices.  Both
+    SDK model objects and decoded dictionaries are accepted so adapters can
+    share the same correct handling across client versions.
+    """
+    for chunk in stream:
+        usage = extract_usage_metrics(chunk)
+        if usage and on_usage is not None:
+            on_usage(usage)
+
+        choices = _read_value(chunk, "choices")
+        if not choices:
+            continue
+        first = choices[0]
+        delta = _read_value(first, "delta")
+        if delta is None:
+            continue
+        content = _read_value(delta, "content")
+        if isinstance(content, str) and content:
+            yield content
 
 
 def extract_refs(value: Any) -> list[str]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -14,6 +15,7 @@ from .common import (
     STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     extract_usage_metrics,
     format_openai_like_message,
+    iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
 )
 
@@ -47,6 +49,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self.max_completion_tokens = max_completion_tokens
         self.timeout = timeout
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
         self._last_rate_limits: dict[str, Any] | None = None
         self._last_finalize_rate_limits: dict[str, Any] | None = None
         self._client = client or self._make_client(api_key=api_key)
@@ -187,6 +190,25 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             return "Model requested an additional tool round; rerun with a larger max_rounds."
         return message.content or "Done."
 
+    def finalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> Iterator[str]:
+        self._last_stream_usage = None
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openai_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            **self._request_options(),
+        }
+        stream = self._client.chat.completions.create(**request_args)
+
+        def remember_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        yield from iter_openai_like_stream_content(stream, on_usage=remember_usage)
+
     def capabilities(self) -> ProviderCapabilities:
         structured_output_support = STRUCTURED_OUTPUT_CLIENT_VALIDATED
         if isinstance(self.response_format, dict):
@@ -201,7 +223,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text", "image", "audio", "file"],
             supports_tool_media_output=True,
-            supports_finalize_streaming=False,
+            supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=structured_output_support,
