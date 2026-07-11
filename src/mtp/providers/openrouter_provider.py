@@ -14,6 +14,8 @@ from .common import (
     ProviderCapabilities,
     USAGE_METRICS_RICH,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+    STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     extract_usage_metrics,
     openai_like_tool_call_plan_payload,
 )
@@ -34,11 +36,15 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         site_name: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
+        parallel_tool_calls: bool = True,
+        response_format: dict[str, Any] | None = None,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.tool_choice = tool_choice
+        self.parallel_tool_calls = parallel_tool_calls
+        self.response_format = response_format
         self.site_url = site_url
         self.site_name = site_name
         self._last_finalize_usage: dict[str, int] | None = None
@@ -261,6 +267,9 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         if openai_tools:
             request_args["tools"] = openai_tools
             request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
 
         response = self._client.chat.completions.create(**request_args)
         message = response.choices[0].message
@@ -287,11 +296,14 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         openrouter_messages = self._to_openrouter_messages(messages)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=openrouter_messages,
-            temperature=self.temperature,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": openrouter_messages,
+            "temperature": self.temperature,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = self._client.chat.completions.create(**request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
@@ -299,16 +311,21 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         return message.content or "Done."
 
     def capabilities(self) -> ProviderCapabilities:
+        response_type = self.response_format.get("type") if self.response_format else None
+        structured = {
+            "json_object": STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+            "json_schema": STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
+        }.get(response_type, STRUCTURED_OUTPUT_CLIENT_VALIDATED)
         return ProviderCapabilities(
             provider="openrouter",
             supports_tool_calling=True,
-            supports_parallel_tool_calls=False,
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text", "image", "audio", "video", "file"],
             supports_tool_media_output=True,
             supports_finalize_streaming=False,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
-            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            structured_output_support=structured,
             supports_native_async=False,
             allow_finalize_stream_fallback=True,
         )

@@ -53,6 +53,7 @@ class CohereToolCallingProvider(ProviderAdapter):
         max_tokens: int = 4096,
         preamble: str | None = None,
         force_single_step: bool = False,
+        strict_tools: bool = True,
         client: Any | None = None,
     ) -> None:
         self.model = model
@@ -60,6 +61,7 @@ class CohereToolCallingProvider(ProviderAdapter):
         self.max_tokens = max_tokens
         self.preamble = preamble          # Cohere's version of system prompt
         self.force_single_step = force_single_step
+        self.strict_tools = strict_tools
         self._last_finalize_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
@@ -217,6 +219,7 @@ class CohereToolCallingProvider(ProviderAdapter):
         }
         if cohere_tools:
             request_args["tools"] = cohere_tools
+            request_args["strict_tools"] = self.strict_tools
         if self.preamble:
             # Inject preamble as leading system message if not already present
             has_system = any(m.get("role") == "system" for m in cohere_messages)

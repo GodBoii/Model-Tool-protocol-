@@ -9,6 +9,7 @@ from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
     STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     USAGE_METRICS_RICH,
     extract_usage_metrics,
@@ -212,7 +213,11 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
         return message.content or "Done."
 
     def capabilities(self) -> ProviderCapabilities:
-        structured = STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA if self.response_format else STRUCTURED_OUTPUT_CLIENT_VALIDATED
+        response_type = self.response_format.get("type") if self.response_format else None
+        structured = {
+            "json_object": STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+            "json_schema": STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
+        }.get(response_type, STRUCTURED_OUTPUT_CLIENT_VALIDATED)
         return ProviderCapabilities(
             provider="fireworks",
             supports_tool_calling=True,

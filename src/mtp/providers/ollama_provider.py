@@ -13,6 +13,8 @@ from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+    STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     USAGE_METRICS_RICH,
     calls_to_dependency_batches,
     extract_refs,
@@ -43,7 +45,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
         options: dict[str, Any] | None = None,
         format: dict[str, Any] | str | None = None,
         keep_alive: float | str | None = None,
-        think: bool | None = None,
+        think: bool | str | None = None,
         client: Any | None = None,
     ) -> None:
         self.model = model
@@ -51,6 +53,8 @@ class OllamaToolCallingProvider(ProviderAdapter):
         self.options = options
         self.format = format
         self.keep_alive = keep_alive
+        if isinstance(think, str) and think not in {"low", "medium", "high"}:
+            raise ValueError("think must be a boolean or one of: low, medium, high")
         self.think = think
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
@@ -394,6 +398,11 @@ class OllamaToolCallingProvider(ProviderAdapter):
                 yield content
 
     def capabilities(self) -> ProviderCapabilities:
+        structured = STRUCTURED_OUTPUT_CLIENT_VALIDATED
+        if self.format == "json":
+            structured = STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT
+        elif isinstance(self.format, dict):
+            structured = STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA
         return ProviderCapabilities(
             provider="ollama",
             supports_tool_calling=True,
@@ -402,8 +411,8 @@ class OllamaToolCallingProvider(ProviderAdapter):
             supports_tool_media_output=True,
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
-            supports_reasoning_metadata=bool(self.think),
-            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            supports_reasoning_metadata=self.think is not None and self.think is not False,
+            structured_output_support=structured,
             supports_native_async=False,
             allow_finalize_stream_fallback=True,
         )
