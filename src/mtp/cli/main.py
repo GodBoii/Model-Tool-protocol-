@@ -14,6 +14,7 @@ from ..codebase import CodebaseMemory
 from .providers import get_provider, providers_as_rows
 from .scaffold import VALID_TEMPLATES, scaffold_project
 from .tui import run_tui
+from .. import __version__
 
 
 @contextmanager
@@ -121,8 +122,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     items = run_doctor(provider_filter=provider_filter)
     rows = [[row.name, row.status, row.detail] for row in items]
     _print_table(["check", "status", "detail"], rows)
-    has_warn = any(row.status != "OK" for row in items)
-    return 1 if has_warn else 0
+    has_failure = any(row.status == "FAIL" for row in items)
+    return 1 if has_failure else 0
 
 
 def _cmd_providers_list(_args: argparse.Namespace) -> int:
@@ -232,6 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="mtp",
         description="MTP command line tools: scaffold, run, diagnostics, provider introspection.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     new_cmd = sub.add_parser("new", help="Create a new MTP project from a template.")

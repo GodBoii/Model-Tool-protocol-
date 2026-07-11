@@ -16,15 +16,17 @@ class DoctorItem:
     detail: str
 
 
-def _status(ok: bool) -> str:
-    return "OK" if ok else "WARN"
+def _status(ok: bool, *, required: bool = False) -> str:
+    if ok:
+        return "OK"
+    return "FAIL" if required else "WARN"
 
 
 def _check_python() -> DoctorItem:
     version = platform.python_version()
     major, minor, *_ = platform.python_version_tuple()
     ok = int(major) > 3 or (int(major) == 3 and int(minor) >= 10)
-    return DoctorItem("python", _status(ok), f"Python {version} (requires >= 3.10)")
+    return DoctorItem("python", _status(ok, required=True), f"Python {version} (requires >= 3.10)")
 
 
 def _check_dotenv() -> DoctorItem:

@@ -1,3 +1,10 @@
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("mtpx")
+except PackageNotFoundError:
+    __version__ = "0+unknown"
+
 from .events import EventStreamContext
 from .config import load_dotenv_if_available
 from .policy import PolicyDecision, RiskPolicy
