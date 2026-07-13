@@ -23,6 +23,14 @@ class TestSimplePlannerProvider:
         assert isinstance(caps, ProviderCapabilities)
         assert caps.provider == "simple_planner"
         assert caps.supports_tool_calling is True
+        assert caps.supports_native_async is True
+
+    @pytest.mark.asyncio
+    async def test_native_async_path(self):
+        provider = SimplePlannerProvider()
+        action = await provider.anext_action([{"role": "user", "content": "hello"}], [])
+        assert action.response_text is not None
+        assert await provider.afinalize([], []) == "Done. Ran 0 tool calls."
 
     def test_profile_triggers_plan(self):
         p = SimplePlannerProvider()

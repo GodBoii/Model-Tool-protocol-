@@ -55,6 +55,18 @@ class SimplePlannerProvider(ProviderAdapter):
             return f"Done. Issue created: {created[-1].output}"
         return f"Done. Ran {len(tool_results)} tool calls."
 
+    async def anext_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> AgentAction:
+        # This planner is deterministic and performs no blocking I/O, so its
+        # native async path can execute directly without consuming a worker thread.
+        return self.next_action(messages, tools)
+
+    async def afinalize(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> str:
+        return self.finalize(messages, tool_results)
+
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider="simple_planner",
@@ -66,6 +78,6 @@ class SimplePlannerProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_NONE,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_NONE,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
