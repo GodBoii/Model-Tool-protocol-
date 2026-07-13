@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
+import os
 from typing import Any
 
 
@@ -56,24 +57,31 @@ def list_providers() -> list[ProviderInfo]:
     return list(PROVIDERS)
 
 
+def provider_as_row(info: ProviderInfo) -> dict[str, Any]:
+    """Return operational metadata without ever exposing credential values."""
+    sdk_installed = info.sdk_installed()
+    sdk_status = "built-in" if sdk_installed is None else ("installed" if sdk_installed else "missing")
+
+    if info.env_var is None:
+        key_status = "not-required"
+        key_configured = None
+    else:
+        key_configured = bool(os.environ.get(info.env_var, "").strip())
+        key_status = "configured" if key_configured else "missing"
+
+    ready = sdk_installed is not False and key_configured is not False
+    return {
+        "name": info.name,
+        "alias": info.alias,
+        "class": info.class_name,
+        "sdk": info.sdk_module or "-",
+        "sdk_status": sdk_status,
+        "env": info.env_var or "-",
+        "key_status": key_status,
+        "ready": ready,
+        "notes": info.notes,
+    }
+
+
 def providers_as_rows() -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for info in PROVIDERS:
-        sdk_installed = info.sdk_installed()
-        sdk_status = "-"
-        if sdk_installed is True:
-            sdk_status = "installed"
-        elif sdk_installed is False:
-            sdk_status = "missing"
-        rows.append(
-            {
-                "name": info.name,
-                "alias": info.alias,
-                "class": info.class_name,
-                "sdk": info.sdk_module or "-",
-                "sdk_status": sdk_status,
-                "env": info.env_var or "-",
-                "notes": info.notes,
-            }
-        )
-    return rows
+    return [provider_as_row(info) for info in PROVIDERS]

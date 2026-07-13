@@ -50,6 +50,38 @@ def test_providers_list_json_is_machine_readable(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert isinstance(payload, list)
     assert any(row["name"] == "groq" for row in payload)
+    assert all("key_status" in row and "ready" in row for row in payload)
+
+
+def test_providers_show_reports_readiness_without_secret(monkeypatch, capsys) -> None:
+    secret = "test-secret-that-must-not-be-printed"
+    monkeypatch.setenv("GROQ_API_KEY", secret)
+    monkeypatch.setattr("mtp.cli.providers.importlib.util.find_spec", lambda _module: object())
+
+    assert main(["providers", "show", "Groq", "--json"]) == 0
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["name"] == "groq"
+    assert payload["sdk_status"] == "installed"
+    assert payload["key_status"] == "configured"
+    assert payload["ready"] is True
+    assert secret not in output
+
+
+def test_providers_show_reports_missing_requirements(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("mtp.cli.providers.importlib.util.find_spec", lambda _module: None)
+
+    assert main(["providers", "show", "OpenAIToolCallingProvider", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["sdk_status"] == "missing"
+    assert payload["key_status"] == "missing"
+    assert payload["ready"] is False
+
+
+def test_providers_show_rejects_unknown_provider(capsys) -> None:
+    assert main(["providers", "show", "not-a-provider"]) == 2
+    assert "Unknown provider: not-a-provider" in capsys.readouterr().err
 
 
 def test_sessions_list_and_delete(tmp_path, capsys) -> None:

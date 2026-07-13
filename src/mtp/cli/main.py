@@ -13,7 +13,7 @@ from .doctor import run_doctor
 from ..agent_os import launch as launch_agent_os
 from ..codebase import CodebaseMemory
 from ..session_store import JsonSessionStore
-from .providers import get_provider, providers_as_rows
+from .providers import get_provider, provider_as_row, providers_as_rows
 from .scaffold import VALID_TEMPLATES, scaffold_project
 from .tui import run_tui
 from .. import __version__
@@ -144,10 +144,36 @@ def _cmd_providers_list(args: argparse.Namespace) -> int:
             str(row["sdk"]),
             str(row["sdk_status"]),
             str(row["env"]),
+            str(row["key_status"]),
+            "yes" if row["ready"] else "no",
         ]
         for row in rows_data
     ]
-    _print_table(["name", "alias", "class", "sdk", "sdk_status", "env"], rows)
+    _print_table(["name", "alias", "class", "sdk", "sdk_status", "env", "key_status", "ready"], rows)
+    return 0
+
+
+def _cmd_providers_show(args: argparse.Namespace) -> int:
+    info = get_provider(args.provider)
+    if info is None:
+        print(f"Unknown provider: {args.provider}", file=sys.stderr)
+        return 2
+    row = provider_as_row(info)
+    if args.json:
+        print(json.dumps(row))
+        return 0
+    values = [
+        ["name", str(row["name"])],
+        ["alias", str(row["alias"])],
+        ["class", str(row["class"])],
+        ["sdk", str(row["sdk"])],
+        ["sdk_status", str(row["sdk_status"])],
+        ["key_environment", str(row["env"])],
+        ["key_status", str(row["key_status"])],
+        ["ready", "yes" if row["ready"] else "no"],
+        ["notes", str(row["notes"] or "-")],
+    ]
+    _print_table(["field", "value"], values)
     return 0
 
 
@@ -305,6 +331,13 @@ def build_parser() -> argparse.ArgumentParser:
     providers_list = providers_sub.add_parser("list", help="List known providers, SDK modules, and key env vars.")
     providers_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     providers_list.set_defaults(handler=_cmd_providers_list)
+    providers_show = providers_sub.add_parser(
+        "show",
+        help="Inspect one provider's dependency and API-key readiness without revealing secrets.",
+    )
+    providers_show.add_argument("provider", help="Provider name, alias, or provider class name.")
+    providers_show.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    providers_show.set_defaults(handler=_cmd_providers_show)
 
     tui_cmd = sub.add_parser("tui", help="Launch interactive TUI for MTP + Codex bridge.")
     tui_cmd.add_argument(
