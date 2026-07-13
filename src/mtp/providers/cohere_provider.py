@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -63,6 +64,8 @@ class CohereToolCallingProvider(ProviderAdapter):
         self.force_single_step = force_single_step
         self.strict_tools = strict_tools
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
+        self._last_stream_finish_reason: str | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     # ------------------------------------------------------------------
@@ -177,30 +180,59 @@ class CohereToolCallingProvider(ProviderAdapter):
     # Usage extraction
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _read_value(value: Any, key: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(key)
+        return getattr(value, key, None)
+
     def _extract_cohere_usage(self, response: Any) -> dict[str, int] | None:
-        usage = getattr(response, "usage", None)
+        """Normalize Cohere V2 usage from chat responses or message-end events.
+
+        Cohere reports both actual token counts and billable units.  They can
+        differ substantially (for example because the API injects model
+        context), so retain both instead of silently replacing token counts
+        with billed values.
+        """
+        usage = self._read_value(response, "usage")
+        if usage is None:
+            delta = self._read_value(response, "delta")
+            usage = self._read_value(delta, "usage")
         if usage is None:
             return None
+
         result: dict[str, int] = {}
-        # Cohere V2: usage.billed_units.input_tokens / output_tokens
-        billed = getattr(usage, "billed_units", None)
-        tokens = getattr(usage, "tokens", None)
-        if billed:
-            inp = getattr(billed, "input_tokens", None)
-            out = getattr(billed, "output_tokens", None)
+        tokens = self._read_value(usage, "tokens")
+        billed = self._read_value(usage, "billed_units")
+
+        if tokens is not None:
+            inp = self._read_value(tokens, "input_tokens")
+            out = self._read_value(tokens, "output_tokens")
             if inp is not None:
-                result["prompt_tokens"] = int(inp)
+                result["input_tokens"] = int(inp)
             if out is not None:
-                result["completion_tokens"] = int(out)
+                result["output_tokens"] = int(out)
             if inp is not None and out is not None:
                 result["total_tokens"] = int(inp) + int(out)
-        elif tokens:
-            inp = getattr(tokens, "input_tokens", None)
-            out = getattr(tokens, "output_tokens", None)
-            if inp is not None:
-                result["prompt_tokens"] = int(inp)
-            if out is not None:
-                result["completion_tokens"] = int(out)
+
+        if billed is not None:
+            billed_inp = self._read_value(billed, "input_tokens")
+            billed_out = self._read_value(billed, "output_tokens")
+            if billed_inp is not None:
+                result["billed_input_tokens"] = int(billed_inp)
+            if billed_out is not None:
+                result["billed_output_tokens"] = int(billed_out)
+
+            # Older/private Cohere deployments may omit ``tokens``. Keep the
+            # provider-neutral totals useful in that case while still exposing
+            # that the source was billed usage.
+            if tokens is None:
+                if billed_inp is not None:
+                    result["input_tokens"] = int(billed_inp)
+                if billed_out is not None:
+                    result["output_tokens"] = int(billed_out)
+                if billed_inp is not None and billed_out is not None:
+                    result["total_tokens"] = int(billed_inp) + int(billed_out)
         return result or None
 
     # ------------------------------------------------------------------
@@ -311,13 +343,8 @@ class CohereToolCallingProvider(ProviderAdapter):
         return AgentAction(response_text=response_text, metadata=action_meta)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        cohere_messages = self._to_cohere_messages(messages)
-        response = self._client.chat(
-            model=self.model,
-            messages=cohere_messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-        )
+        del tool_results  # Tool results are already represented in ``messages``.
+        response = self._client.chat(**self._finalize_request(messages))
         self._last_finalize_usage = self._extract_cohere_usage(response) or None
         message = response.message
         if getattr(message, "tool_calls", None):
@@ -333,6 +360,56 @@ class CohereToolCallingProvider(ProviderAdapter):
                 texts.append(block.get("text", ""))
         return "\n".join(texts).strip() or "Done."
 
+    def _finalize_request(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        cohere_messages = self._to_cohere_messages(messages)
+        if self.preamble and not any(message.get("role") == "system" for message in cohere_messages):
+            cohere_messages = [{"role": "system", "content": self.preamble}, *cohere_messages]
+        return {
+            "model": self.model,
+            "messages": cohere_messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+
+    def finalize_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tool_results: list[ToolResult],
+    ) -> Iterator[str]:
+        """Stream final text using Cohere V2's native ``chat_stream`` API.
+
+        V2 text is emitted only by ``content-delta`` events. Usage and the
+        finish reason live on the terminal ``message-end`` event. Both Cohere
+        SDK model objects and decoded event dictionaries are accepted to keep
+        this adapter compatible with SDK transports and test doubles.
+        """
+        del tool_results  # Tool results are already represented in ``messages``.
+        self._last_stream_usage = None
+        self._last_finalize_usage = None
+        self._last_stream_finish_reason = None
+
+        stream = self._client.chat_stream(**self._finalize_request(messages))
+        for event in stream:
+            event_type = self._read_value(event, "type")
+            if event_type == "content-delta":
+                delta = self._read_value(event, "delta")
+                message = self._read_value(delta, "message")
+                content = self._read_value(message, "content")
+                text = self._read_value(content, "text")
+                if isinstance(text, str) and text:
+                    yield text
+                continue
+
+            if event_type == "message-end":
+                usage = self._extract_cohere_usage(event)
+                self._last_stream_usage = usage
+                self._last_finalize_usage = usage
+                delta = self._read_value(event, "delta")
+                finish_reason = self._read_value(delta, "finish_reason")
+                self._last_stream_finish_reason = (
+                    finish_reason if isinstance(finish_reason, str) else None
+                )
+
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider="cohere",
@@ -340,7 +417,7 @@ class CohereToolCallingProvider(ProviderAdapter):
             supports_parallel_tool_calls=False,
             input_modalities=["text"],
             supports_tool_media_output=False,
-            supports_finalize_streaming=False,
+            supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_BASIC,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
