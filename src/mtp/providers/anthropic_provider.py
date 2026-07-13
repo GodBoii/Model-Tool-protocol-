@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Iterator
 import json
 import mimetypes
 from pathlib import Path
@@ -43,6 +44,12 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         self.max_tokens = max_tokens
         self.temperature = temperature
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
+        self._last_finalize_message: dict[str, Any] | None = None
+        self._last_finalize_stop_reason: str | None = None
+        self._last_finalize_stop_sequence: str | None = None
+        self._last_stream_stop_reason: str | None = None
+        self._last_stream_stop_sequence: str | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
@@ -315,6 +322,16 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         return AgentAction(response_text=response_text, metadata=action_meta)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
+        response = self._client.messages.create(**self._finalize_request(messages))
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        self._remember_finalize_response(response)
+        texts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
+        if texts:
+            return "\n".join(texts).strip()
+        return "Done."
+
+    def _finalize_request(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build the common Messages API request used by sync and streaming finalization."""
         system_prompt, anthropic_messages = self._to_anthropic_payload(messages)
         request: dict[str, Any] = {
             "model": self.model,
@@ -324,12 +341,64 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         }
         if system_prompt:
             request["system"] = system_prompt
-        response = self._client.messages.create(**request)
-        self._last_finalize_usage = extract_usage_metrics(response) or None
-        texts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
-        if texts:
-            return "\n".join(texts).strip()
-        return "Done."
+        return request
+
+    @staticmethod
+    def _response_text(response: Any) -> str:
+        content = getattr(response, "content", None)
+        if not isinstance(content, list):
+            return ""
+        texts = [
+            getattr(block, "text", "")
+            for block in content
+            if getattr(block, "type", None) == "text"
+        ]
+        return "\n".join(text for text in texts if isinstance(text, str)).strip()
+
+    def _remember_finalize_response(self, response: Any, *, streamed: bool = False) -> None:
+        """Retain terminal Messages API metadata without leaking SDK model objects."""
+        stop_reason = getattr(response, "stop_reason", None)
+        stop_sequence = getattr(response, "stop_sequence", None)
+        normalized_reason = stop_reason if isinstance(stop_reason, str) else None
+        normalized_sequence = stop_sequence if isinstance(stop_sequence, str) else None
+        text = self._response_text(response)
+
+        self._last_finalize_stop_reason = normalized_reason
+        self._last_finalize_stop_sequence = normalized_sequence
+        self._last_finalize_message = {"role": "assistant", "content": text or "Done."}
+        if streamed:
+            self._last_stream_stop_reason = normalized_reason
+            self._last_stream_stop_sequence = normalized_sequence
+
+    def finalize_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tool_results: list[ToolResult],
+    ) -> Iterator[str]:
+        """Stream final text through Anthropic's native ``MessageStream`` helper.
+
+        ``get_final_message`` is deliberately used after consuming
+        ``text_stream``: the SDK's accumulated final message is the authoritative
+        source for usage (including prompt-cache counters) and stop metadata.
+        """
+        del tool_results  # Results are already represented in ``messages``.
+        self._last_stream_usage = None
+        self._last_stream_stop_reason = None
+        self._last_stream_stop_sequence = None
+        self._last_finalize_message = None
+
+        with self._client.messages.stream(**self._finalize_request(messages)) as stream:
+            for text in stream.text_stream:
+                if isinstance(text, str) and text:
+                    yield text
+            final_message = stream.get_final_message()
+
+        usage = extract_usage_metrics(final_message) or None
+        self._last_stream_usage = usage
+        # Keep non-stream and stream metadata consistent for consumers that
+        # inspect the most recent finalization independent of transport mode.
+        self._last_finalize_usage = usage
+        self._remember_finalize_response(final_message, streamed=True)
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -338,7 +407,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
             supports_parallel_tool_calls=True,
             input_modalities=["text", "image", "file"],
             supports_tool_media_output=True,
-            supports_finalize_streaming=False,
+            supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
