@@ -10,9 +10,14 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import queue
+import threading
+import time
 import tempfile
 import tomllib
 from typing import Any, Callable
+
+from mtp._subprocess import SubprocessCancelledError, _popen_group_options, terminate_process_tree
 
 
 _REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
@@ -987,6 +992,8 @@ def _run_codex_command(
     *,
     cmd: list[str],
     emit: Callable[[str], None] | None,
+    cancel_event: threading.Event | None = None,
+    timeout_seconds: float | None = 600,
 ) -> tuple[int, str]:
     proc = subprocess.Popen(
         cmd,
@@ -996,11 +1003,33 @@ def _run_codex_command(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        **_popen_group_options(),
     )
     stdout_lines: list[str] = []
     emitted: dict[str, Any] = {}
-    if proc.stdout is not None:
-        for line in proc.stdout:
+    lines: queue.Queue[str | None] = queue.Queue()
+    def _read() -> None:
+        try:
+            if proc.stdout is not None:
+                for line in proc.stdout:
+                    lines.put(line)
+        finally:
+            lines.put(None)
+    reader = threading.Thread(target=_read, name="mtp-codex-output", daemon=True)
+    reader.start()
+    started = time.monotonic()
+    try:
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                raise SubprocessCancelledError("Codex request was cancelled.")
+            if timeout_seconds is not None and time.monotonic() - started >= timeout_seconds:
+                raise subprocess.TimeoutExpired(cmd, timeout_seconds)
+            try:
+                line = lines.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
             stdout_lines.append(line)
             if emit is not None:
                 _emit_codex_live_line(
@@ -1008,7 +1037,14 @@ def _run_codex_command(
                     emitted,
                     emit=lambda kind, message: emit(f"{kind}:{message}"),
                 )
-    return proc.wait(), "".join(stdout_lines)
+        return proc.wait(), "".join(stdout_lines)
+    except BaseException:
+        terminate_process_tree(proc)
+        raise
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
+        reader.join(timeout=1)
 
 
 def run_codex_prompt(
@@ -1022,6 +1058,8 @@ def run_codex_prompt(
     sandbox_mode: str = "workspace-write",
     conversation_history: list[tuple[str, str]] | None = None,
     emit_live: Callable[[str, str], None] | None = None,
+    cancel_event: threading.Event | None = None,
+    timeout_seconds: float | None = 600,
 ) -> CodexRunResult:
     """
     Run a Codex prompt with optional conversation history injection.
@@ -1066,7 +1104,10 @@ def run_codex_prompt(
             session_id=previous_session_id,
             sandbox_mode=sandbox_mode,
         )
-        return_code, stdout_text = _run_codex_command(cmd=cmd, emit=_emit_adapter if emit_live else None)
+        return_code, stdout_text = _run_codex_command(
+            cmd=cmd, emit=_emit_adapter if emit_live else None,
+            cancel_event=cancel_event, timeout_seconds=timeout_seconds,
+        )
         text = output_path.read_text(encoding="utf-8", errors="replace").strip() if output_path.exists() else ""
 
         parsed_text, tool_events, parse_warnings, usage_lines, detected_session_id = _parse_codex_json_events(

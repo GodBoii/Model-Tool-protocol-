@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import shlex
-import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
 from ..protocol import ToolRiskLevel, ToolSpec
 from ..runtime import RegisteredTool, ToolkitLoader
+from .._subprocess import run_subprocess
 from .common import allow_ref
 
 
@@ -39,7 +40,10 @@ class ShellToolkit(ToolkitLoader):
         ]
 
     def load_tools(self) -> list[RegisteredTool]:
-        def run_command(command: str) -> dict[str, Any]:
+        def run_command(
+            command: str,
+            cancel_event: threading.Event | None = None,
+        ) -> dict[str, Any]:
             command_parts = shlex.split(command, posix=(os.name != "nt"))
             if not command_parts:
                 raise ValueError("Empty command.")
@@ -56,13 +60,13 @@ class ShellToolkit(ToolkitLoader):
                 raise ValueError(
                     f"Command '{command_name}' is not allowed. Allowed: {sorted(self.allowed_commands)}"
                 )
-            completed = subprocess.run(
+            completed = run_subprocess(
                 command_parts,
                 shell=False,
                 cwd=str(self.base_dir),
-                capture_output=True,
                 text=True,
                 timeout=self.timeout_seconds,
+                cancel_event=cancel_event,
             )
             stdout = completed.stdout.strip()
             stderr = completed.stderr.strip()

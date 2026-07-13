@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import threading
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -217,18 +218,21 @@ def run_prompt_blocking(
     *,
     emit_callback: Any = None,
     run_id: str | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> ChatResult:
     """Execute an LLM prompt synchronously (called from Worker thread).
 
     This function blocks and should ONLY be called from a Textual Worker.
     """
     if state.backend == "codex":
-        return _run_codex(state, prompt)
+        return _run_codex(state, prompt, cancel_event=cancel_event)
     else:
         return _run_mtp(state, prompt, emit_callback=emit_callback, run_id=run_id)
 
 
-def _run_codex(state: TUIState, prompt: str) -> ChatResult:
+def _run_codex(
+    state: TUIState, prompt: str, *, cancel_event: threading.Event | None = None,
+) -> ChatResult:
     """Run prompt through Codex CLI backend."""
     from . import tui_codex_backend as codex_backend
 
@@ -250,6 +254,7 @@ def _run_codex(state: TUIState, prompt: str) -> ChatResult:
         previous_session_id=state.codex_session_id,
         sandbox_mode=state.codex_sandbox_mode,
         conversation_history=conversation_history,
+        cancel_event=cancel_event,
     )
     state.codex_session_id = codex_result.session_id
     return ChatResult(

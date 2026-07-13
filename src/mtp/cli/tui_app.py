@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import threading
 from pathlib import Path
 import time
 from typing import Any
@@ -106,6 +107,7 @@ class MTPApp(App):
         self._memory_refresh_dirty = False
         self._memory_launch_scan_done = False
         self._current_run_id: str | None = None
+        self._subprocess_cancel_event: threading.Event | None = None
         self._workspace_file_index = WorkspaceFileIndex()
         self._limits = TUILimits.from_env()
 
@@ -347,8 +349,13 @@ class MTPApp(App):
                 self.query_one("#attachment-container").remove_class("visible")
 
     def action_hide_suggestions(self) -> None:
-        if self._llm_worker_running and self._current_run_id and self._state.backend != "codex" and self._state.agent is not None:
-            cancelled = self._state.agent.cancel_run(self._current_run_id)
+        if self._llm_worker_running and self._current_run_id:
+            cancelled = False
+            if self._subprocess_cancel_event is not None:
+                self._subprocess_cancel_event.set()
+                cancelled = True
+            if self._state.backend != "codex" and self._state.agent is not None:
+                cancelled = self._state.agent.cancel_run(self._current_run_id) or cancelled
             if cancelled:
                 self.query_one("#chat-log", ChatLog).add_system_message("  Interrupt requested...", style="#fbbf24")
             return
@@ -707,6 +714,7 @@ class MTPApp(App):
         self._llm_worker_running = True
         self._memory_refresh_dirty = False
         self._current_run_id = f"run-{uuid4().hex[:12]}"
+        self._subprocess_cancel_event = threading.Event()
 
         self.run_worker(
             self._run_llm_worker(expanded, attachments, att_warnings),
@@ -728,6 +736,7 @@ class MTPApp(App):
             expanded_prompt,
             emit_callback=emit_live,
             run_id=self._current_run_id,
+            cancel_event=self._subprocess_cancel_event,
         )
         result.attachments = attachments
         result.warnings = [*att_warnings, *result.warnings]
@@ -1075,6 +1084,7 @@ class MTPApp(App):
         if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
             self._llm_worker_running = False
             self._current_run_id = None
+            self._subprocess_cancel_event = None
 
         if event.state == WorkerState.SUCCESS:
             spinner.stop()

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
 from ..protocol import ToolRiskLevel, ToolSpec
 from ..runtime import RegisteredTool, ToolkitLoader
+from .._subprocess import run_subprocess
 from .common import allow_ref
 
 
@@ -35,7 +36,12 @@ class PythonToolkit(ToolkitLoader):
             raise ValueError("Path escapes base_dir.")
         return candidate
 
-    def _run_in_subprocess(self, code: str, return_variable: str) -> Any:
+    def _run_in_subprocess(
+        self,
+        code: str,
+        return_variable: str,
+        cancel_event: threading.Event | None = None,
+    ) -> Any:
         wrapper = (
             "import json\n"
             "import sys\n"
@@ -43,12 +49,12 @@ class PythonToolkit(ToolkitLoader):
             "exec(sys.argv[1], {}, scope)\n"
             "print(json.dumps(scope.get(sys.argv[2], None), default=str))\n"
         )
-        completed = subprocess.run(
+        completed = run_subprocess(
             ["python", "-I", "-c", wrapper, code, return_variable],
             cwd=str(self.base_dir),
-            capture_output=True,
             text=True,
             timeout=self.timeout_seconds,
+            cancel_event=cancel_event,
         )
         if completed.returncode != 0:
             stderr = completed.stderr.strip()
@@ -96,13 +102,29 @@ class PythonToolkit(ToolkitLoader):
         ]
 
     def load_tools(self) -> list[RegisteredTool]:
-        def run_code(code: str, return_variable: str = "result") -> Any:
-            return self._run_in_subprocess(code=code, return_variable=return_variable)
+        def run_code(
+            code: str,
+            return_variable: str = "result",
+            cancel_event: threading.Event | None = None,
+        ) -> Any:
+            return self._run_in_subprocess(
+                code=code,
+                return_variable=return_variable,
+                cancel_event=cancel_event,
+            )
 
-        def run_file(path: str, return_variable: str = "result") -> Any:
+        def run_file(
+            path: str,
+            return_variable: str = "result",
+            cancel_event: threading.Event | None = None,
+        ) -> Any:
             target = self._resolve(path)
             code = target.read_text(encoding="utf-8")
-            return run_code(code=code, return_variable=return_variable)
+            return run_code(
+                code=code,
+                return_variable=return_variable,
+                cancel_event=cancel_event,
+            )
 
         handlers = {
             "python.run_code": run_code,
