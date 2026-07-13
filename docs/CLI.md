@@ -60,7 +60,8 @@ Checks include:
 - provider SDK import availability
 - provider API key environment variable presence
 
-Returns non-zero if warnings are detected.
+Returns non-zero when a check fails. Warnings remain visible but do not make the
+command fail, which keeps optional provider SDKs from breaking health checks.
 
 ## `mtp providers list`
 
@@ -75,6 +76,20 @@ Output columns:
 - alias/class
 - SDK module and install status
 - API key env var
+- API key configuration status and overall readiness
+
+Credential values are never printed. To inspect one provider by name, alias, or
+provider class name:
+
+```bash
+mtp providers show groq
+mtp providers show OpenAI --json
+```
+
+The `ready` field means the provider's Python SDK is importable and its required
+API-key environment variable is non-empty. Local and built-in providers show
+`not-required` when no API key is needed. This is a local configuration check;
+it does not make a network request or validate the credential with the provider.
 
 ## `mtp codebase memory`
 
