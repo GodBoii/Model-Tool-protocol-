@@ -20,6 +20,7 @@ from .tui_settings import (
     load_provider_settings,
     mask_api_key,
     provider_settings_path,
+    provider_api_key_env,
     save_provider_settings,
     set_provider_api_key,
 )
@@ -154,10 +155,15 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
         provider_name = parts[1].lower()
         if provider_name not in SUPPORTED_TUI_PROVIDERS:
             return f"Unknown provider: {provider_name}"
+        entry = ensure_provider_entry(settings, provider_name)
+        source = entry.get("_api_key_source")
         deleted = delete_provider_api_key(settings, provider_name)
         save_provider_settings(settings_path, settings)
         if state.backend == provider_name:
             state.agent = None
+        if source == "environment":
+            env_name = provider_api_key_env(provider_name)
+            return f"{provider_name} uses {env_name}; remove it from your environment to disable the credential"
         return f"API key for {provider_name} deleted" if deleted else f"No API key was set for {provider_name}"
 
     if command == "show":

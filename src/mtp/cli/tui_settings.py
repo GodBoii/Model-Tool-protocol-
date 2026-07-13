@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
+import warnings
+from pathlib import Path
 from typing import Any
 
 from ..model_catalog import DEFAULT_MODEL_BY_PROVIDER
@@ -26,6 +27,109 @@ DEFAULT_PROVIDER_MODELS: dict[str, str] = {
     "ollama": "llama3.2:3b",  # Popular small model for local inference
     "lmstudio": "qwen3",  # Generic default (user will select from loaded models)
 }
+
+
+KEYRING_SERVICE = "mtpx.provider-api-key"
+
+PROVIDER_API_KEY_ENV: dict[str, str] = {
+    "openai": "OPENAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "cohere": "COHERE_API_KEY",
+    "sambanova": "SAMBANOVA_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "togetherai": "TOGETHER_API_KEY",
+    "fireworksai": "FIREWORKS_API_KEY",
+    "xiaomi": "MIMO_API_KEY",
+    "ollama": "OLLAMA_API_KEY",
+    "lmstudio": "LMSTUDIO_API_KEY",
+}
+
+
+class CredentialStorageError(RuntimeError):
+    """Raised when a provider credential cannot be stored safely."""
+
+
+def provider_api_key_env(provider_name: str) -> str:
+    """Return the documented environment variable for a provider credential."""
+    normalized = provider_name.strip().lower()
+    return PROVIDER_API_KEY_ENV.get(normalized, f"{normalized.upper()}_API_KEY")
+
+
+def _credential_storage_help(provider_name: str) -> str:
+    env_name = provider_api_key_env(provider_name)
+    return (
+        "The operating-system credential store is unavailable. Install a working "
+        "keyring backend (for example `pip install keyring`) or set "
+        f"{env_name} in your environment. MTPX will not write the API key to JSON."
+    )
+
+
+def _keyring() -> Any:
+    try:
+        import keyring
+    except ImportError as exc:
+        raise CredentialStorageError(_credential_storage_help("provider")) from exc
+    try:
+        backend = keyring.get_keyring()
+        if float(getattr(backend, "priority", 0)) <= 0:
+            raise CredentialStorageError(_credential_storage_help("provider"))
+    except CredentialStorageError:
+        raise
+    except Exception as exc:
+        raise CredentialStorageError(_credential_storage_help("provider")) from exc
+    return keyring
+
+
+def _read_keyring_api_key(provider_name: str) -> str | None:
+    try:
+        value = _keyring().get_password(KEYRING_SERVICE, provider_name)
+    except CredentialStorageError:
+        return None
+    except Exception:
+        # Reading settings should remain usable when a desktop keychain is
+        # temporarily locked. Explicit writes still fail with guidance.
+        return None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _store_keyring_api_key(provider_name: str, api_key: str) -> None:
+    try:
+        _keyring().set_password(KEYRING_SERVICE, provider_name, api_key)
+    except CredentialStorageError as exc:
+        raise CredentialStorageError(_credential_storage_help(provider_name)) from exc
+    except Exception as exc:
+        raise CredentialStorageError(_credential_storage_help(provider_name)) from exc
+
+
+def _delete_keyring_api_key(provider_name: str) -> bool:
+    keyring = _keyring()
+    try:
+        keyring.delete_password(KEYRING_SERVICE, provider_name)
+        return True
+    except Exception as exc:
+        # Missing credentials are normal and keyring exposes backend-specific
+        # exception classes, so confirm with a safe read before reporting failure.
+        try:
+            if keyring.get_password(KEYRING_SERVICE, provider_name) is None:
+                return False
+        except Exception:
+            pass
+        raise CredentialStorageError(_credential_storage_help(provider_name)) from exc
+
+
+def _resolve_provider_api_key(provider_name: str) -> tuple[str | None, str | None]:
+    key = _read_keyring_api_key(provider_name)
+    if key:
+        return key, "keyring"
+    env_key = os.getenv(provider_api_key_env(provider_name))
+    if isinstance(env_key, str) and env_key.strip():
+        return env_key.strip(), "environment"
+    return None, None
 
 
 def provider_settings_path(session_db_path: str | Path) -> Path:
@@ -66,12 +170,61 @@ def load_provider_settings(path: Path) -> dict[str, Any]:
     if not isinstance(providers, dict):
         payload["providers"] = {}
         return payload
+    migrated = False
+    for provider_name, raw_entry in providers.items():
+        if not isinstance(provider_name, str) or not isinstance(raw_entry, dict):
+            continue
+        legacy_key = raw_entry.get("api_key")
+        if isinstance(legacy_key, str) and legacy_key.strip():
+            try:
+                _store_keyring_api_key(provider_name, legacy_key.strip())
+            except CredentialStorageError:
+                # Do not destroy the only copy. It remains usable for this run,
+                # and any attempted save will fail safely until it can migrate.
+                raw_entry["_api_key_source"] = "legacy-plaintext"
+                warnings.warn(
+                    f"Legacy plaintext credential for {provider_name} could not be migrated. "
+                    + _credential_storage_help(provider_name),
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            else:
+                raw_entry["api_key"] = legacy_key.strip()
+                raw_entry["_api_key_source"] = "keyring"
+                migrated = True
+            continue
+        key, source = _resolve_provider_api_key(provider_name)
+        raw_entry["api_key"] = key
+        raw_entry["_api_key_source"] = source
+    if migrated:
+        save_provider_settings(path, payload)
     return payload
 
 
 def save_provider_settings(path: Path, payload: dict[str, Any]) -> None:
+    # Never serialize credentials or internal hydration metadata. A direct
+    # assignment from older callers is treated as a legacy credential and must
+    # be secured before the non-secret settings are written.
+    serializable = {key: value for key, value in payload.items() if not str(key).startswith("_")}
+    serializable = json.loads(json.dumps(serializable))
+    providers = serializable.get("providers")
+    source_providers = payload.get("providers")
+    if isinstance(providers, dict):
+        for provider_name, entry in providers.items():
+            if not isinstance(entry, dict):
+                continue
+            source_entry = source_providers.get(provider_name) if isinstance(source_providers, dict) else None
+            source = source_entry.get("_api_key_source") if isinstance(source_entry, dict) else None
+            api_key = entry.pop("api_key", None)
+            for key in tuple(entry):
+                if str(key).startswith("_"):
+                    entry.pop(key, None)
+            if isinstance(api_key, str) and api_key.strip() and source not in {"keyring", "environment"}:
+                _store_keyring_api_key(provider_name, api_key.strip())
+                if isinstance(source_entry, dict):
+                    source_entry["_api_key_source"] = "keyring"
     path.parent.mkdir(parents=True, exist_ok=True)
-    serialized = json.dumps(payload, indent=2, ensure_ascii=True)
+    serialized = json.dumps(serializable, indent=2, ensure_ascii=True)
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -120,10 +273,15 @@ def ensure_provider_entry(payload: dict[str, Any], provider_name: str) -> dict[s
             "final_thinking_mode": None,
         }
         providers[provider_name] = entry
+        api_key, source = _resolve_provider_api_key(provider_name)
+        entry["api_key"] = api_key
+        entry["_api_key_source"] = source
     
     # Ensure all required fields exist
     if "api_key" not in entry:
-        entry["api_key"] = None
+        api_key, source = _resolve_provider_api_key(provider_name)
+        entry["api_key"] = api_key
+        entry["_api_key_source"] = source
     if "model" not in entry:
         entry["model"] = None
     if "deployment_type" not in entry:
@@ -223,9 +381,14 @@ def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str
 
 
 def set_provider_api_key(payload: dict[str, Any], provider_name: str, api_key: str) -> None:
-    """Set or update API key for a provider."""
+    """Store a provider key in the OS credential vault and hydrate the payload."""
+    api_key = api_key.strip()
+    if not api_key:
+        raise ValueError("API key cannot be empty")
+    _store_keyring_api_key(provider_name, api_key)
     entry = ensure_provider_entry(payload, provider_name)
     entry["api_key"] = api_key
+    entry["_api_key_source"] = "keyring"
 
 
 def delete_provider_api_key(payload: dict[str, Any], provider_name: str) -> bool:
@@ -236,10 +399,17 @@ def delete_provider_api_key(payload: dict[str, Any], provider_name: str) -> bool
         True if key was deleted, False if no key existed.
     """
     entry = ensure_provider_entry(payload, provider_name)
-    if entry.get("api_key"):
-        entry["api_key"] = None
-        return True
-    return False
+    source = entry.get("_api_key_source")
+    if source == "environment":
+        return False
+    deleted = False
+    if source == "keyring":
+        deleted = _delete_keyring_api_key(provider_name)
+    elif source == "legacy-plaintext":
+        deleted = bool(entry.get("api_key"))
+    entry["api_key"] = None
+    entry["_api_key_source"] = None
+    return deleted
 
 
 def list_configured_providers(payload: dict[str, Any]) -> list[tuple[str, bool]]:

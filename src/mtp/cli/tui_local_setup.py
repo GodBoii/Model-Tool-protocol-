@@ -30,6 +30,7 @@ from .tui_settings import (
     set_deployment_type,
     set_discovered_models,
     set_preferred_model,
+    set_provider_api_key,
 )
 
 # Import theme/colors from TUI
@@ -270,8 +271,7 @@ def _setup_cloud_deployment(state: TUIState, provider_name: str) -> tuple[bool, 
     set_preferred_model(settings, provider_name, selected_model)
     
     if api_key:
-        entry = ensure_provider_entry(settings, provider_name)
-        entry["api_key"] = api_key
+        set_provider_api_key(settings, provider_name, api_key)
     
     if discovery.success and discovery.models:
         set_discovered_models(settings, provider_name, [m.name for m in discovery.models])
