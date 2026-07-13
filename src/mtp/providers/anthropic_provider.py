@@ -10,6 +10,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..media import File, Image
+from ..model_catalog import ANTHROPIC_DEFAULT_MODEL
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
@@ -32,7 +33,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = ANTHROPIC_DEFAULT_MODEL,
         api_key: str | None = None,
         max_tokens: int = 1024,
         temperature: float = 0.0,

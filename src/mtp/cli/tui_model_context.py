@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
+from ..model_catalog import (
+    MODEL_CONTEXT_WINDOWS as CURRENT_MODEL_CONTEXT_WINDOWS,
+    PROVIDER_DEFAULT_CONTEXT_WINDOWS,
+)
+
 
 # Known context windows for various models (in tokens)
 MODEL_CONTEXT_WINDOWS: Dict[str, int] = {
@@ -18,17 +23,8 @@ MODEL_CONTEXT_WINDOWS: Dict[str, int] = {
     "gpt-4": 8_192,
     "gpt-3.5-turbo": 16_385,
     
-    # Anthropic models
-    "claude-3-5-sonnet-20241022": 200_000,
-    "claude-3-5-sonnet": 200_000,
-    "claude-3-opus": 200_000,
-    "claude-3-sonnet": 200_000,
-    "claude-3-haiku": 200_000,
-    
-    # Google models
-    "gemini-2.0-flash-exp": 1_000_000,
-    "gemini-1.5-pro": 2_000_000,
-    "gemini-1.5-flash": 1_000_000,
+    # Current cloud-provider defaults are owned by mtp.model_catalog.
+    **CURRENT_MODEL_CONTEXT_WINDOWS,
 
     # Xiaomi MiMo models
     "mimo-v2.5-pro": 1_000_000,
@@ -93,9 +89,7 @@ MODEL_CONTEXT_WINDOWS: Dict[str, int] = {
 # Default context windows by provider (fallback if model not found)
 PROVIDER_DEFAULT_CONTEXT: Dict[str, int] = {
     "openai": 128_000,
-    "anthropic": 200_000,
-    "claude": 200_000,
-    "gemini": 1_000_000,
+    **PROVIDER_DEFAULT_CONTEXT_WINDOWS,
     "groq": 128_000,
     "ollama": 32_768,  # Conservative default for local models
     "lmstudio": 32_768,  # Conservative default for local models

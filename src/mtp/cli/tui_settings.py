@@ -6,12 +6,14 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
+from ..model_catalog import DEFAULT_MODEL_BY_PROVIDER
+
 
 DEFAULT_PROVIDER_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
     "groq": "llama-3.3-70b-versatile",
-    "claude": "claude-3-5-sonnet-20241022",
-    "gemini": "gemini-2.0-flash-exp",
+    "claude": DEFAULT_MODEL_BY_PROVIDER["claude"],
+    "gemini": DEFAULT_MODEL_BY_PROVIDER["gemini"],
     "openrouter": "qwen/qwen-2.5-72b-instruct",
     "mistral": "mistral-large-latest",
     "cohere": "command-r-plus-08-2024",

@@ -10,6 +10,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..media import Audio, File, Image, Video
+from ..model_catalog import GEMINI_DEFAULT_MODEL
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
@@ -32,7 +33,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "gemini-2.0-flash",
+        model: str = GEMINI_DEFAULT_MODEL,
         api_key: str | None = None,
         temperature: float = 0.0,
         client: Any | None = None,
