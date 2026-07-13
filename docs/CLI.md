@@ -126,6 +126,30 @@ When memory is on, TUI harness tools such as `project.inspect`, `fs.search`,
 `fs.grep`, and `codebase.search` use the stored index and refresh changed files
 before retrieval.
 
+## `mtp sessions`
+
+Inspect, transfer, and remove sessions in a JSON session database:
+
+```bash
+mtp sessions list --json
+mtp sessions show chat-123 --user-id alice --json
+mtp sessions export backup.json --user-id alice
+mtp sessions export one.json --session-id chat-123 --user-id alice
+mtp sessions import backup.json --user-id alice
+mtp sessions delete chat-123 --user-id alice --yes
+```
+
+`show` requires `--user-id` when the same session ID exists for multiple
+owners. The user filter is always an exact owner match; it never changes session
+ownership during import.
+
+Exports use a versioned JSON Schema envelope documented in
+`docs/schemas/session-export-v1.schema.json`. MTP validates the complete bundle
+before importing anything. Export publication and database import are atomic,
+and both refuse to replace existing data by default. Use `--force` deliberately
+to replace an export file or sessions with the same `(session_id, user_id)`
+identity. Existing sessions owned by other users are not affected.
+
 ## `mtp tui`
 
 Launch the interactive terminal UI.
@@ -206,7 +230,17 @@ When switching to a new MTP provider for the first time, TUI will prompt for:
 1. **API Key**: Enter your provider API key (validated to prevent masked keys)
 2. **Model Selection**: Choose a model or press Enter for default
 
-API keys are stored securely in `~/.mtp/settings/provider_settings.json` and can be managed with `/apikey` commands.
+API keys are stored in your operating system's credential vault (Windows
+Credential Manager, macOS Keychain, or the configured Linux Secret Service),
+not in `provider_settings.json`. The JSON file contains only non-secret choices
+such as models and endpoints. MTPX also reads each provider's standard
+environment variable (for example `GROQ_API_KEY`) when no vault entry exists.
+
+The `/apikey set` command fails with an actionable environment-variable hint if
+no usable keyring backend is available; it never falls back to plaintext.
+Existing plaintext settings are migrated automatically and removed from JSON
+only after the vault confirms the write. If migration cannot run, MTPX warns and
+keeps the original file unchanged so the only copy is not lost.
 
 Supported providers and their default models:
 - **openai**: `gpt-4o`
@@ -304,7 +338,7 @@ Inside TUI:
 - `/apikey` - List all API keys (masked)
 - `/apikey set <provider> <key>` - Set/update API key
 - `/apikey delete <provider>` - Delete API key
-- `/apikey show <provider>` - Show full API key (use with caution)
+- `/apikey show <provider>` - Show a masked API key
 
 **Configuration:**
 - `/reasoning <none|low|medium|high|xhigh>` - Set reasoning effort (Codex only)
