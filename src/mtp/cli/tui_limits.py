@@ -89,6 +89,14 @@ def trim_display_blocks(blocks: list[dict[str, Any]], *, max_blocks: int, max_ch
             return sum(payload_chars(item) for item in value)
         return 0
 
-    total = sum(payload_chars(block) for block in blocks)
-    while len(blocks) > 1 and total > max_chars:
-        total -= payload_chars(blocks.pop(0))
+    sizes = [payload_chars(block) for block in blocks]
+    total = sum(sizes)
+    remove_count = 0
+    # Find the obsolete prefix once, then delete it in one operation. Repeated
+    # pop(0) shifts the remaining list on every iteration and becomes
+    # needlessly quadratic when a burst of large tool results is trimmed.
+    while len(blocks) - remove_count > 1 and total > max_chars:
+        total -= sizes[remove_count]
+        remove_count += 1
+    if remove_count:
+        del blocks[:remove_count]
