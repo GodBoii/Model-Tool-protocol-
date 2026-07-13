@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
@@ -11,6 +12,7 @@ from .common import (
     USAGE_METRICS_RICH,
     extract_usage_metrics,
     format_openai_like_message,
+    iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
 )
 
@@ -47,6 +49,7 @@ class CerebrasToolCallingProvider(ProviderAdapter):
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     # ------------------------------------------------------------------
@@ -161,6 +164,22 @@ class CerebrasToolCallingProvider(ProviderAdapter):
             return "Model requested an additional tool round; rerun with a larger max_rounds."
         return message.content or "Done."
 
+    def finalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> Iterator[str]:
+        self._last_stream_usage = None
+        stream = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._to_cerebras_messages(messages),
+            temperature=self.temperature,
+            stream=True,
+        )
+
+        def remember_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        yield from iter_openai_like_stream_content(stream, on_usage=remember_usage)
+
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider="cerebras",
@@ -168,7 +187,7 @@ class CerebrasToolCallingProvider(ProviderAdapter):
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text"],
             supports_tool_media_output=False,
-            supports_finalize_streaming=False,
+            supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
