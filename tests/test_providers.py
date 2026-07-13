@@ -71,7 +71,7 @@ class TestSimplePlannerProvider:
         p = SimplePlannerProvider()
         caps = p.capabilities()
         assert caps.supports_finalize_streaming is False
-        assert caps.supports_native_async is False
+        assert caps.supports_native_async is True
 
     def test_finalize_returns_string(self):
         p = SimplePlannerProvider()
