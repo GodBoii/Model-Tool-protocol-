@@ -6,9 +6,10 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
+import threading
 from typing import Any
 
+from mtp._subprocess import run_subprocess
 from mtp.protocol import ToolRiskLevel, ToolSpec
 from mtp.runtime import RegisteredTool, ToolkitLoader
 from mtp.codebase import CodebaseMemory
@@ -285,7 +286,7 @@ class CommandToolkit(ToolkitLoader):
 
     def list_tool_specs(self) -> list[ToolSpec]:
         return [
-            ToolSpec("shell.run", "Run a workspace command through the harness permission layer.", _schema({"command": {"type": "string"}, "timeout_seconds": {"type": "integer"}}, ["command"]), risk_level=ToolRiskLevel.WRITE),
+            ToolSpec("shell.run", "Run a command with its working directory set to the workspace after permission checks. This is not OS or filesystem containment.", _schema({"command": {"type": "string"}, "timeout_seconds": {"type": "integer"}}, ["command"]), risk_level=ToolRiskLevel.WRITE),
             ToolSpec("git.status", "Return concise git status.", _schema({}), risk_level=ToolRiskLevel.READ_ONLY),
             ToolSpec("git.diff", "Return git diff for the workspace or one path.", _schema({"path": {"type": "string"}, "max_chars": {"type": "integer"}}), risk_level=ToolRiskLevel.READ_ONLY),
             ToolSpec("test.run", "Run a targeted test command after edits.", _schema({"command": {"type": "string"}, "timeout_seconds": {"type": "integer"}}, ["command"]), risk_level=ToolRiskLevel.WRITE),
@@ -295,8 +296,12 @@ class CommandToolkit(ToolkitLoader):
     def load_tools(self) -> list[RegisteredTool]:
         specs = {spec.name: spec for spec in self.list_tool_specs()}
 
-        def shell_run(command: str, timeout_seconds: int = 60) -> dict[str, Any]:
-            return _run_shell(command, self.ws.root, timeout_seconds)
+        def shell_run(
+            command: str,
+            timeout_seconds: int = 60,
+            cancel_event: threading.Event | None = None,
+        ) -> dict[str, Any]:
+            return _run_shell(command, self.ws.root, timeout_seconds, cancel_event=cancel_event)
 
         def git_status() -> dict[str, Any]:
             return _run(["git", "status", "--short", "--branch"], self.ws.root, timeout=10)
@@ -305,12 +310,16 @@ class CommandToolkit(ToolkitLoader):
             cmd = ["git", "diff", "--", path]
             return _run(cmd, self.ws.root, timeout=10).get("stdout", "")[: max(1000, int(max_chars))]
 
-        def test_run(command: str, timeout_seconds: int = 120) -> dict[str, Any]:
+        def test_run(
+            command: str,
+            timeout_seconds: int = 120,
+            cancel_event: threading.Event | None = None,
+        ) -> dict[str, Any]:
             compact = " ".join(command.split())
             allowed = ("pytest", "python -m pytest", "npm test", "npm run test", "python -m compileall", "python -m py_compile")
             if not compact.startswith(allowed):
                 raise ValueError(f"Use a targeted test command. Allowed prefixes: {', '.join(allowed)}")
-            return _run_shell(command, self.ws.root, timeout_seconds)
+            return _run_shell(command, self.ws.root, timeout_seconds, cancel_event=cancel_event)
 
         def syntax_check(path: str = ".") -> dict[str, Any]:
             target = self.ws.resolve(path)
@@ -416,14 +425,27 @@ def _score_search_match(query_norm: str, terms: list[str], rel_path: str, text: 
 
 def _run(cmd: list[str], cwd: Path, timeout: int) -> dict[str, Any]:
     try:
-        completed = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
+        completed = run_subprocess(cmd, cwd=str(cwd), text=True, timeout=timeout)
         return {"returncode": completed.returncode, "stdout": completed.stdout.strip(), "stderr": completed.stderr.strip()}
     except Exception as exc:
         return {"returncode": 1, "stdout": "", "stderr": str(exc)}
 
 
-def _run_shell(command: str, cwd: Path, timeout: int) -> dict[str, Any]:
-    completed = subprocess.run(command, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=max(1, int(timeout)))
+def _run_shell(
+    command: str,
+    cwd: Path,
+    timeout: int,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    completed = run_subprocess(
+        command,
+        shell=True,
+        cwd=str(cwd),
+        text=True,
+        timeout=max(1, int(timeout)),
+        cancel_event=cancel_event,
+    )
     return {"returncode": completed.returncode, "stdout": completed.stdout.strip()[:30000], "stderr": completed.stderr.strip()[:12000]}
 
 
@@ -460,10 +482,9 @@ def _search_with_ripgrep(ws: _Workspace, *, query: str, path: str, limit: int) -
         *search_targets,
     ]
     try:
-        completed = subprocess.run(
+        completed = run_subprocess(
             base_cmd,
             cwd=str(ws.root),
-            capture_output=True,
             text=True,
             timeout=10,
         )
@@ -472,10 +493,9 @@ def _search_with_ripgrep(ws: _Workspace, *, query: str, path: str, limit: int) -
 
     hits_by_file: dict[str, dict[str, Any]] = {}
     try:
-        file_list = subprocess.run(
+        file_list = run_subprocess(
             [rg_bin, "--files", *search_targets],
             cwd=str(ws.root),
-            capture_output=True,
             text=True,
             timeout=8,
         )

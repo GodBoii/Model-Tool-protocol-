@@ -6,7 +6,13 @@ from typing import Any
 
 from mtp import Agent
 
-from .tui_harness_policy import HarnessPermissions, HarnessRiskPolicy, make_approval_handler, normalize_harness_mode
+from .tui_harness_policy import (
+    HarnessRiskPolicy,
+    make_approval_handler,
+    normalize_harness_mode,
+    normalize_sandbox_mode,
+    permissions_for_sandbox,
+)
 from .tui_harness_tools import register_harness_toolkits
 
 
@@ -30,16 +36,8 @@ def build_harness_agent(
     sandbox_mode: str = "workspace-write",
 ) -> Agent.MTPAgent:
     resolved_mode = normalize_harness_mode(mode)
-    perms = HarnessPermissions()
-    if sandbox_mode in {"workspace-write", "danger-full-access"}:
-        for k in list(perms.edit.keys()):
-            if perms.edit[k] == "ask":
-                perms.edit[k] = "allow"
-        for k in list(perms.bash.keys()):
-            if perms.bash[k] == "ask":
-                perms.bash[k] = "allow"
-        if perms.default == "ask":
-            perms.default = "allow"
+    resolved_sandbox = normalize_sandbox_mode(sandbox_mode)
+    perms = permissions_for_sandbox(resolved_sandbox)
 
     tools = Agent.ToolRegistry(
         policy=HarnessRiskPolicy(mode=resolved_mode, permissions=perms),
@@ -49,7 +47,9 @@ def build_harness_agent(
     return Agent.MTPAgent(
         provider=provider,
         tools=tools,
-        instructions=build_orchestrator_instructions(cwd=cwd, mode=resolved_mode),
+        instructions=build_orchestrator_instructions(
+            cwd=cwd, mode=resolved_mode, sandbox_mode=resolved_sandbox,
+        ),
         debug_mode=debug_mode,
         strict_dependency_mode=True,
         autoresearch=autoresearch,
@@ -59,8 +59,11 @@ def build_harness_agent(
     )
 
 
-def build_orchestrator_instructions(*, cwd: Path, mode: str) -> str:
+def build_orchestrator_instructions(
+    *, cwd: Path, mode: str, sandbox_mode: str = "workspace-write",
+) -> str:
     mode = normalize_harness_mode(mode)
+    sandbox_mode = normalize_sandbox_mode(sandbox_mode)
     mode_policy = {
         "plan": "Plan mode: inspect and reason only. Do not edit files or run tests/commands that change state.",
         "code": "Code mode: make focused edits with edit.apply_patch or edit.create_file, then verify when practical.",
@@ -71,6 +74,8 @@ def build_orchestrator_instructions(*, cwd: Path, mode: str) -> str:
         "You are the MTP TUI main orchestrator agent. The user expects real local work, not generic advice.\n\n"
         f"Workspace: {cwd}\n"
         f"{mode_policy}\n\n"
+        f"Permission profile: {sandbox_mode}. This profile is not an OS security sandbox; "
+        "commands start in the workspace but are not filesystem-contained.\n\n"
         "Operating rules:\n"
         "- Start by gathering context with project.inspect, fs.search, fs.read_text, or the read-only agent.* subagent tools.\n"
         "- Tool guide: project.inspect gives root structure, file-format counts, git status, and codebase memory status; fs.search finds relevant relative file paths and uses indexed workspace memory when enabled; fs.read_text reads a specific line range.\n"

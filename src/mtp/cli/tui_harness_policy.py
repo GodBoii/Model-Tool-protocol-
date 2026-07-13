@@ -9,6 +9,7 @@ from mtp.protocol import ToolCall, ToolRiskLevel, ToolSpec
 
 
 HARNESS_MODES = ("plan", "code", "debug", "review")
+SANDBOX_MODES = ("read-only", "workspace-write", "danger-full-access")
 PERMISSION_ACTIONS = ("allow", "ask", "deny")
 
 
@@ -74,6 +75,40 @@ def normalize_harness_mode(value: str | None) -> str:
     return mode
 
 
+def normalize_sandbox_mode(value: str | None) -> str:
+    """Validate a TUI execution permission profile.
+
+    These profiles control tool approvals.  They are deliberately not called
+    process sandboxes: setting a subprocess's working directory does not
+    contain what that process can read or write.
+    """
+    mode = ("workspace-write" if value is None else value).strip().lower()
+    if mode not in SANDBOX_MODES:
+        raise ValueError(f"Unknown sandbox mode: {value!r}. Expected one of: {', '.join(SANDBOX_MODES)}")
+    return mode
+
+
+def permissions_for_sandbox(mode: str) -> HarnessPermissions:
+    """Return permissions for *mode* without silently approving ``ask`` rules."""
+    resolved = normalize_sandbox_mode(mode)
+    permissions = HarnessPermissions()
+    if resolved == "read-only":
+        permissions.edit["*"] = "deny"
+        permissions.bash["*"] = "deny"
+        permissions.tool["edit.*"] = "deny"
+        permissions.tool["shell.*"] = "deny"
+        permissions.tool["test.*"] = "deny"
+    elif resolved == "danger-full-access":
+        # This is an explicit opt-in permission profile, not OS containment.
+        permissions.edit["*"] = "allow"
+        permissions.bash["*"] = "allow"
+        permissions.default = "allow"
+    # workspace-write intentionally retains ASK for edits, tests and arbitrary
+    # shell commands.  The non-interactive harness denies those unless a caller
+    # supplies a real approval flow; safe read-only command patterns remain.
+    return permissions
+
+
 def _normalize_action(value: str) -> str:
     action = value.strip().lower()
     if action not in PERMISSION_ACTIONS:
@@ -83,9 +118,16 @@ def _normalize_action(value: str) -> str:
 
 def _match_rules(rules: dict[str, str], subject: str, default: str) -> str:
     selected = default
+    selected_specificity = -1
     for pattern, action in rules.items():
         if fnmatch.fnmatchcase(subject, pattern):
-            selected = _normalize_action(action)
+            # A catch-all is commonly declared last for readability.  It must
+            # not override a more specific allow/deny rule merely due to dict
+            # insertion order.
+            specificity = len(pattern.replace("*", "").replace("?", ""))
+            if specificity >= selected_specificity:
+                selected = _normalize_action(action)
+                selected_specificity = specificity
     return selected
 
 
