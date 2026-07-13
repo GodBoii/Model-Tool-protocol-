@@ -224,8 +224,8 @@ llm_calls=1  duration=1.23s  speed=162.6 tokens/s
 ```
 
 See [TUI Local Inference Guide](TUI_LOCAL_INFERENCE.md) for detailed metrics documentation.
-- **claude**: `claude-3-5-sonnet-20241022`
-- **gemini**: `gemini-2.0-flash-exp`
+- **claude**: `claude-sonnet-4-6`
+- **gemini**: `gemini-3.5-flash`
 - **openrouter**: `openai/gpt-4o`
 - **mistral**: `mistral-large-latest`
 - **cohere**: `command-r-plus`
@@ -252,7 +252,7 @@ Default TUI model settings:
 - MTP providers: Each has a default model (e.g., `gpt-4o` for OpenAI, `llama-3.3-70b-versatile` for Groq)
 - default reasoning effort: `medium` (Codex only)
 - default autoresearch: `off` (MTP providers only)
-- default context window: `240,000` tokens (MTP providers)
+- context window: detected from the selected model when known, otherwise a conservative provider fallback
 
 Examples:
 
@@ -324,7 +324,7 @@ Prompt UX:
 
 Usage visibility:
 - After each response, TUI prints usage metrics including:
-  - **Context bar**: Visual progress bar showing token usage (e.g., `ctx ▌███░░░░░░░░░░░░░░░░ 3% 7,112/240,000`)
+  - **Context bar**: Visual progress bar showing token usage against the selected model's known context limit
   - **Token breakdown**: `tokens(in/out/total/reasoning)=6316/796/7112/643`
   - **Cache metrics**: `cache(input/write/create/read)=1280/0/0/0` (when applicable)
   - **Performance**: `llm_calls=4`, `duration=10.80s`, `speed=658.5 tokens/s`

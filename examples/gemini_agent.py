@@ -19,7 +19,7 @@ def main():
     
     # 3. Setup Gemini Provider
     provider = Gemini(
-        model="gemini-2.0-flash",
+        model="gemini-3.5-flash",
     )
     
     # 4. Create Agent

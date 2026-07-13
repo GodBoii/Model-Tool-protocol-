@@ -8,8 +8,8 @@ Detailed documentation for each MTP provider. Each guide covers installation, AP
 |---|---|---|---|---|
 | **Groq** | `pip install "mtpx[groq]"` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | [GROQ.md](GROQ.md) |
 | **OpenAI** | `pip install "mtpx[openai]"` | `OPENAI_API_KEY` | `gpt-4o` | [OPENAI.md](OPENAI.md) |
-| **Anthropic** | `pip install "mtpx[anthropic]"` | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-20241022` | [ANTHROPIC.md](ANTHROPIC.md) |
-| **Gemini** | `pip install "mtpx[gemini]"` | `GEMINI_API_KEY` | `gemini-2.0-flash` | [GEMINI.md](GEMINI.md) |
+| **Anthropic** | `pip install "mtpx[anthropic]"` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | [ANTHROPIC.md](ANTHROPIC.md) |
+| **Gemini** | `pip install "mtpx[gemini]"` | `GEMINI_API_KEY` | `gemini-3.5-flash` | [GEMINI.md](GEMINI.md) |
 | **Mistral** | `pip install "mtpx[mistral]"` | `MISTRAL_API_KEY` | `mistral-large-latest` | [MISTRAL.md](MISTRAL.md) |
 | **Cohere** | `pip install "mtpx[cohere]"` | `COHERE_API_KEY` | `command-a-03-2025` | [COHERE.md](COHERE.md) |
 | **DeepSeek** | `pip install "mtpx[deepseek]"` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [DEEPSEEK.md](DEEPSEEK.md) |

@@ -71,7 +71,7 @@ OpenRouter routes to many model families. Tool reliability depends on the select
 - Class: `AnthropicToolCallingProvider`
 - Extra: `pip install "mtpx[anthropic]"`
 - Env var: `ANTHROPIC_API_KEY`
-- Default model: `claude-3-5-sonnet-20241022`
+- Default model: `claude-sonnet-4-6` (stable, 1M-token context)
 - Tool calling: Anthropic tool-use blocks
 
 Anthropic uses a different native message shape internally, but MTP still exposes the same event stream and `ExecutionPlan` runtime semantics.
@@ -82,7 +82,7 @@ Anthropic uses a different native message shape internally, but MTP still expose
 - Class: `GeminiToolCallingProvider`
 - Extra: `pip install "mtpx[gemini]"`
 - Env var: `GEMINI_API_KEY`
-- Default model: `gemini-2.0-flash-exp`
+- Default model: `gemini-3.5-flash` (stable, 1,048,576-token input limit)
 - Tool calling: Gemini function calls
 - Multimodal: supports provider-specific media paths where capability checks allow them
 

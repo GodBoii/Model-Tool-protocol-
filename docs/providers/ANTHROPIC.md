@@ -59,7 +59,7 @@ from mtp.providers import Anthropic
 
 Agent.load_dotenv_if_available()  # loads ANTHROPIC_API_KEY from .env
 
-provider = Anthropic(model="claude-3-5-sonnet-20241022")
+provider = Anthropic(model="claude-sonnet-4-6")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"claude-3-5-sonnet-20241022"` | Anthropic model ID |
+| `model` | `str` | `"claude-sonnet-4-6"` | Anthropic model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `ANTHROPIC_API_KEY` env var) |
 | `max_tokens` | `int` | `1024` | Maximum tokens in the response |
 | `temperature` | `float` | `0.0` | Sampling temperature |
@@ -91,9 +91,9 @@ print(reply)
 
 ## Recommended Models
 
-- `claude-3-5-sonnet-20241022` — Best balance of speed and capability (default)
-- `claude-3-5-haiku-20241022` — Fastest, cheapest
-- `claude-3-opus-20240229` — Most capable, slowest
+- `claude-sonnet-4-6` — Balanced production model with a 1M-token context (default)
+- `claude-haiku-4-5-20251001` — Fastest current production model
+- `claude-opus-4-8` — More capable model for complex agentic work
 
 ## Multimodal Support
 
@@ -102,7 +102,7 @@ Anthropic supports images and files (PDFs, documents) natively:
 ```python
 from mtp.media import Image, File
 
-provider = Anthropic(model="claude-3-5-sonnet-20241022")
+provider = Anthropic(model="claude-sonnet-4-6")
 agent = Agent(provider=provider, tools=tools)
 
 # With image
@@ -127,7 +127,7 @@ from mtp.providers import Anthropic
 Agent.load_dotenv_if_available()
 
 provider = Anthropic(
-    model="claude-3-5-sonnet-20241022",
+    model="claude-sonnet-4-6",
     max_tokens=4096,
     temperature=0.0,
 )

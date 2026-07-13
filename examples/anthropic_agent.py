@@ -14,7 +14,7 @@ def main():
     tools = Agent.ToolRegistry()
     tools.register_toolkit_loader("calculator", CalculatorToolkit())
     
-    provider = Anthropic(model="claude-3-5-sonnet-latest", temperature=0.0)
+    provider = Anthropic(model="claude-sonnet-4-6", temperature=0.0)
     agent = Agent(provider=provider, tools=tools, debug_mode=True)
     
     print("--- Starting Anthropic Agent ---")

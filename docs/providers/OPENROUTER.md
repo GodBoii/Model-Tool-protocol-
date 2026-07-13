@@ -97,7 +97,7 @@ print(reply)
 
 - `qwen/qwen3.6-plus-preview:free` — Free, good tool calling (default)
 - `anthropic/claude-3.5-sonnet` — Best tool calling
-- `google/gemini-2.0-flash` — Fast, cheap
+- `google/gemini-3.5-flash` — Stable, fast agentic model
 - `meta-llama/llama-3.3-70b-instruct` — Good open-source option
 - `deepseek/deepseek-chat` — Strong reasoning
 

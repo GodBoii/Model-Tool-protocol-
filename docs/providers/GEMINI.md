@@ -59,7 +59,7 @@ from mtp.providers import Gemini
 
 Agent.load_dotenv_if_available()  # loads GEMINI_API_KEY from .env
 
-provider = Gemini(model="gemini-2.0-flash")
+provider = Gemini(model="gemini-3.5-flash")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"gemini-2.0-flash"` | Gemini model ID |
+| `model` | `str` | `"gemini-3.5-flash"` | Gemini model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `GEMINI_API_KEY` env var) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `client` | `Any \| None` | `None` | Pre-configured `google.genai.Client` instance |
@@ -90,9 +90,9 @@ print(reply)
 
 ## Recommended Models
 
-- `gemini-2.0-flash` — Fast, good tool calling (default)
-- `gemini-2.5-pro` — Most capable, best reasoning
-- `gemini-2.0-flash-lite` — Cheapest option
+- `gemini-3.5-flash` — Stable agentic and coding model with function calling (default)
+- `gemini-3.1-flash-lite` — Stable lower-cost, high-throughput option
+- `gemini-2.5-flash` — Stable 2.5-generation price-performance option
 
 ## Multimodal Support
 
@@ -129,7 +129,7 @@ from mtp.providers import Gemini
 Agent.load_dotenv_if_available()
 
 provider = Gemini(
-    model="gemini-2.0-flash",
+    model="gemini-3.5-flash",
     temperature=0.0,
 )
 

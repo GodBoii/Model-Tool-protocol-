@@ -358,7 +358,7 @@ print(agent.run("What is 25 * 4 + 10? Then list the project files.", max_rounds=
       value: `from mtp.providers import OpenAI, Anthropic, Ollama, LMStudio
 
 cloud = OpenAI(model="gpt-4o")
-claude = Anthropic(model="claude-3-5-sonnet-latest")
+claude = Anthropic(model="claude-sonnet-4-6")
 local_ollama = Ollama(model="qwen3:1.7b", host="http://localhost:11434")
 local_lmstudio = LMStudio(model="qwen3-4b-thinking-2507", base_url="http://127.0.0.1:1234/v1")
 
