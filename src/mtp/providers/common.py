@@ -23,6 +23,10 @@ STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT = "native_json_object"
 STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA = "native_json_schema"
 
 
+class ToolArgumentsParseError(ValueError):
+    """Raised when a provider emits malformed native tool arguments."""
+
+
 @dataclass(slots=True)
 class ProviderCapabilities:
     provider: str
@@ -333,11 +337,13 @@ def safe_load_arguments(raw_args: Any) -> dict[str, Any]:
     raw = raw_args if isinstance(raw_args, str) and raw_args else "{}"
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"_raw_arguments": raw}
+    except json.JSONDecodeError as exc:
+        # Never reinterpret malformed provider output as executable user-tool
+        # input. The raw payload may contain secrets, so do not include it.
+        raise ToolArgumentsParseError("Provider emitted malformed JSON tool arguments.") from exc
     if isinstance(parsed, dict):
         return parsed
-    return {"_raw_arguments": raw}
+    raise ToolArgumentsParseError("Provider tool arguments must decode to a JSON object.")
 
 
 def calls_to_dependency_batches(calls: list[ToolCall]) -> list[ToolBatch]:

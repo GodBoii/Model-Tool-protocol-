@@ -230,7 +230,7 @@ async def test_together_async_preserves_parallel_tool_compatibility_retry() -> N
         async def create(self, **kwargs: Any) -> object:
             self.requests.append(kwargs)
             if "parallel_tool_calls" in kwargs:
-                raise RuntimeError("unsupported option")
+                    raise TypeError("unexpected keyword argument 'parallel_tool_calls'")
             return self.responses.pop(0)
 
     completions = RetryCompletions([_response("fallback")])
@@ -242,6 +242,22 @@ async def test_together_async_preserves_parallel_tool_compatibility_retry() -> N
     assert action.response_text == "fallback"
     assert "parallel_tool_calls" in completions.requests[0]
     assert "parallel_tool_calls" not in completions.requests[1]
+
+
+@pytest.mark.asyncio
+async def test_together_async_does_not_retry_service_failures() -> None:
+    class FailingCompletions(_AsyncCompletions):
+        async def create(self, **kwargs: Any) -> object:
+            self.requests.append(kwargs)
+            raise RuntimeError("rate limited")
+
+    completions = FailingCompletions([])
+    provider = _provider(TogetherAIToolCallingProvider, completions)
+    tool = ToolSpec(name="echo", description="Echo", input_schema={"type": "object"})
+
+    with pytest.raises(RuntimeError, match="rate limited"):
+        await provider.anext_action([], [tool])
+    assert len(completions.requests) == 1
 
 
 @pytest.mark.asyncio

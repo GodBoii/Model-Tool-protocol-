@@ -167,7 +167,7 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
             if together_tools:
                 request_args["parallel_tool_calls"] = self.parallel_tool_calls
             response = self._client.chat.completions.create(**request_args)
-        except Exception:
+        except TypeError:
             request_args.pop("parallel_tool_calls", None)
             response = self._client.chat.completions.create(**request_args)
 
@@ -258,7 +258,7 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         completions = self._get_async_client().chat.completions
         try:
             response = await completions.create(**request_args)
-        except Exception:
+        except TypeError:
             request_args.pop("parallel_tool_calls", None)
             response = await completions.create(**request_args)
         message = response.choices[0].message
