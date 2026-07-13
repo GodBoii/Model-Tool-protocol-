@@ -70,9 +70,11 @@ def _cmd_new(args: argparse.Namespace) -> int:
     print("\nNext steps:")
     print(f"1. cd {result.project_dir}")
     print("2. python -m venv .venv")
-    print("3. .venv\\Scripts\\activate")
-    print("4. pip install -e .[groq]")
-    print("5. copy .env.example .env and set API keys")
+    activation = ".venv\\Scripts\\activate" if os.name == "nt" else "source .venv/bin/activate"
+    env_copy = "copy .env.example .env" if os.name == "nt" else "cp .env.example .env"
+    print(f"3. {activation}")
+    print('4. python -m pip install -e ".[groq]"')
+    print(f"5. {env_copy}, then set API keys")
     print("6. mtp run")
     return 0
 

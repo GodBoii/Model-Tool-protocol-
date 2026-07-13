@@ -6,9 +6,9 @@ MTP scaffold with an MCP HTTP transport server.
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
-pip install -e .
-copy .env.example .env
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -e .
+cp .env.example .env      # Windows: copy .env.example .env
 ```
 
 ## Run
