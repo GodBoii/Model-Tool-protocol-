@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -15,6 +17,7 @@ from .common import (
     extract_refs,
     extract_usage_metrics,
     iter_openai_like_stream_content,
+    aiter_openai_like_stream_content,
     normalize_refs,
     safe_load_arguments,
 )
@@ -136,20 +139,24 @@ class MistralToolCallingProvider(ProviderAdapter):
             result["total_tokens"] = int(total)
         return result or None
 
-    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        mistral_messages = self._to_mistral_messages(messages)
+    def _planning_args(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> dict[str, Any]:
         mistral_tools = self._to_mistral_tools(tools)
         request_args: dict[str, Any] = {
             "model": self.model,
-            "messages": mistral_messages,
+            "messages": self._to_mistral_messages(messages),
             "temperature": self.temperature,
         }
         if mistral_tools:
             request_args["tools"] = mistral_tools
             request_args["tool_choice"] = self.tool_choice
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
-        
-        response = self._client.chat.complete(**request_args)
+        return request_args
+
+    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+        response = self._client.chat.complete(**self._planning_args(messages, tools))
+        return self._action_from_response(response)
+
+    def _action_from_response(self, response: Any) -> AgentAction:
         message = response.choices[0].message
         tool_calls = getattr(message, "tool_calls", None)
         usage = self._extract_mistral_usage(response)
@@ -244,12 +251,54 @@ class MistralToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_BASIC,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=callable(getattr(self._client.chat, "complete_async", None)),
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        complete_async = getattr(self._client.chat, "complete_async", None)
+        if not callable(complete_async):
+            return await asyncio.to_thread(self.next_action, messages, tools)
+        response = await complete_async(**self._planning_args(messages, tools))
+        return self._action_from_response(response)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        complete_async = getattr(self._client.chat, "complete_async", None)
+        if not callable(complete_async):
+            return await asyncio.to_thread(self.finalize, messages, tool_results)
+        response = await complete_async(
+            model=self.model,
+            messages=self._to_mistral_messages(messages),
+            temperature=self.temperature,
+        )
+        self._last_finalize_usage = self._extract_mistral_usage(response) or None
+        return getattr(response.choices[0].message, "content", "") or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        stream_async = getattr(self._client.chat, "stream_async", None)
+        if not callable(stream_async):
+            for chunk in self.finalize_stream(messages, tool_results):
+                yield chunk
+            return
+        stream = stream_async(
+            model=self.model,
+            messages=self._to_mistral_messages(messages),
+            temperature=self.temperature,
+        )
+        if inspect.isawaitable(stream):
+            stream = await stream
+        self._last_stream_usage = None
+
+        async def payloads():
+            async for event in stream:
+                yield getattr(event, "data", None) or (
+                    event.get("data") if isinstance(event, dict) else None
+                ) or event
+
+        def capture_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        async for chunk in aiter_openai_like_stream_content(payloads(), on_usage=capture_usage):
+            yield chunk
