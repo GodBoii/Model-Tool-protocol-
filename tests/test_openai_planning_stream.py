@@ -75,9 +75,7 @@ def _tools() -> list[ToolSpec]:
 
 def _assert_result(items: list[AgentAction | dict[str, object]]) -> None:
     assert items[:-1] == [
-        {"type": "reasoning_chunk", "chunk": "think "},
         {"type": "text_chunk", "chunk": "I will "},
-        {"type": "reasoning_chunk", "chunk": "now"},
         {"type": "text_chunk", "chunk": "check"},
     ]
     action = items[-1]
@@ -88,7 +86,7 @@ def _assert_result(items: list[AgentAction | dict[str, object]]) -> None:
         ("call_weather", "weather.get", {"city": "Pune"}),
         ("call_math", "math.double", {"x": 2}),
     ]
-    assert action.metadata["reasoning"] == "think now"
+    assert "reasoning" not in action.metadata
     assert action.metadata["usage"] == {
         "input_tokens": 11,
         "output_tokens": 7,
@@ -109,6 +107,7 @@ def test_openai_stream_next_action_accumulates_fragmented_parallel_calls() -> No
     items = list(provider.stream_next_action([{"role": "user", "content": "go"}], _tools()))
 
     _assert_result(items)
+    assert provider._last_stream_usage == action_usage(items)
     assert completions.request["stream"] is True
     assert completions.request["stream_options"] == {"include_usage": True}
     assert completions.request["parallel_tool_calls"] is True
@@ -130,5 +129,12 @@ async def test_openai_astream_next_action_accumulates_fragmented_parallel_calls(
     ]
 
     _assert_result(items)
+    assert provider._last_stream_usage == action_usage(items)
     assert completions.request["stream"] is True
     assert completions.request["stream_options"] == {"include_usage": True}
+
+
+def action_usage(items: list[AgentAction | dict[str, object]]) -> dict[str, int]:
+    action = items[-1]
+    assert isinstance(action, AgentAction)
+    return action.metadata["usage"]

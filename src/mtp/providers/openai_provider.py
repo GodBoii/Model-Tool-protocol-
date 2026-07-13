@@ -38,28 +38,21 @@ class _ActionStream:
 
     def __init__(self) -> None:
         self.content: list[str] = []
-        self.reasoning: list[str] = []
         self.calls: dict[int, _CallDelta] = {}
         self.usage: dict[str, int] | None = None
 
-    def add(self, chunk: Any) -> tuple[str | None, str | None]:
+    def add(self, chunk: Any) -> str | None:
         usage = extract_usage_metrics(chunk)
         if usage:
             self.usage = usage
         choices = _value(chunk, "choices")
         delta = _value(choices[0], "delta") if choices else None
         if delta is None:
-            return None, None
+            return None
         content = _value(delta, "content")
         text = content if isinstance(content, str) and content else None
         if text:
             self.content.append(text)
-        reasoning = _value(delta, "reasoning_content")
-        if reasoning is None:
-            reasoning = _value(delta, "reasoning")
-        thought = reasoning if isinstance(reasoning, str) and reasoning else None
-        if thought:
-            self.reasoning.append(thought)
         for fragment in _value(delta, "tool_calls") or []:
             raw_index = _value(fragment, "index")
             if isinstance(raw_index, bool):
@@ -82,7 +75,7 @@ class _ActionStream:
                     call.name += name
                 if isinstance(arguments, str):
                     call.arguments += arguments
-        return text, thought
+        return text
 
     def tool_calls(self) -> list[dict[str, Any]]:
         return [
@@ -106,12 +99,15 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         *,
         model: str = "gpt-4o",
         api_key: str | None = None,
-        temperature: float = 0.0,
+        temperature: float | None = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
         strict_tools: bool = False,
         response_format: dict[str, Any] | None = None,
+        reasoning_effort: str | None = None,
         max_completion_tokens: int | None = None,
+        stream_include_usage: bool = True,
+        stream_include_obfuscation: bool | None = None,
         timeout: float | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
@@ -122,7 +118,10 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self.parallel_tool_calls = parallel_tool_calls
         self.strict_tools = strict_tools
         self.response_format = response_format
+        self.reasoning_effort = reasoning_effort
         self.max_completion_tokens = max_completion_tokens
+        self.stream_include_usage = stream_include_usage
+        self.stream_include_obfuscation = stream_include_obfuscation
         self.timeout = timeout
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
@@ -190,11 +189,41 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         options: dict[str, Any] = {}
         if self.response_format is not None:
             options["response_format"] = self.response_format
+        if self.reasoning_effort is not None:
+            options["reasoning_effort"] = self.reasoning_effort
         if self.max_completion_tokens is not None:
             options["max_completion_tokens"] = self.max_completion_tokens
         if self.timeout is not None:
             options["timeout"] = self.timeout
         return options
+
+    def _base_request_args(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openai_messages(messages),
+            **self._request_options(),
+        }
+        # Some reasoning-only model snapshots reject sampling parameters. A
+        # caller can select those models without sending temperature by using
+        # ``temperature=None``.
+        if self.temperature is not None:
+            args["temperature"] = self.temperature
+        return args
+
+    def _stream_options(self) -> dict[str, bool] | None:
+        options: dict[str, bool] = {}
+        if self.stream_include_usage:
+            options["include_usage"] = True
+        if self.stream_include_obfuscation is not None:
+            options["include_obfuscation"] = self.stream_include_obfuscation
+        return options or None
+
+    def _stream_request_args(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        args = {**self._base_request_args(messages), "stream": True}
+        stream_options = self._stream_options()
+        if stream_options is not None:
+            args["stream_options"] = stream_options
+        return args
 
     def _extract_rate_limits(self, headers: Any) -> dict[str, Any] | None:
         if headers is None:
@@ -270,15 +299,9 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         return message.content or "Done."
 
     def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        openai_messages = self._to_openai_messages(messages)
         openai_tools = self._to_openai_tools(tools)
 
-        request_args: dict[str, Any] = {
-            "model": self.model,
-            "messages": openai_messages,
-            "temperature": self.temperature,
-            **self._request_options(),
-        }
+        request_args = self._base_request_args(messages)
         if openai_tools:
             request_args["tools"] = openai_tools
             request_args["tool_choice"] = self.tool_choice
@@ -289,14 +312,8 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         return self._action_from_response(response, rate_limits)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        openai_messages = self._to_openai_messages(messages)
         response, rate_limits = self._create_with_raw_headers(
-            {
-                "model": self.model,
-                "messages": openai_messages,
-                "temperature": self.temperature,
-                **self._request_options(),
-            }
+            self._base_request_args(messages)
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
         self._last_finalize_rate_limits = rate_limits
@@ -306,14 +323,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
     ) -> Iterator[str]:
         self._last_stream_usage = None
-        request_args: dict[str, Any] = {
-            "model": self.model,
-            "messages": self._to_openai_messages(messages),
-            "temperature": self.temperature,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-            **self._request_options(),
-        }
+        request_args = self._stream_request_args(messages)
         stream = self._client.chat.completions.create(**request_args)
 
         def remember_usage(usage: dict[str, int]) -> None:
@@ -344,12 +354,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        request_args: dict[str, Any] = {
-            "model": self.model,
-            "messages": self._to_openai_messages(messages),
-            "temperature": self.temperature,
-            **self._request_options(),
-        }
+        request_args = self._base_request_args(messages)
         openai_tools = self._to_openai_tools(tools)
         if openai_tools:
             request_args["tools"] = openai_tools
@@ -362,14 +367,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
     def _planning_stream_args(
         self, messages: list[dict[str, Any]], tools: list[ToolSpec]
     ) -> dict[str, Any]:
-        args: dict[str, Any] = {
-            "model": self.model,
-            "messages": self._to_openai_messages(messages),
-            "temperature": self.temperature,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-            **self._request_options(),
-        }
+        args = self._stream_request_args(messages)
         converted = self._to_openai_tools(tools)
         if converted:
             args.update(
@@ -381,12 +379,9 @@ class OpenAIToolCallingProvider(ProviderAdapter):
 
     def _stream_action(self, stream: _ActionStream) -> AgentAction:
         content = "".join(stream.content)
-        reasoning = "".join(stream.reasoning).strip()
         meta: dict[str, Any] = {"provider": "openai", "model": self.model}
         if stream.usage:
             meta["usage"] = stream.usage
-        if reasoning:
-            meta["reasoning"] = reasoning
         calls = stream.tool_calls()
         if not calls:
             return AgentAction(response_text=content, metadata=meta)
@@ -395,7 +390,6 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             model=self.model,
             tool_calls=calls,
             content=content,
-            reasoning=reasoning or None,
             tool_call_source="streamed_native_tool_calls",
         )
         return AgentAction(plan=payload["plan"], metadata={**meta, **payload["metadata"]})
@@ -404,43 +398,38 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self, messages: list[dict[str, Any]], tools: list[ToolSpec]
     ) -> Iterator[AgentAction | dict[str, Any]]:
         self._last_rate_limits = None
+        self._last_stream_usage = None
         chunks = self._client.chat.completions.create(
             **self._planning_stream_args(messages, tools)
         )
         stream = _ActionStream()
         for chunk in chunks:
-            text, reasoning = stream.add(chunk)
-            if reasoning:
-                yield {"type": "reasoning_chunk", "chunk": reasoning}
+            text = stream.add(chunk)
             if text:
                 yield {"type": "text_chunk", "chunk": text}
+        self._last_stream_usage = stream.usage
         yield self._stream_action(stream)
 
     async def astream_next_action(
         self, messages: list[dict[str, Any]], tools: list[ToolSpec]
     ) -> AsyncIterator[AgentAction | dict[str, Any]]:
         self._last_rate_limits = None
+        self._last_stream_usage = None
         chunks = await self._get_async_client().chat.completions.create(
             **self._planning_stream_args(messages, tools)
         )
         stream = _ActionStream()
         async for chunk in chunks:
-            text, reasoning = stream.add(chunk)
-            if reasoning:
-                yield {"type": "reasoning_chunk", "chunk": reasoning}
+            text = stream.add(chunk)
             if text:
                 yield {"type": "text_chunk", "chunk": text}
+        self._last_stream_usage = stream.usage
         yield self._stream_action(stream)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         del tool_results
         response, rate_limits = await self._acreate_with_raw_headers(
-            {
-                "model": self.model,
-                "messages": self._to_openai_messages(messages),
-                "temperature": self.temperature,
-                **self._request_options(),
-            }
+            self._base_request_args(messages)
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
         self._last_finalize_rate_limits = rate_limits
@@ -451,14 +440,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
     ) -> AsyncIterator[str]:
         del tool_results
         self._last_stream_usage = None
-        request_args: dict[str, Any] = {
-            "model": self.model,
-            "messages": self._to_openai_messages(messages),
-            "temperature": self.temperature,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-            **self._request_options(),
-        }
+        request_args = self._stream_request_args(messages)
         stream = await self._get_async_client().chat.completions.create(**request_args)
 
         def remember_usage(usage: dict[str, int]) -> None:

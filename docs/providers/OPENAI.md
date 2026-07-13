@@ -1,6 +1,8 @@
-# OpenAI Provider
+# OpenAI provider
 
-OpenAI provides GPT-4o, GPT-4, and GPT-3.5-turbo with native tool/function calling support.
+MTP's OpenAI adapter uses the Chat Completions API with native function calling,
+structured outputs, sync and async clients, and streaming for both planning and
+final answers.
 
 ## Install
 
@@ -8,96 +10,18 @@ OpenAI provides GPT-4o, GPT-4, and GPT-3.5-turbo with native tool/function calli
 pip install "mtpx[openai]"
 ```
 
-Or install the SDK directly:
-
-```bash
-pip install openai
-```
-
-## API Key Setup
-
-### Option 1: `.env` file (recommended)
-
-1. Install dotenv support:
-   ```bash
-   pip install python-dotenv
-   ```
-   Or with the MTP extra:
-   ```bash
-   pip install "mtpx[dotenv]"
-   ```
-
-2. Create a `.env` file in your project root:
-   ```
-   OPENAI_API_KEY=sk_your_key_here
-   ```
-
-3. Load it in your code **before** creating the provider:
-   ```python
-   from mtp import Agent
-
-   Agent.load_dotenv_if_available()  # reads .env file
-   ```
-
-Get an API key at [platform.openai.com](https://platform.openai.com).
-
-### Option 2: System environment variable
-
-```bash
-# Linux/macOS
-export OPENAI_API_KEY="sk-..."
-
-# Windows PowerShell
-$env:OPENAI_API_KEY="sk-..."
-```
-
-## Quick Start
+Set `OPENAI_API_KEY` in the environment or pass `api_key=` explicitly. A `.env`
+file can be loaded before constructing the provider:
 
 ```python
 from mtp import Agent
-from mtp.providers import OpenAI
 
-Agent.load_dotenv_if_available()  # loads OPENAI_API_KEY from .env
-
-provider = OpenAI(model="gpt-4o")
-tools = Agent.ToolRegistry()
-agent = Agent(provider=provider, tools=tools)
-
-reply = agent.run_loop("What is 25 * 4 + 10?")
-print(reply)
+Agent.load_dotenv_if_available()
 ```
 
-## Parameters
+Create API keys in the [OpenAI dashboard](https://platform.openai.com/api-keys).
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `model` | `str` | `"gpt-4o"` | OpenAI model ID |
-| `api_key` | `str \| None` | `None` | API key (falls back to `OPENAI_API_KEY` env var) |
-| `temperature` | `float` | `0.0` | Sampling temperature |
-| `tool_choice` | `str \| dict` | `"auto"` | Tool selection: `"auto"`, `"none"`, `"required"`, or `{"type": "function", "function": {"name": "..."}}` |
-| `parallel_tool_calls` | `bool` | `True` | Allow parallel tool calls |
-| `client` | `Any \| None` | `None` | Pre-configured `openai.OpenAI` client instance |
-
-## Capabilities
-
-| Capability | Value |
-|---|---|
-| Tool calling | Yes |
-| Parallel tool calls | Yes (configurable) |
-| Input modalities | text, image, audio, file |
-| Streaming | Fallback |
-| Usage metrics | Rich |
-| Reasoning metadata | No |
-| Native async | No (uses thread fallback) |
-
-## Recommended Models
-
-- `gpt-4o` — Best overall tool calling and multimodal (default)
-- `gpt-4o-mini` — Fast, cheaper, good tool support
-- `gpt-4-turbo` — Strong reasoning
-- `gpt-3.5-turbo` — Fastest, cheapest
-
-## Full Example
+## Quick start
 
 ```python
 from mtp import Agent
@@ -105,27 +29,107 @@ from mtp.providers import OpenAI
 
 Agent.load_dotenv_if_available()
 
-provider = OpenAI(
-    model="gpt-4o",
-    temperature=0.0,
-    tool_choice="auto",
-    parallel_tool_calls=True,
-)
-
-tools = Agent.ToolRegistry()
-agent = Agent(provider=provider, tools=tools, debug_mode=True)
-
-reply = agent.run_loop(
-    "Calculate (25 * 4) + 10 and list files in the current directory.",
-    max_rounds=4,
-    tool_call_limit=12,
-)
-print(reply)
+provider = OpenAI(model="gpt-4o")
+agent = Agent(provider=provider, tools=Agent.ToolRegistry())
+print(agent.run_loop("What is 25 * 4 + 10?"))
 ```
 
-## Rate Limit Tracking
+`gpt-4o` remains MTP's compatibility default. Select a current model that
+supports Chat Completions and function calling for new deployments; model
+features vary, so verify the selected model in OpenAI's
+[model catalog](https://developers.openai.com/api/docs/models).
 
-The OpenAI provider automatically extracts rate limit headers (`x-ratelimit-*`, `retry-after`) from responses and includes them in action metadata.
+## Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---:|---|
+| `model` | `str` | `"gpt-4o"` | OpenAI model ID |
+| `api_key` | `str \| None` | `None` | Falls back to `OPENAI_API_KEY` |
+| `temperature` | `float \| None` | `0.0` | Sampling temperature; use `None` to omit it for models that reject sampling controls |
+| `tool_choice` | `str \| dict` | `"auto"` | `"auto"`, `"none"`, `"required"`, a named function selector, or an allowed-tools selector |
+| `parallel_tool_calls` | `bool` | `True` | Allow more than one function call in a model turn |
+| `strict_tools` | `bool` | `False` | Add `strict: true` to each function definition |
+| `response_format` | `dict \| None` | `None` | Native `text`, `json_object`, or `json_schema` Chat Completions format |
+| `reasoning_effort` | `str \| None` | `None` | Forward the documented reasoning-effort level supported by the selected model |
+| `max_completion_tokens` | `int \| None` | `None` | Limit visible output plus reasoning tokens |
+| `stream_include_usage` | `bool` | `True` | Request the terminal stream usage chunk |
+| `stream_include_obfuscation` | `bool \| None` | `None` | Explicitly enable/disable stream payload obfuscation; `None` uses the API default |
+| `timeout` | `float \| None` | `None` | Per-request SDK timeout in seconds |
+| `client` | `Any \| None` | `None` | Preconfigured `openai.OpenAI` client |
+| `async_client` | `Any \| None` | `None` | Preconfigured `openai.AsyncOpenAI` client |
+
+The same options are applied to synchronous, asynchronous, planning, final,
+and streaming requests. `tool_choice` and `parallel_tool_calls` are sent only
+when the request has function tools. `stream_options` is sent only for streamed
+requests and is omitted when neither stream option is configured.
+
+## Strict functions and structured output
+
+```python
+provider = OpenAI(
+    model="gpt-4o",
+    strict_tools=True,
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "answer",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+                "required": ["answer"],
+                "additionalProperties": False,
+            },
+        },
+    },
+)
+```
+
+OpenAI strict function schemas require every property to be listed in
+`required` and object schemas to set `additionalProperties: false`. MTP forwards
+the supplied schema without silently changing its meaning. See OpenAI's
+[function calling](https://developers.openai.com/api/docs/guides/function-calling)
+and [structured output](https://developers.openai.com/api/docs/guides/structured-outputs)
+guides.
+
+## Reasoning and usage
+
+`reasoning_effort` is forwarded to Chat Completions. Supported values are
+model-specific. OpenAI does not expose raw reasoning tokens through the API, so
+the adapter does not synthesize reasoning text or emit `reasoning_chunk`
+events. When OpenAI returns `completion_tokens_details.reasoning_tokens`, MTP
+preserves the count as `usage.reasoning_tokens` in action metadata and stream
+usage. Reasoning summaries are a separate Responses API feature and are not
+provided by this Chat Completions adapter. See the official
+[reasoning guide](https://developers.openai.com/api/docs/guides/reasoning).
+
+Streaming requests ask for the terminal usage chunk by default. If a stream is
+interrupted before that chunk arrives, usage may be unavailable, matching the
+API contract.
+
+## Capabilities
+
+| Capability | Value |
+|---|---|
+| Function calling | Native |
+| Parallel function calls | Configurable |
+| Structured output | Native JSON object / JSON schema when configured |
+| Planning stream | Native |
+| Final-answer stream | Native |
+| Usage metrics | Rich, including reasoning-token counts when returned |
+| Raw reasoning metadata | No |
+| Async | Native `AsyncOpenAI` |
+
+Text, image, audio, and file input conversion is available in the adapter, but
+actual modality support is model-specific. Do not infer model support solely
+from the provider-level capability envelope.
+
+## Rate-limit tracking
+
+For non-streamed calls, the provider uses the SDK's raw-response interface when
+available and records `x-ratelimit-*` and `retry-after` headers. Planning action
+metadata includes those headers; final-call headers are retained on
+`_last_finalize_rate_limits` for diagnostics.
 
 ## Source
 
