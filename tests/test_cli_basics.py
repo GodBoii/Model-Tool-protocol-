@@ -5,6 +5,7 @@ from mtp.session_store import JsonSessionStore, SessionRecord
 
 from mtp.cli.main import main
 from mtp.cli.doctor import DoctorItem
+from mtp.cli.providers import ProviderInfo
 
 
 def test_version_prints_package_version(capsys) -> None:
@@ -51,6 +52,15 @@ def test_providers_list_json_is_machine_readable(capsys) -> None:
     assert isinstance(payload, list)
     assert any(row["name"] == "groq" for row in payload)
     assert all("key_status" in row and "ready" in row for row in payload)
+
+
+def test_dotted_optional_sdk_probe_handles_missing_parent(monkeypatch) -> None:
+    def missing_parent(_module: str):
+        raise ModuleNotFoundError("No module named 'google'")
+
+    monkeypatch.setattr("mtp.cli.providers.importlib.util.find_spec", missing_parent)
+
+    assert ProviderInfo("gemini", "Gemini", "GeminiProvider", "google.genai", None).sdk_installed() is False
 
 
 def test_providers_show_reports_readiness_without_secret(monkeypatch, capsys) -> None:

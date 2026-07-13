@@ -19,7 +19,12 @@ class ProviderInfo:
     def sdk_installed(self) -> bool | None:
         if self.sdk_module is None:
             return None
-        return importlib.util.find_spec(self.sdk_module) is not None
+        try:
+            return importlib.util.find_spec(self.sdk_module) is not None
+        except (ImportError, AttributeError, ValueError):
+            # Dotted optional modules (for example google.genai) raise when
+            # their parent package is absent in a minimal installation.
+            return False
 
 
 PROVIDERS: list[ProviderInfo] = [
