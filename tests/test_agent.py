@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import pytest
 from typing import Any
 from collections.abc import Iterator
 
-from mtp.agent import Agent, AgentAction, RunOutput
+from mtp.agent import Agent, AgentAction, RunOutput, _aiter_sync_iterator
 from mtp.protocol import ExecutionPlan, ToolBatch, ToolCall, ToolResult, ToolSpec
 from mtp.runtime import ToolRegistry, RegisteredTool, ToolRetryError, ToolStopError
 from mtp.exceptions import RetryAgentRun, StopAgentRun
@@ -394,6 +395,17 @@ class TestAgentStrictDependency:
 
 @pytest.mark.asyncio
 class TestAgentAsync:
+    async def test_sync_stream_bridge_does_not_block_event_loop(self):
+        def delayed_stream():
+            time.sleep(0.05)
+            yield "ready"
+
+        iterator = _aiter_sync_iterator(iter(delayed_stream()))
+        heartbeat = asyncio.create_task(asyncio.sleep(0.01))
+
+        assert await anext(iterator) == "ready"
+        assert heartbeat.done()
+
     async def test_arun_loop(self):
         reg = ToolRegistry()
         provider = _TextOnlyProvider("Async hello")

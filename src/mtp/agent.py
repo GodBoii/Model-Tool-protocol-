@@ -149,6 +149,23 @@ _ORCHESTRATOR_MODES = {"delegator", "orchestration"}
 _AUTORESEARCH_TERMINATION_PREFIX = "__mtp_autoresearch_terminate__:"
 
 
+def _next_sync_item(iterator: Iterator[Any]) -> tuple[bool, Any]:
+    """Fetch one item without allowing ``StopIteration`` into an asyncio Future."""
+    try:
+        return True, next(iterator)
+    except StopIteration:
+        return False, None
+
+
+async def _aiter_sync_iterator(iterator: Iterator[Any]) -> AsyncIterator[Any]:
+    """Bridge a legacy synchronous stream without blocking the event loop."""
+    while True:
+        has_item, item = await asyncio.to_thread(_next_sync_item, iterator)
+        if not has_item:
+            return
+        yield item
+
+
 class Agent:
     _TOOL_REASONING_ARG = "reasoning"
 
@@ -2679,7 +2696,8 @@ class Agent:
             elif stream_final and callable(finalize_stream):
                 chunks: list[str] = []
                 finalize_started = perf_counter()
-                for chunk in finalize_stream(self.messages, last_results):
+                sync_stream = finalize_stream(self.messages, last_results)
+                async for chunk in _aiter_sync_iterator(iter(sync_stream)):
                     if self._is_cancelled(resolved_run_id):
                         yield events.emit("run_cancelled", round=max_rounds)
                         self._append_message({"role": "assistant", "content": "Run cancelled."})
