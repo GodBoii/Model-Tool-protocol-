@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -12,6 +12,7 @@ from .common import (
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     USAGE_METRICS_RICH,
     extract_usage_metrics,
+    aiter_openai_like_stream_content,
     format_openai_like_message,
     iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
@@ -48,6 +49,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         # the chain-of-thought reasoning trace in action metadata.
         capture_reasoning: bool = True,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -57,6 +59,9 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
+        if self._async_client is None and client is None:
+            self._async_client = self._make_async_client(api_key=api_key)
 
     # ------------------------------------------------------------------
     # Client construction
@@ -76,6 +81,31 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             base_url="https://api.deepseek.com/v1",
             api_key=key,
         )
+
+    def _make_async_client(self, api_key: str | None) -> Any:
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "`openai` not installed. DeepSeek uses the OpenAI-compatible API. "
+                "Install with: pip install openai"
+            ) from exc
+
+        key = api_key or require_env("DEEPSEEK_API_KEY")
+        return AsyncOpenAI(base_url="https://api.deepseek.com/v1", api_key=key)
+
+    async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
+        if self._async_client is None:
+            return await asyncio.to_thread(
+                self._client.chat.completions.create, **request_args
+            )
+        try:
+            return await self._async_client.chat.completions.create(**request_args)
+        except TypeError:
+            compatible_args = dict(request_args)
+            compatible_args.pop("parallel_tool_calls", None)
+            compatible_args.pop("stream_options", None)
+            return await self._async_client.chat.completions.create(**compatible_args)
 
     # ------------------------------------------------------------------
     # Message / tool formatting
@@ -217,12 +247,92 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=bool(self.capture_reasoning),
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=self._async_client is not None,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        if self._async_client is None:
+            return await asyncio.to_thread(self.next_action, messages, tools)
+
+        deepseek_tools = self._to_deepseek_tools(tools)
+        is_reasoner = self._is_reasoner()
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_deepseek_messages(messages),
+            "temperature": self.temperature,
+        }
+        if deepseek_tools and not is_reasoner:
+            request_args.update(
+                tools=deepseek_tools,
+                tool_choice=self.tool_choice,
+                parallel_tool_calls=self.parallel_tool_calls,
+            )
+        response = await self._acreate_completion(request_args)
+        message = response.choices[0].message
+        reasoning = (
+            getattr(message, "reasoning_content", None)
+            if self.capture_reasoning
+            else None
+        )
+        usage = extract_usage_metrics(response)
+        action_meta: dict[str, Any] = {"provider": "deepseek", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if reasoning:
+            action_meta["reasoning"] = reasoning
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            payload = openai_like_tool_call_plan_payload(
+                provider="deepseek",
+                model=self.model,
+                tool_calls=list(tool_calls),
+                content=message.content or "",
+                reasoning=reasoning,
+                tool_call_source="native_tool_calls",
+                use_current_index_refs=True,
+            )
+            return AgentAction(
+                plan=payload["plan"], metadata={**action_meta, **payload["metadata"]}
+            )
+        return AgentAction(response_text=message.content or "", metadata=action_meta)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        if self._async_client is None:
+            return await asyncio.to_thread(self.finalize, messages, tool_results)
+        response = await self._acreate_completion(
+            {
+                "model": self.model,
+                "messages": self._to_deepseek_messages(messages),
+                "temperature": self.temperature,
+            }
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        message = response.choices[0].message
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        if self._async_client is None:
+            for chunk in self.finalize_stream(messages, tool_results):
+                yield chunk
+            return
+        self._last_stream_usage = None
+        stream = await self._acreate_completion(
+            {
+                "model": self.model,
+                "messages": self._to_deepseek_messages(messages),
+                "temperature": self.temperature,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+        )
+
+        def remember_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        async for chunk in aiter_openai_like_stream_content(stream, on_usage=remember_usage):
+            yield chunk
