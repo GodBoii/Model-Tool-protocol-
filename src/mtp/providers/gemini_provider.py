@@ -454,7 +454,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
                     texts.append(part_text)
         if texts:
             return "\n".join(texts).strip()
-        direct_text = getattr(response, "text", None)
+        try:
+            direct_text = getattr(response, "text", None)
+        except (AttributeError, TypeError, ValueError):
+            direct_text = None
         return direct_text.strip() if isinstance(direct_text, str) else ""
 
     def _extract_reasoning_text(self, response: Any) -> str:

@@ -210,3 +210,16 @@ def test_thought_parts_surface_as_reasoning_without_leaking_into_response_text()
     assert action.response_text == "Public answer"
     assert action.metadata["reasoning"] == "checking privately"
     assert provider.capabilities().supports_reasoning_metadata is True
+
+
+def test_response_text_accessor_failure_is_treated_as_empty() -> None:
+    class ResponseWithoutText:
+        candidates = []
+
+        @property
+        def text(self):
+            raise ValueError("response has no text parts")
+
+    provider = GeminiToolCallingProvider(client=_Client())
+
+    assert provider._extract_response_text(ResponseWithoutText()) == ""
