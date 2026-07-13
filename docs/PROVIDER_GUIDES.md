@@ -105,10 +105,16 @@ Use recent Mistral models for better structured tool output.
 - Class: `CohereToolCallingProvider`
 - Extra: `pip install "mtpx[cohere]"`
 - Env var: `COHERE_API_KEY`
-- Default model: `command-r-plus-08-2024`
+- Default model: `command-a-03-2025`
 - Tool calling: Cohere-compatible chat/tool calls
+- Streaming: native Cohere V2 final-response streaming via `chat_stream`, with
+  actual token counts and billed units captured from the terminal
+  `message-end` event
 
 Cohere is useful for command-style reasoning and retrieval-like tasks. Keep schemas small and descriptive.
+See Cohere's [V2 streaming guide](https://docs.cohere.com/v2/docs/streaming)
+and [Chat streaming reference](https://docs.cohere.com/v2/reference/chat-stream)
+for the provider event contract.
 
 ## SambaNova
 
