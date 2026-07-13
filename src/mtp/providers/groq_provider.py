@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -16,6 +17,96 @@ from .common import (
     format_openai_like_message,
     openai_like_tool_call_plan_payload,
 )
+
+
+def _value(obj: Any, key: str) -> Any:
+    return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+
+
+@dataclass(slots=True)
+class _ToolCallDelta:
+    id: str = ""
+    name: str = ""
+    arguments: str = ""
+
+
+class _PlanningStream:
+    """Accumulate Groq's OpenAI-compatible streamed planning deltas.
+
+    Tool-call fragments are keyed by their protocol ``index`` rather than by
+    arrival order because parallel calls can be interleaved across chunks.
+    Both dictionaries and Groq SDK model objects are accepted so this remains
+    compatible across SDK serialization modes.
+    """
+
+    def __init__(self) -> None:
+        self.content: list[str] = []
+        self.reasoning: list[str] = []
+        self.calls: dict[int, _ToolCallDelta] = {}
+        self.usage: dict[str, int] | None = None
+
+    def add(self, chunk: Any) -> tuple[str | None, str | None]:
+        usage = extract_usage_metrics(chunk)
+        if usage:
+            self.usage = usage
+
+        choices = _value(chunk, "choices")
+        delta = _value(choices[0], "delta") if choices else None
+        if delta is None:
+            return None, None
+
+        raw_content = _value(delta, "content")
+        content = raw_content if isinstance(raw_content, str) and raw_content else None
+        if content:
+            self.content.append(content)
+
+        raw_reasoning = _value(delta, "reasoning")
+        if raw_reasoning is None:
+            # Some OpenAI-compatible models/SDK versions use this alias.
+            raw_reasoning = _value(delta, "reasoning_content")
+        reasoning = raw_reasoning if isinstance(raw_reasoning, str) and raw_reasoning else None
+        if reasoning:
+            self.reasoning.append(reasoning)
+
+        for fragment in _value(delta, "tool_calls") or []:
+            raw_index = _value(fragment, "index")
+            if isinstance(raw_index, bool):
+                continue
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                continue
+            if index < 0:
+                continue
+
+            call = self.calls.setdefault(index, _ToolCallDelta())
+            call_id = _value(fragment, "id")
+            if isinstance(call_id, str):
+                call.id += call_id
+            function = _value(fragment, "function")
+            if function is None:
+                continue
+            name = _value(function, "name")
+            arguments = _value(function, "arguments")
+            if isinstance(name, str):
+                call.name += name
+            if isinstance(arguments, str):
+                call.arguments += arguments
+
+        return content, reasoning
+
+    def tool_calls(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": call.id or f"call_{index}",
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": call.arguments or "{}",
+                },
+            }
+            for index, call in sorted(self.calls.items())
+        ]
 
 
 class GroqToolCallingProvider(ProviderAdapter):
@@ -247,6 +338,102 @@ class GroqToolCallingProvider(ProviderAdapter):
                 **payload["metadata"],
             },
         )
+
+    def _planning_stream_args(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> dict[str, Any]:
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_groq_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": self.stream_include_usage},
+        }
+        if self.include_reasoning is not None:
+            request_args["include_reasoning"] = self.include_reasoning
+        if self.reasoning_format is not None:
+            request_args["reasoning_format"] = self.reasoning_format
+        if self.reasoning_effort is not None:
+            request_args["reasoning_effort"] = self.reasoning_effort
+        groq_tools = self._to_groq_tools(tools)
+        if groq_tools:
+            request_args.update(
+                tools=groq_tools,
+                tool_choice=self.tool_choice,
+                parallel_tool_calls=self.parallel_tool_calls,
+            )
+        return request_args
+
+    def _action_from_planning_stream(self, stream: _PlanningStream) -> AgentAction:
+        content = "".join(stream.content)
+        reasoning = "".join(stream.reasoning).strip()
+        action_meta: dict[str, Any] = {"provider": "groq", "model": self.model}
+        if stream.usage:
+            action_meta["usage"] = stream.usage
+        if reasoning:
+            action_meta["reasoning"] = reasoning
+
+        tool_calls = stream.tool_calls()
+        if not tool_calls:
+            return AgentAction(response_text=content, metadata=action_meta)
+        return self._tool_action_from_calls(
+            tool_calls=tool_calls,
+            content=content,
+            reasoning=reasoning or None,
+            action_meta=action_meta,
+            tool_call_source="streamed_native_tool_calls",
+        )
+
+    def stream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> Iterator[AgentAction | dict[str, Any]]:
+        """Stream planning text/reasoning while rebuilding native tool calls."""
+
+        self._last_stream_usage = None
+        chunks = self._create_completion(self._planning_stream_args(messages, tools))
+        stream = _PlanningStream()
+        try:
+            for chunk in chunks:
+                text, reasoning = stream.add(chunk)
+                if reasoning:
+                    yield {"type": "reasoning_chunk", "chunk": reasoning}
+                if text:
+                    yield {"type": "text_chunk", "chunk": text}
+        except Exception as exc:
+            raise_normalized_provider_error(exc, provider="groq")
+        self._last_stream_usage = stream.usage
+        yield self._action_from_planning_stream(stream)
+
+    async def astream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> AsyncIterator[AgentAction | dict[str, Any]]:
+        """Native-async planning stream, with a safe sync-client fallback."""
+
+        if self._async_client is None:
+            # An injected sync-only test/application client is unusual. Keep
+            # compatibility without running its blocking network I/O on the
+            # event loop; normal constructed providers always have AsyncGroq.
+            items = await asyncio.to_thread(
+                lambda: list(self.stream_next_action(messages, tools))
+            )
+            for item in items:
+                yield item
+            return
+
+        self._last_stream_usage = None
+        chunks = await self._acreate_completion(self._planning_stream_args(messages, tools))
+        stream = _PlanningStream()
+        try:
+            async for chunk in chunks:
+                text, reasoning = stream.add(chunk)
+                if reasoning:
+                    yield {"type": "reasoning_chunk", "chunk": reasoning}
+                if text:
+                    yield {"type": "text_chunk", "chunk": text}
+        except Exception as exc:
+            raise_normalized_provider_error(exc, provider="groq")
+        self._last_stream_usage = stream.usage
+        yield self._action_from_planning_stream(stream)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         groq_messages = self._to_groq_messages(messages)
