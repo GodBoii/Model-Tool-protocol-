@@ -36,22 +36,6 @@ def test_mistral_provider_metadata_uses_mistralai_sdk() -> None:
     assert provider.sdk_module == "mistralai"
 
 
-@pytest.mark.asyncio
-async def test_xiaomi_astream_next_action_stops_cleanly() -> None:
-    provider = object.__new__(XiaomiToolCallingProvider)
-
-    def _stream_next_action(messages, tools):
-        yield {"type": "text_chunk", "chunk": "hello"}
-
-    provider.stream_next_action = _stream_next_action  # type: ignore[method-assign]
-
-    chunks = []
-    async for chunk in provider.astream_next_action([], []):
-        chunks.append(chunk)
-
-    assert chunks == [{"type": "text_chunk", "chunk": "hello"}]
-
-
 def test_xiaomi_base_url_can_come_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MIMO_BASE_URL", "https://example.test/v1/")
 

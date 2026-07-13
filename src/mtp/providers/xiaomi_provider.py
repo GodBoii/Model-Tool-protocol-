@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -41,6 +40,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         final_thinking_mode: str | None = "enabled",
         timeout_seconds: float = 60.0,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         resolved_base_url = base_url or os.getenv("MIMO_BASE_URL") or DEFAULT_XIAOMI_BASE_URL
@@ -62,7 +62,9 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         self._last_finalize_message: dict[str, Any] | None = None
         self._last_finalize_reasoning: str | None = None
         self._last_stream_reasoning: str | None = None
+        self._api_key = api_key
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     @staticmethod
     def _normalize_thinking_mode(
@@ -95,6 +97,25 @@ class XiaomiToolCallingProvider(ProviderAdapter):
 
         key = api_key or require_env("MIMO_API_KEY")
         return OpenAI(base_url=self.base_url, api_key=key, timeout=self.timeout_seconds)
+
+    def _get_async_client(self) -> Any:
+        """Return a lazily constructed native async OpenAI-compatible client."""
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "`openai` not installed. Xiaomi MiMo uses the OpenAI-compatible API. "
+                "Install with: pip install openai"
+            ) from exc
+        key = self._api_key or require_env("MIMO_API_KEY")
+        self._async_client = AsyncOpenAI(
+            base_url=self.base_url,
+            api_key=key,
+            timeout=self.timeout_seconds,
+        )
+        return self._async_client
 
     def _to_xiaomi_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         formatted: list[dict[str, Any]] = []
@@ -188,6 +209,17 @@ class XiaomiToolCallingProvider(ProviderAdapter):
             fallback_args = dict(request_args)
             fallback_args.pop("parallel_tool_calls", None)
             return self._client.chat.completions.create(**fallback_args)
+
+    async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
+        completions = self._get_async_client().chat.completions
+        try:
+            return await completions.create(**request_args)
+        except TypeError:
+            if "parallel_tool_calls" not in request_args:
+                raise
+            fallback_args = dict(request_args)
+            fallback_args.pop("parallel_tool_calls", None)
+            return await completions.create(**fallback_args)
 
     @staticmethod
     def _first_choice_message(response: Any) -> Any:
@@ -405,27 +437,151 @@ class XiaomiToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=True,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        response = await self._acreate_completion(
+            self._request_args(messages, tools, stage="plan")
+        )
+        message = self._first_choice_message(response)
+        tool_calls = getattr(message, "tool_calls", None)
+        reasoning = self._extract_reasoning(message)
+        usage = extract_usage_metrics(response)
+        content = message.content or ""
+        if tool_calls:
+            return self._tool_action_from_calls(
+                tool_calls=list(tool_calls),
+                content=content,
+                reasoning=reasoning,
+                usage=usage or None,
+                tool_call_source="native_tool_calls",
+            )
+        metadata: dict[str, Any] = {"provider": "xiaomi", "model": self.model}
+        if usage:
+            metadata["usage"] = usage
+        if reasoning:
+            metadata["reasoning"] = reasoning
+        metadata["assistant_message"] = self._assistant_message(
+            content=content, reasoning=reasoning
+        )
+        return AgentAction(response_text=content, metadata=metadata)
 
-    @staticmethod
-    def _next_stream_item(stream: Iterator[AgentAction | dict[str, Any]]) -> AgentAction | dict[str, Any] | None:
-        try:
-            return next(stream)
-        except StopIteration:
-            return None
+    async def astream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> AsyncIterator[AgentAction | dict[str, Any]]:
+        chunks = await self._acreate_completion(
+            self._request_args(messages, tools, stream=True, stage="plan")
+        )
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        usage: dict[str, int] | None = None
+        tool_calls: dict[int, dict[str, Any]] = {}
+        async for chunk in chunks:
+            chunk_usage = extract_usage_metrics(chunk)
+            if chunk_usage:
+                usage = chunk_usage
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = choices[0].delta
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning is None:
+                reasoning = getattr(delta, "reasoning", None)
+            if isinstance(reasoning, str) and reasoning:
+                reasoning_parts.append(reasoning)
+                yield {"type": "reasoning_chunk", "chunk": reasoning}
+            content = getattr(delta, "content", None)
+            if isinstance(content, str) and content:
+                content_parts.append(content)
+                yield {"type": "text_chunk", "chunk": content}
+            for fragment in getattr(delta, "tool_calls", None) or []:
+                index = getattr(fragment, "index", 0) or 0
+                entry = tool_calls.setdefault(
+                    index,
+                    {"id": "", "function": {"name": "", "arguments": ""}},
+                )
+                fragment_id = getattr(fragment, "id", None)
+                if fragment_id:
+                    entry["id"] += fragment_id
+                function = getattr(fragment, "function", None)
+                if function is not None:
+                    name = getattr(function, "name", None)
+                    arguments = getattr(function, "arguments", None)
+                    if name:
+                        entry["function"]["name"] += name
+                    if arguments:
+                        entry["function"]["arguments"] += arguments
 
-    async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
-        stream = self.stream_next_action(messages, tools)
-        while True:
-            chunk = await asyncio.to_thread(self._next_stream_item, stream)
-            if chunk is None:
-                break
-            yield chunk
+        content = "".join(content_parts)
+        reasoning = "".join(reasoning_parts).strip() or None
+        if tool_calls:
+            yield self._tool_action_from_calls(
+                tool_calls=[tool_calls[index] for index in sorted(tool_calls)],
+                content=content,
+                reasoning=reasoning,
+                usage=usage,
+                tool_call_source="streamed_native_tool_calls",
+            )
+            return
+        metadata: dict[str, Any] = {"provider": "xiaomi", "model": self.model}
+        if usage:
+            metadata["usage"] = usage
+        if reasoning:
+            metadata["reasoning"] = reasoning
+        metadata["assistant_message"] = self._assistant_message(
+            content=content, reasoning=reasoning
+        )
+        yield AgentAction(response_text=content, metadata=metadata)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._acreate_completion(
+            self._request_args(messages, stage="finalize")
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        message = self._first_choice_message(response)
+        reasoning = self._extract_reasoning(message)
+        self._last_finalize_reasoning = reasoning
+        self._last_finalize_message = self._assistant_message(
+            content=message.content or "Done.", reasoning=reasoning
+        )
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        del tool_results
+        self._last_stream_usage = None
+        self._last_stream_reasoning = None
+        stream = await self._acreate_completion(
+            self._request_args(messages, stream=True, stage="finalize")
+        )
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        async for chunk in stream:
+            usage = extract_usage_metrics(chunk)
+            if usage:
+                self._last_stream_usage = usage
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = choices[0].delta
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning is None:
+                reasoning = getattr(delta, "reasoning", None)
+            if isinstance(reasoning, str) and reasoning:
+                reasoning_parts.append(reasoning)
+            content = getattr(delta, "content", None)
+            if isinstance(content, str) and content:
+                content_parts.append(content)
+                yield content
+        combined_reasoning = "".join(reasoning_parts).strip() or None
+        self._last_stream_reasoning = combined_reasoning
+        self._last_finalize_reasoning = combined_reasoning
+        self._last_finalize_message = self._assistant_message(
+            content="".join(content_parts) or "Done.", reasoning=combined_reasoning
+        )
