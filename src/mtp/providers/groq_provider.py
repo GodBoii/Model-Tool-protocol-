@@ -35,6 +35,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         reasoning_effort: str | None = None,
         stream_include_usage: bool = True,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.system_prompt = system_prompt
@@ -51,6 +52,9 @@ class GroqToolCallingProvider(ProviderAdapter):
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
+        if self._async_client is None and client is None:
+            self._async_client = self._make_async_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -63,6 +67,14 @@ class GroqToolCallingProvider(ProviderAdapter):
         key = api_key or require_env("GROQ_API_KEY")
         return Groq(api_key=key, timeout=60.0)
 
+    def _make_async_client(self, api_key: str | None) -> Any:
+        try:
+            from groq import AsyncGroq
+        except Exception as exc:
+            raise ImportError("groq is not installed. Install with: pip install groq") from exc
+        key = api_key or require_env("GROQ_API_KEY")
+        return AsyncGroq(api_key=key, timeout=60.0)
+
     def _create_completion(self, request_args: dict[str, Any]) -> Any:
         try:
             return self._client.chat.completions.create(**request_args)
@@ -71,6 +83,22 @@ class GroqToolCallingProvider(ProviderAdapter):
             request_args.pop("stream_options", None)
             try:
                 return self._client.chat.completions.create(**request_args)
+            except Exception as exc:
+                raise_normalized_provider_error(exc, provider="groq")
+        except Exception as exc:
+            raise_normalized_provider_error(exc, provider="groq")
+
+    async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
+        if self._async_client is None:
+            return await asyncio.to_thread(self._create_completion, request_args)
+        try:
+            return await self._async_client.chat.completions.create(**request_args)
+        except TypeError:
+            compatible_args = dict(request_args)
+            compatible_args.pop("parallel_tool_calls", None)
+            compatible_args.pop("stream_options", None)
+            try:
+                return await self._async_client.chat.completions.create(**compatible_args)
             except Exception as exc:
                 raise_normalized_provider_error(exc, provider="groq")
         except Exception as exc:
@@ -283,12 +311,71 @@ class GroqToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=True,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=self._async_client is not None,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        if self._async_client is None:
+            return await asyncio.to_thread(self.next_action, messages, tools)
+        groq_tools = self._to_groq_tools(tools)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_groq_messages(messages),
+            "temperature": self.temperature,
+        }
+        if self.include_reasoning is not None:
+            request_args["include_reasoning"] = self.include_reasoning
+        if self.reasoning_format is not None:
+            request_args["reasoning_format"] = self.reasoning_format
+        if self.reasoning_effort is not None:
+            request_args["reasoning_effort"] = self.reasoning_effort
+        if groq_tools:
+            request_args.update(
+                tools=groq_tools,
+                tool_choice=self.tool_choice,
+                parallel_tool_calls=self.parallel_tool_calls,
+            )
+        response = await self._acreate_completion(request_args)
+        self._last_response = response
+        message = self._first_choice_message(response)
+        reasoning = getattr(message, "reasoning", None)
+        usage = extract_usage_metrics(response)
+        action_meta: dict[str, Any] = {"provider": "groq", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if reasoning:
+            action_meta["reasoning"] = reasoning
+        content = message.content or ""
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            return self._tool_action_from_calls(
+                tool_calls=list(tool_calls),
+                content=content,
+                reasoning=reasoning,
+                action_meta=action_meta,
+                tool_call_source="native_tool_calls",
+            )
+        return AgentAction(response_text=content, metadata=action_meta)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        if self._async_client is None:
+            return await asyncio.to_thread(self.finalize, messages, tool_results)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_groq_messages(messages),
+            "temperature": self.temperature,
+        }
+        if self.include_reasoning is not None:
+            request_args["include_reasoning"] = self.include_reasoning
+        if self.reasoning_format is not None:
+            request_args["reasoning_format"] = self.reasoning_format
+        if self.reasoning_effort is not None:
+            request_args["reasoning_effort"] = self.reasoning_effort
+        response = await self._acreate_completion(request_args)
+        self._last_response = response
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        message = self._first_choice_message(response)
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; multi-round chaining is next on roadmap."
+        return message.content or "Done."
