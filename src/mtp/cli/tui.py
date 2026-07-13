@@ -23,7 +23,7 @@ from .tui_settings import (
     save_provider_settings,
     set_provider_api_key,
 )
-from .tui_state import TUIState, deserialize_transcript, new_session_id
+from .tui_state import TUIState, deserialize_transcript, new_session_id, normalize_tui_rounds
 from .tui_workers import save_tui_session
 
 
@@ -94,7 +94,10 @@ def _load_session_into_state(state: TUIState, record: SessionRecord) -> None:
     state.codex_sandbox_mode = normalize_sandbox_mode(
         str(tui_meta.get("codex_sandbox_mode") or state.codex_sandbox_mode)
     )
-    state.max_rounds = int(tui_meta.get("max_rounds") or state.max_rounds)
+    try:
+        state.max_rounds = normalize_tui_rounds(tui_meta.get("max_rounds") or state.max_rounds)
+    except ValueError:
+        pass
     state.autoresearch = bool(tui_meta.get("autoresearch", state.autoresearch))
     research = tui_meta.get("research_instructions")
     state.research_instructions = research if isinstance(research, str) and research.strip() else None
@@ -183,7 +186,7 @@ def run_tui(args: Any) -> int:
         backend=args.backend,
         codex_model=args.codex_model,
         openai_model=args.openai_model,
-        max_rounds=int(args.max_rounds),
+        max_rounds=normalize_tui_rounds(args.max_rounds),
         cwd=Path(args.cwd).expanduser().resolve(),
         autoresearch=bool(args.autoresearch),
         research_instructions=args.research_instructions,

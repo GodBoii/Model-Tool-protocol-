@@ -169,6 +169,25 @@ async def test_inline_apikey_is_scrubbed_from_history_undo_transcript_and_render
 
 
 @pytest.mark.asyncio
+async def test_control_commands_reject_invalid_rounds_and_autoresearch(pilot_app: MTPApp) -> None:
+    async with pilot_app.run_test(size=(120, 40)) as pilot:
+        original_rounds = pilot_app.state.max_rounds
+        pilot_app._dispatch_command("rounds", "1000000")
+        pilot_app._dispatch_command("autoresearch", "perhaps")
+        await pilot.pause()
+
+        assert pilot_app.state.max_rounds == original_rounds
+        assert pilot_app.state.autoresearch is False
+
+        pilot_app._dispatch_command("rounds", "8")
+        pilot_app._dispatch_command("autoresearch", "on")
+        await pilot.pause()
+
+        assert pilot_app.state.max_rounds == 8
+        assert pilot_app.state.autoresearch is True
+
+
+@pytest.mark.asyncio
 async def test_apikey_modal_masks_and_scrubs_secret_input(
     pilot_app: MTPApp, monkeypatch: pytest.MonkeyPatch
 ) -> None:

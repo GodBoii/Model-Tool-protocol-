@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import pytest
+
 from mtp.session_store import JsonSessionStore, SessionRecord
 
 from mtp.cli.main import main
@@ -23,6 +25,13 @@ def test_doctor_warnings_do_not_fail(monkeypatch) -> None:
     )
 
     assert main(["doctor"]) == 0
+
+
+def test_tui_rejects_unbounded_round_count(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["tui", "--max-rounds", "1000000"])
+    assert exc_info.value.code == 2
+    assert "1 to 100" in capsys.readouterr().err
 
 
 def test_doctor_failure_returns_nonzero(monkeypatch) -> None:

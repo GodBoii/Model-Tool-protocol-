@@ -27,6 +27,7 @@ MAX_ATTACHMENTS = 8
 MAX_ATTACHMENT_CHARS = 16_000
 MAX_ATTACHMENT_BYTES = 64 * 1024
 MAX_ATTACHMENTS_TOTAL_BYTES = 256 * 1024
+MAX_TUI_ROUNDS = 100
 
 MODEL_PRESETS: list[tuple[str, str]] = [
     ("gpt-5.5", "Latest frontier coding model"),
@@ -100,6 +101,16 @@ class TUIState:
 
 def new_session_id() -> str:
     return f"chat-{uuid4().hex[:10]}"
+
+
+def normalize_tui_rounds(value: Any) -> int:
+    try:
+        rounds = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"rounds must be an integer from 1 to {MAX_TUI_ROUNDS}") from exc
+    if not 1 <= rounds <= MAX_TUI_ROUNDS:
+        raise ValueError(f"rounds must be from 1 to {MAX_TUI_ROUNDS}")
+    return rounds
 
 
 def now_label() -> str:

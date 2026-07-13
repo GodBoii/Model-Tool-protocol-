@@ -25,6 +25,15 @@ from .tui import run_tui
 from .. import __version__
 
 
+def _tui_rounds_arg(value: str) -> int:
+    from .tui_state import normalize_tui_rounds
+
+    try:
+        return normalize_tui_rounds(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 @contextmanager
 def _pushd(path: Path):
     prev = Path.cwd()
@@ -450,7 +459,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model for Codex backend.",
     )
     tui_cmd.add_argument("--openai-model", default="gpt-5.4-mini", help="Initial model for the OpenAI MTP backend.")
-    tui_cmd.add_argument("--max-rounds", type=int, default=6, help="max_rounds for MTP SDK provider backends.")
+    tui_cmd.add_argument(
+        "--max-rounds",
+        type=_tui_rounds_arg,
+        default=6,
+        help="Maximum MTP provider tool rounds (1-100).",
+    )
     tui_cmd.add_argument("--cwd", default=".", help="Working directory used by tools and Codex backend.")
     tui_cmd.add_argument(
         "--session-db",

@@ -1,10 +1,19 @@
+import pytest
+
 from mtp.cli.tui_limits import TUILimits, append_bounded, bounded_detail, bounded_tail, trim_display_blocks
+from mtp.cli.tui_state import normalize_tui_rounds
 
 
 def test_append_bounded_retains_newest_items() -> None:
     items = [1, 2]
     append_bounded(items, 3, 2)
     assert items == [2, 3]
+
+
+@pytest.mark.parametrize("value", [0, -1, 101, "many", None])
+def test_tui_rounds_are_bounded(value) -> None:
+    with pytest.raises(ValueError, match="rounds"):
+        normalize_tui_rounds(value)
 
 
 def test_bounded_tail_marks_omitted_preview() -> None:

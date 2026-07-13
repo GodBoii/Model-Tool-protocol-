@@ -1316,12 +1316,13 @@ class MTPApp(App):
                     chat_log.add_command_result(f"Available: {', '.join(HARNESS_MODES)}")
             self._refresh_status_bar()
         elif cmd == "rounds":
-            if arg and arg.isdigit() and int(arg) >= 1:
-                s.max_rounds = int(arg)
+            from .tui_state import MAX_TUI_ROUNDS, normalize_tui_rounds
+            try:
+                s.max_rounds = normalize_tui_rounds(arg)
                 save_tui_session(s)
-                chat_log.add_command_result(f"✓ max_rounds set to {arg}")
-            else:
-                chat_log.add_command_result("Usage: /rounds <positive-int>")
+                chat_log.add_command_result(f"✓ max_rounds set to {s.max_rounds}")
+            except ValueError:
+                chat_log.add_command_result(f"Usage: /rounds <1-{MAX_TUI_ROUNDS}>")
         elif cmd == "cd":
             if not arg:
                 chat_log.add_command_result("Usage: /cd <dir>")
@@ -1336,7 +1337,13 @@ class MTPApp(App):
                 else:
                     chat_log.add_command_result(f"✗ Not found: {target}")
         elif cmd == "autoresearch":
-            s.autoresearch = arg.lower() == "on"
+            choice = arg.strip().lower()
+            if choice not in {"on", "off"}:
+                chat_log.add_command_result(
+                    f"autoresearch={s.autoresearch}. Usage: /autoresearch <on|off>"
+                )
+                return
+            s.autoresearch = choice == "on"
             s.agent = None
             save_tui_session(s)
             chat_log.add_command_result(f"✓ autoresearch={s.autoresearch}")
