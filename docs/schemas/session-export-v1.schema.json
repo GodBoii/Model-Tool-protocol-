@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mtp.dev/schemas/session-export-v1.schema.json",
+  "title": "MTP session export v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "format", "version", "exported_at", "sessions"],
+  "properties": {
+    "$schema": {"const": "https://json-schema.org/draft/2020-12/schema"},
+    "format": {"const": "mtp.session-export"},
+    "version": {"const": 1},
+    "exported_at": {"type": "string", "format": "date-time"},
+    "sessions": {"type": "array", "items": {"$ref": "#/$defs/session"}}
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "input", "final_text"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "input": {"type": "string"},
+        "final_text": {"type": "string"},
+        "cancelled": {"type": "boolean"},
+        "paused": {"type": "boolean"},
+        "total_tool_calls": {"type": "integer", "minimum": 0},
+        "created_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id"],
+      "properties": {
+        "session_id": {"type": "string", "minLength": 1},
+        "user_id": {"type": ["string", "null"]},
+        "metadata": {"type": "object"},
+        "messages": {"type": "array", "items": {"type": "object"}},
+        "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}},
+        "created_at": {"type": "string", "format": "date-time"},
+        "updated_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

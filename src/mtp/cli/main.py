@@ -13,6 +13,12 @@ from .doctor import run_doctor
 from ..agent_os import launch as launch_agent_os
 from ..codebase import CodebaseMemory
 from ..session_store import JsonSessionStore
+from ..session_transfer import (
+    SessionTransferError,
+    load_session_export,
+    make_session_export,
+    write_session_export,
+)
 from .providers import get_provider, provider_as_row, providers_as_rows
 from .scaffold import VALID_TEMPLATES, scaffold_project
 from .tui import run_tui
@@ -211,6 +217,74 @@ def _cmd_sessions_delete(args: argparse.Namespace) -> int:
         print(f"Session not found: {args.session_id}", file=sys.stderr)
         return 1
     print(f"Deleted session: {args.session_id}")
+    return 0
+
+
+def _select_sessions(args: argparse.Namespace, session_ids: list[str] | None = None):
+    sessions = _session_store(args).list_sessions(user_id=args.user_id)
+    if not session_ids:
+        return sessions
+    requested = set(session_ids)
+    selected = [session for session in sessions if session.session_id in requested]
+    found = {session.session_id for session in selected}
+    missing = sorted(requested - found)
+    if missing:
+        raise LookupError(f"Session not found: {missing[0]}")
+    return selected
+
+
+def _cmd_sessions_show(args: argparse.Namespace) -> int:
+    try:
+        matches = _select_sessions(args, [args.session_id])
+    except LookupError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if len(matches) > 1:
+        owners = ", ".join(repr(session.user_id) for session in matches)
+        print(
+            f"Session id is ambiguous; pass --user-id. Available owners: {owners}",
+            file=sys.stderr,
+        )
+        return 2
+    payload = matches[0].to_dict()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=True))
+    else:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_sessions_export(args: argparse.Namespace) -> int:
+    try:
+        sessions = _select_sessions(args, args.session_id)
+        if not sessions:
+            print("No sessions matched the export filters.", file=sys.stderr)
+            return 1
+        destination = write_session_export(
+            args.output,
+            make_session_export(sessions),
+            overwrite=bool(args.force),
+        )
+    except (LookupError, FileExistsError, OSError, ValueError) as exc:
+        print(f"Session export failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"Exported {len(sessions)} session(s) to {destination}")
+    return 0
+
+
+def _cmd_sessions_import(args: argparse.Namespace) -> int:
+    try:
+        sessions = load_session_export(args.input)
+        if args.user_id is not None:
+            sessions = [session for session in sessions if session.user_id == args.user_id]
+        if not sessions:
+            print("No sessions matched the import filters.", file=sys.stderr)
+            return 1
+        count = _session_store(args).import_sessions(sessions, overwrite=bool(args.force))
+    except (FileNotFoundError, FileExistsError, OSError, SessionTransferError, TypeError, ValueError) as exc:
+        print(f"Session import failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"Imported {count} session(s) from {Path(args.input).expanduser()}")
     return 0
 
 
@@ -419,6 +493,28 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_delete.add_argument("--user-id", default=None, help="Require this exact session owner.")
     sessions_delete.add_argument("--yes", action="store_true", help="Confirm permanent deletion.")
     sessions_delete.set_defaults(handler=_cmd_sessions_delete)
+
+    sessions_show = sessions_sub.add_parser("show", help="Show one complete persisted session.")
+    sessions_show.add_argument("session_id")
+    sessions_show.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"))
+    sessions_show.add_argument("--user-id", default=None, help="Require this exact session owner.")
+    sessions_show.add_argument("--json", action="store_true", help="Emit compact machine-readable JSON.")
+    sessions_show.set_defaults(handler=_cmd_sessions_show)
+
+    sessions_export = sessions_sub.add_parser("export", help="Export sessions to a versioned JSON bundle.")
+    sessions_export.add_argument("output", help="New JSON export file to create.")
+    sessions_export.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"))
+    sessions_export.add_argument("--session-id", action="append", default=[], help="Only export this session id (repeatable).")
+    sessions_export.add_argument("--user-id", default=None, help="Only export sessions owned by this exact user.")
+    sessions_export.add_argument("--force", action="store_true", help="Replace an existing export file.")
+    sessions_export.set_defaults(handler=_cmd_sessions_export)
+
+    sessions_import = sessions_sub.add_parser("import", help="Import a versioned JSON session bundle.")
+    sessions_import.add_argument("input", help="JSON export file to import.")
+    sessions_import.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"))
+    sessions_import.add_argument("--user-id", default=None, help="Only import sessions owned by this exact user.")
+    sessions_import.add_argument("--force", action="store_true", help="Replace sessions with matching id and owner.")
+    sessions_import.set_defaults(handler=_cmd_sessions_import)
 
     codebase_cmd = sub.add_parser("codebase", help="Codebase memory and indexing commands.")
     codebase_sub = codebase_cmd.add_subparsers(dest="codebase_command", required=True)

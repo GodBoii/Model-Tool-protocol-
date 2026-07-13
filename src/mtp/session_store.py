@@ -301,6 +301,62 @@ class JsonSessionStore:
                 self._write_all(kept)
                 return True
 
+    def import_sessions(
+        self,
+        sessions: list[SessionRecord],
+        *,
+        overwrite: bool = False,
+    ) -> int:
+        """Atomically import session records.
+
+        Session identity is the ``(session_id, user_id)`` pair used by the JSON
+        store. By default, any existing identity aborts the entire import. This
+        method deliberately writes the database once so a validation/conflict
+        failure cannot leave a partially imported bundle.
+        """
+        serialized: list[dict[str, Any]] = []
+        incoming_identities: set[tuple[str, str | None]] = set()
+        for session in sessions:
+            if not isinstance(session, SessionRecord):
+                raise TypeError("sessions must contain SessionRecord instances")
+            if not session.session_id:
+                raise ValueError("session_id must not be empty")
+            identity = (session.session_id, session.user_id)
+            if identity in incoming_identities:
+                raise ValueError(
+                    f"Duplicate session identity in import: {session.session_id!r}, user={session.user_id!r}"
+                )
+            incoming_identities.add(identity)
+            serialized.append(session.to_dict())
+
+        if not serialized:
+            return 0
+
+        with self._lock:
+            with self._file_lock():
+                rows = self._read_all()
+                positions = {
+                    (str(row.get("session_id") or ""), row.get("user_id")): idx
+                    for idx, row in enumerate(rows)
+                }
+                conflicts = [identity for identity in incoming_identities if identity in positions]
+                if conflicts and not overwrite:
+                    session_id, user_id = sorted(conflicts, key=lambda item: (item[0], item[1] or ""))[0]
+                    raise FileExistsError(
+                        f"Session already exists: {session_id!r}, user={user_id!r}"
+                    )
+
+                for row in serialized:
+                    identity = (str(row["session_id"]), row.get("user_id"))
+                    position = positions.get(identity)
+                    if position is None:
+                        positions[identity] = len(rows)
+                        rows.append(row)
+                    else:
+                        rows[position] = row
+                self._write_all(rows)
+        return len(serialized)
+
 
 def _process_is_alive(pid: int) -> bool:
     if pid == os.getpid():
