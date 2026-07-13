@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import base64
+import inspect
 import json
 import mimetypes
 from pathlib import Path
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -39,12 +39,15 @@ class GeminiToolCallingProvider(ProviderAdapter):
         api_key: str | None = None,
         temperature: float = 0.0,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model_name = model
         self.temperature = temperature
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
+        self._api_key = api_key
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -56,6 +59,24 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
         key = api_key or require_env("GEMINI_API_KEY")
         return genai.Client(api_key=key)
+
+    def _get_async_client(self) -> Any:
+        """Return google-genai's native asynchronous client.
+
+        ``google.genai.Client`` exposes its async API through ``client.aio``.
+        Accepting an explicit client keeps the adapter straightforward to test
+        and supports applications that manage the async client's lifecycle.
+        """
+        if self._async_client is not None:
+            return self._async_client
+        aio = getattr(self._client, "aio", None)
+        if aio is not None:
+            self._async_client = aio
+            return aio
+        raise RuntimeError(
+            "The configured Gemini client does not expose the native async API; "
+            "pass async_client=... or use google.genai.Client."
+        )
 
     def _to_text(self, content: Any) -> str:
         if isinstance(content, str):
@@ -454,7 +475,9 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
         return sanitized
 
-    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+    def _action_request(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> dict[str, Any]:
         contents, system_instruction = self._to_gemini_payload(messages)
 
         genai_tools: list[dict[str, Any]] = []
@@ -475,12 +498,9 @@ class GeminiToolCallingProvider(ProviderAdapter):
             config["system_instruction"] = system_instruction
         if genai_tools:
             config["tools"] = genai_tools
+        return {"model": self.model_name, "contents": contents, "config": config}
 
-        response = self._client.models.generate_content(
-            model=self.model_name,
-            contents=contents,
-            config=config,
-        )
+    def _action_from_response(self, response: Any) -> AgentAction:
         usage = extract_usage_metrics(response)
         action_meta: dict[str, Any] = {"provider": "gemini", "model": self.model_name}
         if usage:
@@ -492,13 +512,22 @@ class GeminiToolCallingProvider(ProviderAdapter):
         candidates = getattr(response, "candidates", None) or []
         response_parts: list[Any] = []
         if candidates:
-            response_parts = list(getattr(candidates[0].content, "parts", None) or [])
+            content = getattr(candidates[0], "content", None)
+            response_parts = list(getattr(content, "parts", None) or [])
             for idx, part in enumerate(response_parts):
                 fn = getattr(part, "function_call", None)
                 if fn:
                     call_id = f"gemini_call_{idx}"
                     id_by_index[idx] = call_id
-                    raw_args = fn.args if isinstance(fn.args, dict) else dict(fn.args)
+                    raw_fn_args = getattr(fn, "args", None)
+                    try:
+                        raw_args = (
+                            raw_fn_args
+                            if isinstance(raw_fn_args, dict)
+                            else dict(raw_fn_args or {})
+                        )
+                    except (TypeError, ValueError):
+                        raw_args = {}
                     normalized_args = normalize_refs(raw_args, id_by_index)
                     depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
                     calls.append(
@@ -513,7 +542,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
                         {
                             "id": call_id,
                             "type": "function",
-                            "function": {"name": fn.name, "arguments": json.dumps(raw_args, default=str)},
+                            "function": {
+                                "name": fn.name,
+                                "arguments": json.dumps(raw_args, default=str),
+                            },
                         }
                     )
 
@@ -521,7 +553,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         if calls:
             plan = ExecutionPlan(
                 batches=calls_to_dependency_batches(calls),
-                metadata={"provider": "gemini", "model": self.model_name}
+                metadata={"provider": "gemini", "model": self.model_name},
             )
             return AgentAction(
                 plan=plan,
@@ -538,16 +570,20 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
         return AgentAction(response_text=response_text, metadata=action_meta)
 
-    def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
+    def _finalize_request(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         contents, system_instruction = self._to_gemini_payload(messages)
         config: dict[str, Any] = {"temperature": self.temperature}
         if system_instruction:
             config["system_instruction"] = system_instruction
-        response = self._client.models.generate_content(
-            model=self.model_name,
-            contents=contents,
-            config=config,
-        )
+        return {"model": self.model_name, "contents": contents, "config": config}
+
+    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+        response = self._client.models.generate_content(**self._action_request(messages, tools))
+        return self._action_from_response(response)
+
+    def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
+        del tool_results
+        response = self._client.models.generate_content(**self._finalize_request(messages))
         self._last_finalize_usage = extract_usage_metrics(response) or None
         text = self._extract_response_text(response)
         return text or "Done."
@@ -556,20 +592,12 @@ class GeminiToolCallingProvider(ProviderAdapter):
         self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
     ) -> Iterator[str]:
         """Yield native ``google-genai`` text chunks and retain final usage."""
-        contents, system_instruction = self._to_gemini_payload(messages)
-        config: dict[str, Any] = {"temperature": self.temperature}
-        if system_instruction:
-            config["system_instruction"] = system_instruction
-
+        del tool_results
         self._last_stream_usage = None
         # Avoid leaking usage from an earlier non-streaming request if a stream
         # ends without a usage-bearing final chunk.
         self._last_finalize_usage = None
-        stream = self._client.models.generate_content_stream(
-            model=self.model_name,
-            contents=contents,
-            config=config,
-        )
+        stream = self._client.models.generate_content_stream(**self._finalize_request(messages))
         for chunk in stream:
             usage = extract_usage_metrics(chunk)
             if usage:
@@ -589,12 +617,41 @@ class GeminiToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        response = await self._get_async_client().models.generate_content(
+            **self._action_request(messages, tools)
+        )
+        return self._action_from_response(response)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._get_async_client().models.generate_content(
+            **self._finalize_request(messages)
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        text = self._extract_response_text(response)
+        return text or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        """Yield Gemini's native async stream without occupying a worker thread."""
+        del tool_results
+        self._last_stream_usage = None
+        self._last_finalize_usage = None
+        stream = self._get_async_client().models.generate_content_stream(
+            **self._finalize_request(messages)
+        )
+        if inspect.isawaitable(stream):
+            stream = await stream
+        async for chunk in stream:
+            usage = extract_usage_metrics(chunk)
+            if usage:
+                self._last_stream_usage = usage
+            text = self._extract_stream_text(chunk)
+            if text:
+                yield text
