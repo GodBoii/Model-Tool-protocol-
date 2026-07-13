@@ -6,7 +6,7 @@ import json
 import mimetypes
 import re
 from pathlib import Path
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable, Iterator
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -228,16 +228,36 @@ def iter_openai_like_stream_content(
         usage = extract_usage_metrics(chunk)
         if usage and on_usage is not None:
             on_usage(usage)
+        content = openai_like_stream_chunk_content(chunk)
+        if content is not None:
+            yield content
 
-        choices = _read_value(chunk, "choices")
-        if not choices:
-            continue
-        first = choices[0]
-        delta = _read_value(first, "delta")
-        if delta is None:
-            continue
-        content = _read_value(delta, "content")
-        if isinstance(content, str) and content:
+
+def openai_like_stream_chunk_content(chunk: Any) -> str | None:
+    """Extract a text delta from an OpenAI-compatible stream chunk."""
+    choices = _read_value(chunk, "choices")
+    if not choices:
+        return None
+    first = choices[0]
+    delta = _read_value(first, "delta")
+    if delta is None:
+        return None
+    content = _read_value(delta, "content")
+    return content if isinstance(content, str) and content else None
+
+
+async def aiter_openai_like_stream_content(
+    stream: AsyncIterable[Any],
+    *,
+    on_usage: Callable[[dict[str, int]], None] | None = None,
+) -> AsyncIterator[str]:
+    """Async counterpart to :func:`iter_openai_like_stream_content`."""
+    async for chunk in stream:
+        usage = extract_usage_metrics(chunk)
+        if usage and on_usage is not None:
+            on_usage(usage)
+        content = openai_like_stream_chunk_content(chunk)
+        if content is not None:
             yield content
 
 

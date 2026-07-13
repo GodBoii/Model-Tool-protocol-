@@ -135,6 +135,13 @@ class ProviderAdapter(Protocol):
     ) -> str:
         ...
 
+    def afinalize_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tool_results: list[ToolResult],
+    ) -> AsyncIterator[str]:
+        ...
+
 
 _AGENT_MODES = {"standalone", "member", "delegator", "orchestration"}
 _ORCHESTRATOR_MODES = {"delegator", "orchestration"}
@@ -2617,8 +2624,24 @@ class Agent:
 
                 self._append_tool_messages_and_media(last_results)
 
+            afinalize_stream = getattr(self.provider, "afinalize_stream", None)
+            afinalize_stream_impl = getattr(type(self.provider), "afinalize_stream", None)
+            if afinalize_stream_impl is ProviderAdapter.afinalize_stream:
+                afinalize_stream = None
             finalize_stream = getattr(self.provider, "finalize_stream", None)
-            if stream_final and callable(finalize_stream):
+            if stream_final and callable(afinalize_stream):
+                chunks: list[str] = []
+                finalize_started = perf_counter()
+                async for chunk in afinalize_stream(self.messages, last_results):
+                    if self._is_cancelled(resolved_run_id):
+                        yield events.emit("run_cancelled", round=max_rounds)
+                        self._append_message({"role": "assistant", "content": "Run cancelled."})
+                        return
+                    if chunk:
+                        chunks.append(chunk)
+                        yield events.emit("text_chunk", chunk=chunk, source="finalize_stream")
+                final_text = "".join(chunks)
+            elif stream_final and callable(finalize_stream):
                 chunks: list[str] = []
                 finalize_started = perf_counter()
                 for chunk in finalize_stream(self.messages, last_results):
@@ -2637,7 +2660,7 @@ class Agent:
                 if stream_final:
                     for chunk in self._chunk_text(final_text):
                         yield events.emit("text_chunk", chunk=chunk, source="finalize_fallback")
-            if stream_final and callable(finalize_stream):
+            if stream_final and (callable(afinalize_stream) or callable(finalize_stream)):
                 finalize_duration = perf_counter() - finalize_started
 
             finalize_usage = getattr(self.provider, "_last_stream_usage", None)

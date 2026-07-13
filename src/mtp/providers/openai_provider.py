@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Iterator
+import inspect
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -13,6 +13,7 @@ from .common import (
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
     STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
+    aiter_openai_like_stream_content,
     extract_usage_metrics,
     format_openai_like_message,
     iter_openai_like_stream_content,
@@ -39,6 +40,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         max_completion_tokens: int | None = None,
         timeout: float | None = None,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -52,7 +54,9 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self._last_stream_usage: dict[str, int] | None = None
         self._last_rate_limits: dict[str, Any] | None = None
         self._last_finalize_rate_limits: dict[str, Any] | None = None
+        self._api_key = api_key
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -64,6 +68,19 @@ class OpenAIToolCallingProvider(ProviderAdapter):
 
         key = api_key or require_env("OPENAI_API_KEY")
         return OpenAI(api_key=key)
+
+    def _get_async_client(self) -> Any:
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "`openai` not installed. Please install using `pip install openai`"
+            ) from exc
+        key = self._api_key or require_env("OPENAI_API_KEY")
+        self._async_client = AsyncOpenAI(api_key=key)
+        return self._async_client
 
     def _to_openai_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         formatted: list[dict[str, Any]] = []
@@ -132,23 +149,23 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         headers = getattr(raw_response, "headers", None)
         return parsed, self._extract_rate_limits(headers)
 
-    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        openai_messages = self._to_openai_messages(messages)
-        openai_tools = self._to_openai_tools(tools)
+    async def _acreate_with_raw_headers(
+        self, request_args: dict[str, Any]
+    ) -> tuple[Any, dict[str, Any] | None]:
+        completions = self._get_async_client().chat.completions
+        raw_api = getattr(completions, "with_raw_response", None)
+        if raw_api is None or not hasattr(raw_api, "create"):
+            return await completions.create(**request_args), None
+        raw_response = await raw_api.create(**request_args)
+        parsed = raw_response.parse() if hasattr(raw_response, "parse") else raw_response
+        if inspect.isawaitable(parsed):
+            parsed = await parsed
+        headers = getattr(raw_response, "headers", None)
+        return parsed, self._extract_rate_limits(headers)
 
-        request_args: dict[str, Any] = {
-            "model": self.model,
-            "messages": openai_messages,
-            "temperature": self.temperature,
-            **self._request_options(),
-        }
-        if openai_tools:
-            request_args["tools"] = openai_tools
-            request_args["tool_choice"] = self.tool_choice
-            request_args["parallel_tool_calls"] = self.parallel_tool_calls
-
-        response, rate_limits = self._create_with_raw_headers(request_args)
-        self._last_rate_limits = rate_limits
+    def _action_from_response(
+        self, response: Any, rate_limits: dict[str, Any] | None
+    ) -> AgentAction:
         message = response.choices[0].message
         tool_calls = getattr(message, "tool_calls", None)
         usage = extract_usage_metrics(response)
@@ -170,8 +187,32 @@ class OpenAIToolCallingProvider(ProviderAdapter):
                 plan=payload["plan"],
                 metadata={**action_meta, **payload["metadata"]},
             )
-
         return AgentAction(response_text=message.content or "", metadata=action_meta)
+
+    def _finalize_text_from_response(self, response: Any) -> str:
+        message = response.choices[0].message
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
+
+    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+        openai_messages = self._to_openai_messages(messages)
+        openai_tools = self._to_openai_tools(tools)
+
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": openai_messages,
+            "temperature": self.temperature,
+            **self._request_options(),
+        }
+        if openai_tools:
+            request_args["tools"] = openai_tools
+            request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+
+        response, rate_limits = self._create_with_raw_headers(request_args)
+        self._last_rate_limits = rate_limits
+        return self._action_from_response(response, rate_limits)
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         openai_messages = self._to_openai_messages(messages)
@@ -185,10 +226,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
         self._last_finalize_rate_limits = rate_limits
-        message = response.choices[0].message
-        if getattr(message, "tool_calls", None):
-            return "Model requested an additional tool round; rerun with a larger max_rounds."
-        return message.content or "Done."
+        return self._finalize_text_from_response(response)
 
     def finalize_stream(
         self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
@@ -227,12 +265,57 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=structured_output_support,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openai_messages(messages),
+            "temperature": self.temperature,
+            **self._request_options(),
+        }
+        openai_tools = self._to_openai_tools(tools)
+        if openai_tools:
+            request_args["tools"] = openai_tools
+            request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+        response, rate_limits = await self._acreate_with_raw_headers(request_args)
+        self._last_rate_limits = rate_limits
+        return self._action_from_response(response, rate_limits)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response, rate_limits = await self._acreate_with_raw_headers(
+            {
+                "model": self.model,
+                "messages": self._to_openai_messages(messages),
+                "temperature": self.temperature,
+                **self._request_options(),
+            }
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        self._last_finalize_rate_limits = rate_limits
+        return self._finalize_text_from_response(response)
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        del tool_results
+        self._last_stream_usage = None
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openai_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            **self._request_options(),
+        }
+        stream = await self._get_async_client().chat.completions.create(**request_args)
+
+        def remember_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        async for chunk in aiter_openai_like_stream_content(stream, on_usage=remember_usage):
+            yield chunk
