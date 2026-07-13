@@ -17,6 +17,7 @@ import threading
 from uuid import uuid4
 
 from .events import EventStreamContext
+from .provider_errors import ProviderError, normalize_provider_error
 from .media import Audio, File, Image, Video
 from .prompts import DEFAULT_AUTORESEARCH_SYSTEM_INSTRUCTIONS, DEFAULT_MTP_SYSTEM_INSTRUCTIONS
 from .providers.common import ProviderCapabilities, capabilities_from_any
@@ -825,16 +826,50 @@ class Agent:
         return None
 
     async def _anext_action(self, tools: list[ToolSpec]) -> AgentAction:
-        method = getattr(type(self.provider), "anext_action", None)
-        if method is not None and method is not ProviderAdapter.anext_action:
-            return await self.provider.anext_action(self.messages, tools)  # type: ignore[attr-defined]
-        return await asyncio.to_thread(self.provider.next_action, self.messages, tools)
+        try:
+            method = getattr(type(self.provider), "anext_action", None)
+            if method is not None and method is not ProviderAdapter.anext_action:
+                return await self.provider.anext_action(self.messages, tools)  # type: ignore[attr-defined]
+            return await asyncio.to_thread(self.provider.next_action, self.messages, tools)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise normalize_provider_error(exc, provider=self._provider_error_name()) from None
 
     async def _afinalize(self, tool_results: list[ToolResult]) -> str:
-        method = getattr(type(self.provider), "afinalize", None)
-        if method is not None and method is not ProviderAdapter.afinalize:
-            return await self.provider.afinalize(self.messages, tool_results)  # type: ignore[attr-defined]
-        return await asyncio.to_thread(self.provider.finalize, self.messages, tool_results)
+        try:
+            method = getattr(type(self.provider), "afinalize", None)
+            if method is not None and method is not ProviderAdapter.afinalize:
+                return await self.provider.afinalize(self.messages, tool_results)  # type: ignore[attr-defined]
+            return await asyncio.to_thread(self.provider.finalize, self.messages, tool_results)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise normalize_provider_error(exc, provider=self._provider_error_name()) from None
+
+    def _provider_error_name(self) -> str:
+        name = type(self.provider).__name__
+        for suffix in ("ToolCallingProvider", "Provider", "Adapter"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+                break
+        return name.lower() or "unknown"
+
+    def _next_action(self, tools: list[ToolSpec]) -> AgentAction:
+        try:
+            return self.provider.next_action(self.messages, tools)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise normalize_provider_error(exc, provider=self._provider_error_name()) from None
+
+    def _finalize(self, tool_results: list[ToolResult]) -> str:
+        try:
+            return self.provider.finalize(self.messages, tool_results)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise normalize_provider_error(exc, provider=self._provider_error_name()) from None
 
     def _build_refiner_messages(self, text: str, prompt: str | None) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
@@ -1143,7 +1178,7 @@ class Agent:
                     ]
                 )
             )
-            action = self.provider.next_action(self.messages, planning_tools)
+            action = self._next_action(planning_tools)
             self._normalize_plan_reasoning(action.plan, tools)
 
             if action.response_text and action.plan is None:
@@ -1341,7 +1376,7 @@ class Agent:
                 final_text = direct_response
             else:
                 self._debug("calling provider.finalize")
-                final_text = self.provider.finalize(self.messages, last_results)
+                final_text = self._finalize(last_results)
                 self._append_message(self._finalize_assistant_message(final_text))
                 self._debug(f"final response generated text={self._short(final_text)}")
 
@@ -1462,7 +1497,7 @@ class Agent:
             elif direct_response is not None:
                 final_text = direct_response
             else:
-                final_text = self.provider.finalize(self.messages, last_results)
+                final_text = self._finalize(last_results)
                 self._append_message({"role": "assistant", "content": final_text})
             continued = RunOutput(
                 run_id=resolved_run_id,
@@ -1914,7 +1949,7 @@ class Agent:
             self._debug("calling provider.finalize_stream")
             finalize_stream = getattr(self.provider, "finalize_stream", None)
             if not callable(finalize_stream):
-                final_text = self.provider.finalize(self.messages, last_results)
+                final_text = self._finalize(last_results)
                 self._append_message(self._finalize_assistant_message(final_text))
                 self._debug(f"final response generated text={self._short(final_text)}")
                 yield final_text
@@ -2050,7 +2085,7 @@ class Agent:
                                 chunks_streamed = True
                                 yield events.emit("text_chunk", chunk=cval, source="direct")
                 if action is None:
-                    action = self.provider.next_action(self.messages, planning_tools)
+                    action = self._next_action(planning_tools)
                 self._normalize_plan_reasoning(action.plan, tools)
                 llm_duration = perf_counter() - llm_started
                 action_metadata = action.metadata if isinstance(action.metadata, dict) else {}
@@ -2269,7 +2304,7 @@ class Agent:
                 finalize_duration = perf_counter() - finalize_started
             else:
                 finalize_started = perf_counter()
-                final_text = self.provider.finalize(self.messages, last_results)
+                final_text = self._finalize(last_results)
                 finalize_duration = perf_counter() - finalize_started
                 if stream_final:
                     for chunk in self._chunk_text(final_text):
