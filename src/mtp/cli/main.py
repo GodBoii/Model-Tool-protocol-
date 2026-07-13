@@ -504,7 +504,12 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_export = sessions_sub.add_parser("export", help="Export sessions to a versioned JSON bundle.")
     sessions_export.add_argument("output", help="New JSON export file to create.")
     sessions_export.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"))
-    sessions_export.add_argument("--session-id", action="append", default=[], help="Only export this session id (repeatable).")
+    sessions_export.add_argument(
+        "--session-id",
+        action="append",
+        default=[],
+        help="Only export this session id (repeatable).",
+    )
     sessions_export.add_argument("--user-id", default=None, help="Only export sessions owned by this exact user.")
     sessions_export.add_argument("--force", action="store_true", help="Replace an existing export file.")
     sessions_export.set_defaults(handler=_cmd_sessions_export)
