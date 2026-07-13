@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -11,6 +10,7 @@ from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     USAGE_METRICS_RICH,
+    aiter_openai_like_stream_content,
     extract_usage_metrics,
     format_openai_like_message,
     iter_openai_like_stream_content,
@@ -56,15 +56,18 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         parallel_tool_calls: bool = True,
         max_tokens: int = 4096,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self.max_tokens = max_tokens
+        self._api_key = api_key
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     # ------------------------------------------------------------------
     # Client construction
@@ -91,6 +94,22 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
                 "Neither `together` nor `openai` is installed. "
                 "Install with: pip install together  OR  pip install openai"
             ) from exc
+
+    def _get_async_client(self) -> Any:
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "`openai` not installed. Install with: pip install openai"
+            ) from exc
+        key = self._api_key or require_env("TOGETHER_API_KEY")
+        self._async_client = AsyncOpenAI(
+            base_url="https://api.together.xyz/v1",
+            api_key=key,
+        )
+        return self._async_client
 
     # ------------------------------------------------------------------
     # Message / tool formatting
@@ -220,12 +239,75 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_together_messages(messages),
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        together_tools = self._to_together_tools(tools)
+        if together_tools:
+            request_args["tools"] = together_tools
+            request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+        completions = self._get_async_client().chat.completions
+        try:
+            response = await completions.create(**request_args)
+        except Exception:
+            request_args.pop("parallel_tool_calls", None)
+            response = await completions.create(**request_args)
+        message = response.choices[0].message
+        tool_calls = getattr(message, "tool_calls", None)
+        usage = extract_usage_metrics(response)
+        action_meta: dict[str, Any] = {"provider": "together", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if tool_calls:
+            payload = openai_like_tool_call_plan_payload(
+                provider="together",
+                model=self.model,
+                tool_calls=list(tool_calls),
+                content=message.content or "",
+                use_current_index_refs=True,
+            )
+            return AgentAction(plan=payload["plan"], metadata={**action_meta, **payload["metadata"]})
+        return AgentAction(response_text=message.content or "", metadata=action_meta)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._get_async_client().chat.completions.create(
+            model=self.model,
+            messages=self._to_together_messages(messages),
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        message = response.choices[0].message
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        del tool_results
+        self._last_stream_usage = None
+        stream = await self._get_async_client().chat.completions.create(
+            model=self.model,
+            messages=self._to_together_messages(messages),
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        def remember_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        async for chunk in aiter_openai_like_stream_content(stream, on_usage=remember_usage):
+            yield chunk

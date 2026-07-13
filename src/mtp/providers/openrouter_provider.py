@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import base64
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from .common import (
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
     STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
     STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
+    aiter_openai_like_stream_content,
     extract_usage_metrics,
     iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
@@ -41,6 +41,7 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         parallel_tool_calls: bool = True,
         response_format: dict[str, Any] | None = None,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -49,9 +50,11 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         self.response_format = response_format
         self.site_url = site_url
         self.site_name = site_name
+        self._api_key = api_key
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -77,6 +80,30 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
             default_headers=extra_headers,
             timeout=60.0,
         )
+
+    def _get_async_client(self) -> Any:
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "`openai` not installed. For OpenRouter, install dependencies with "
+                "`pip install openai`."
+            ) from exc
+        extra_headers: dict[str, str] = {}
+        if self.site_url:
+            extra_headers["HTTP-Referer"] = self.site_url
+        if self.site_name:
+            extra_headers["X-Title"] = self.site_name
+        key = self._api_key or require_env("OPENROUTER_API_KEY")
+        self._async_client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=key,
+            default_headers=extra_headers,
+            timeout=60.0,
+        )
+        return self._async_client
 
     def _to_text(self, value: Any) -> str:
         if isinstance(value, str):
@@ -349,12 +376,75 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=structured,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openrouter_messages(messages),
+            "temperature": self.temperature,
+        }
+        openai_tools = self._to_openai_tools(tools)
+        if openai_tools:
+            request_args["tools"] = openai_tools
+            request_args["tool_choice"] = self.tool_choice
+            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = await self._get_async_client().chat.completions.create(**request_args)
+        message = response.choices[0].message
+        tool_calls = getattr(message, "tool_calls", None)
+        usage = extract_usage_metrics(response)
+        action_meta: dict[str, Any] = {"provider": "openrouter", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        if tool_calls:
+            payload = openai_like_tool_call_plan_payload(
+                provider="openrouter",
+                model=self.model,
+                tool_calls=list(tool_calls),
+                content=message.content or "",
+                tool_call_source="native_tool_calls",
+            )
+            return AgentAction(plan=payload["plan"], metadata={**action_meta, **payload["metadata"]})
+        return AgentAction(response_text=message.content or "", metadata=action_meta)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openrouter_messages(messages),
+            "temperature": self.temperature,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = await self._get_async_client().chat.completions.create(**request_args)
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        message = response.choices[0].message
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        del tool_results
+        self._last_stream_usage = None
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openrouter_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        stream = await self._get_async_client().chat.completions.create(**request_args)
+
+        def remember_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        async for chunk in aiter_openai_like_stream_content(stream, on_usage=remember_usage):
+            yield chunk
