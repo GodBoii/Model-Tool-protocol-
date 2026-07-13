@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -42,6 +41,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -50,7 +50,9 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         self.parallel_tool_calls = parallel_tool_calls
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
+        self._api_key = api_key or os.getenv("LMSTUDIO_API_KEY") or "lm-studio"
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -61,8 +63,38 @@ class LMStudioToolCallingProvider(ProviderAdapter):
                 "Install with: pip install openai"
             ) from exc
 
-        key = api_key or os.getenv("LMSTUDIO_API_KEY") or "lm-studio"
-        return OpenAI(base_url=self.base_url, api_key=key)
+        return OpenAI(base_url=self.base_url, api_key=self._api_key)
+
+    def _get_async_client(self) -> Any:
+        """Return a lazily-created native OpenAI-compatible async client."""
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "`openai` not installed. LM Studio uses the OpenAI-compatible API. "
+                "Install with: pip install openai"
+            ) from exc
+        self._async_client = AsyncOpenAI(
+            base_url=self.base_url, api_key=self._api_key
+        )
+        return self._async_client
+
+    async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
+        """Create a completion, tolerating older LM Studio tool APIs."""
+        try:
+            return await self._get_async_client().chat.completions.create(
+                **request_args
+            )
+        except TypeError:
+            compatible_args = dict(request_args)
+            if "parallel_tool_calls" not in compatible_args:
+                raise
+            compatible_args.pop("parallel_tool_calls")
+            return await self._get_async_client().chat.completions.create(
+                **compatible_args
+            )
 
     def _to_lmstudio_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         formatted: list[dict[str, Any]] = []
@@ -90,6 +122,138 @@ class LMStudioToolCallingProvider(ProviderAdapter):
             }
             for tool in tools
         ]
+
+    def _action_from_response(self, response: Any) -> AgentAction:
+        message = response.choices[0].message
+        reasoning = (
+            getattr(message, "reasoning_content", None)
+            or getattr(message, "reasoning", None)
+            or ""
+        )
+        action_meta: dict[str, Any] = {"provider": "lmstudio", "model": self.model}
+        usage = extract_usage_metrics(response)
+        if usage:
+            action_meta["usage"] = usage
+        if reasoning.strip():
+            action_meta["reasoning"] = reasoning.strip()
+        tool_calls = getattr(message, "tool_calls", None)
+        if not tool_calls:
+            return AgentAction(response_text=message.content or "", metadata=action_meta)
+        return self._tool_action(
+            content=message.content or "",
+            reasoning=reasoning,
+            action_meta=action_meta,
+            tool_calls=[
+                {
+                    "id": getattr(tc, "id", None),
+                    "function": {
+                        "name": getattr(tc.function, "name", ""),
+                        "arguments": getattr(tc.function, "arguments", "") or "",
+                    },
+                }
+                for tc in tool_calls
+            ],
+        )
+
+    @staticmethod
+    def _merge_stream_tool_calls(
+        accumulator: dict[int, dict[str, Any]], fragments: Any
+    ) -> None:
+        if not fragments:
+            return
+        for fragment in fragments:
+            index = getattr(fragment, "index", 0)
+            entry = accumulator.setdefault(
+                index, {"id": None, "function": {"name": "", "arguments": ""}}
+            )
+            fragment_id = getattr(fragment, "id", None)
+            if fragment_id:
+                entry["id"] = fragment_id
+            function = getattr(fragment, "function", None)
+            if function is None:
+                continue
+            name = getattr(function, "name", None)
+            arguments = getattr(function, "arguments", None)
+            if name:
+                entry["function"]["name"] += name
+            if arguments:
+                entry["function"]["arguments"] += arguments
+
+    def _action_from_stream_parts(
+        self,
+        *,
+        content: str,
+        reasoning: str,
+        usage: dict[str, int] | None,
+        tool_calls_dict: dict[int, dict[str, Any]],
+    ) -> AgentAction:
+        meta: dict[str, Any] = {"provider": "lmstudio", "model": self.model}
+        if usage:
+            meta["usage"] = usage
+        if reasoning.strip():
+            meta["reasoning"] = reasoning.strip()
+        if not tool_calls_dict:
+            return AgentAction(response_text=content, metadata=meta)
+        ordered = [tool_calls_dict[index] for index in sorted(tool_calls_dict)]
+        return self._tool_action(
+            content=content,
+            reasoning=reasoning,
+            action_meta=meta,
+            tool_calls=ordered,
+        )
+
+    def _tool_action(
+        self,
+        *,
+        content: str,
+        reasoning: str,
+        action_meta: dict[str, Any],
+        tool_calls: list[dict[str, Any]],
+    ) -> AgentAction:
+        mtp_calls: list[ToolCall] = []
+        serialized: list[dict[str, Any]] = []
+        id_by_index: dict[int, str] = {}
+        call_reasoning = reasoning.strip() or None
+        for idx, tc in enumerate(tool_calls):
+            call_id = tc.get("id") or f"call_{idx}"
+            id_by_index[idx] = call_id
+            function = tc.get("function") or {}
+            arguments = function.get("arguments") or ""
+            parsed_args = safe_load_arguments(arguments)
+            normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
+            tool_name = function.get("name") or ""
+            mtp_calls.append(
+                ToolCall(
+                    id=call_id,
+                    name=tool_name,
+                    arguments=normalized_args,
+                    depends_on=list(dict.fromkeys(extract_refs(normalized_args))),
+                    reasoning=call_reasoning,
+                )
+            )
+            serialized.append(
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": tool_name, "arguments": arguments or "{}"},
+                    "reasoning": call_reasoning,
+                }
+            )
+        return AgentAction(
+            plan=ExecutionPlan(
+                batches=calls_to_dependency_batches(mtp_calls),
+                metadata={"provider": "lmstudio", "model": self.model},
+            ),
+            metadata={
+                **action_meta,
+                "assistant_tool_message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": serialized,
+                    "reasoning": reasoning,
+                },
+            },
+        )
 
     def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         lmstudio_messages = self._to_lmstudio_messages(messages)
@@ -327,23 +491,113 @@ class LMStudioToolCallingProvider(ProviderAdapter):
             supports_tool_media_output=True,
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
-            supports_reasoning_metadata=False,
+            supports_reasoning_metadata=True,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        lmstudio_tools = self._to_lmstudio_tools(tools)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_lmstudio_messages(messages),
+            "temperature": self.temperature,
+        }
+        if lmstudio_tools:
+            request_args.update(
+                tools=lmstudio_tools,
+                tool_choice=self.tool_choice,
+                parallel_tool_calls=self.parallel_tool_calls,
+            )
+        response = await self._acreate_completion(request_args)
+        return self._action_from_response(response)
 
-    async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
-        stream = self.stream_next_action(messages, tools)
-        while True:
-            try:
-                chunk = await asyncio.to_thread(next, stream)
-                yield chunk
-            except StopIteration:
-                break
+    async def astream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> AsyncIterator[AgentAction | dict[str, Any]]:
+        lmstudio_tools = self._to_lmstudio_tools(tools)
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_lmstudio_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if lmstudio_tools:
+            request_args.update(
+                tools=lmstudio_tools,
+                tool_choice=self.tool_choice,
+                parallel_tool_calls=self.parallel_tool_calls,
+            )
+        stream = await self._acreate_completion(request_args)
+        content_acc = ""
+        reasoning_acc = ""
+        usage: dict[str, int] | None = None
+        tool_calls_dict: dict[int, dict[str, Any]] = {}
+        async for chunk in stream:
+            chunk_usage = extract_usage_metrics(chunk)
+            if chunk_usage:
+                usage = chunk_usage
+            if not getattr(chunk, "choices", None):
+                continue
+            delta = chunk.choices[0].delta
+            chunk_reasoning = (
+                getattr(delta, "reasoning_content", None)
+                or getattr(delta, "reasoning", None)
+            )
+            chunk_content = getattr(delta, "content", None)
+            if isinstance(chunk_reasoning, str) and chunk_reasoning:
+                reasoning_acc += chunk_reasoning
+                yield {"type": "reasoning_chunk", "chunk": chunk_reasoning}
+            if isinstance(chunk_content, str) and chunk_content:
+                content_acc += chunk_content
+                yield {"type": "text_chunk", "chunk": chunk_content}
+            self._merge_stream_tool_calls(
+                tool_calls_dict, getattr(delta, "tool_calls", None)
+            )
+        yield self._action_from_stream_parts(
+            content=content_acc,
+            reasoning=reasoning_acc,
+            usage=usage,
+            tool_calls_dict=tool_calls_dict,
+        )
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._acreate_completion(
+            {
+                "model": self.model,
+                "messages": self._to_lmstudio_messages(messages),
+                "temperature": self.temperature,
+            }
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        message = response.choices[0].message
+        if getattr(message, "tool_calls", None):
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return message.content or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        del tool_results
+        self._last_stream_usage = None
+        stream = await self._acreate_completion(
+            {
+                "model": self.model,
+                "messages": self._to_lmstudio_messages(messages),
+                "temperature": self.temperature,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+        )
+        async for chunk in stream:
+            usage = extract_usage_metrics(chunk)
+            if usage:
+                self._last_stream_usage = usage
+            if not getattr(chunk, "choices", None):
+                continue
+            content = getattr(chunk.choices[0].delta, "content", None)
+            if content:
+                yield content

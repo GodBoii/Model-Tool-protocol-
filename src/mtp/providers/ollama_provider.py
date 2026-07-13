@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +46,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
         keep_alive: float | str | None = None,
         think: bool | str | None = None,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.host = host
@@ -59,7 +59,9 @@ class OllamaToolCallingProvider(ProviderAdapter):
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._last_stream_thinking: str | None = None  # Track thinking from stream
+        self._api_key = api_key
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -76,6 +78,28 @@ class OllamaToolCallingProvider(ProviderAdapter):
         if resolved_api_key:
             client_kwargs["headers"] = {"authorization": f"Bearer {resolved_api_key}"}
         return Client(**client_kwargs)
+
+    def _get_async_client(self) -> Any:
+        """Return a lazily-created native Ollama async client."""
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            from ollama import AsyncClient
+        except ImportError as exc:
+            raise ImportError(
+                "`ollama` not installed. Install with: pip install ollama"
+            ) from exc
+
+        resolved_api_key = self._api_key or os.getenv("OLLAMA_API_KEY")
+        client_kwargs: dict[str, Any] = {}
+        if self.host:
+            client_kwargs["host"] = self.host
+        if resolved_api_key:
+            client_kwargs["headers"] = {
+                "authorization": f"Bearer {resolved_api_key}"
+            }
+        self._async_client = AsyncClient(**client_kwargs)
+        return self._async_client
 
     def _extract_usage_metrics(self, response: Any) -> dict[str, int]:
         prompt_tokens = _read_value(response, "prompt_eval_count")
@@ -189,6 +213,90 @@ class OllamaToolCallingProvider(ProviderAdapter):
         if tools:
             kwargs["tools"] = self._to_ollama_tools(tools)
         return kwargs
+
+    def _action_from_response(self, response: Any) -> AgentAction:
+        message = _read_value(response, "message") or {}
+        return self._action_from_parts(
+            content=_read_value(message, "content") or "",
+            reasoning=_read_value(message, "thinking") or "",
+            tool_calls=_read_value(message, "tool_calls"),
+            usage=self._extract_usage_metrics(response) or None,
+        )
+
+    def _action_from_parts(
+        self,
+        *,
+        content: str,
+        reasoning: str,
+        tool_calls: list[Any] | None,
+        usage: dict[str, int] | None,
+    ) -> AgentAction:
+        action_meta: dict[str, Any] = {"provider": "ollama", "model": self.model}
+        if usage:
+            action_meta["usage"] = usage
+        reasoning = reasoning.strip()
+        if reasoning:
+            action_meta["reasoning"] = reasoning
+        if not tool_calls:
+            return AgentAction(response_text=content, metadata=action_meta)
+
+        mtp_calls: list[ToolCall] = []
+        serialized_tool_calls: list[dict[str, Any]] = []
+        id_by_index: dict[int, str] = {}
+        for idx, tc in enumerate(tool_calls):
+            function = _read_value(tc, "function") or {}
+            call_id = _read_value(tc, "id") or f"call_{idx}"
+            id_by_index[idx] = call_id
+            arguments = _read_value(function, "arguments")
+            if isinstance(arguments, dict):
+                parsed_args = arguments
+            elif isinstance(arguments, str):
+                try:
+                    parsed_args = json.loads(arguments)
+                except json.JSONDecodeError:
+                    parsed_args = {"_raw_arguments": arguments}
+            else:
+                parsed_args = {}
+            normalized_args = normalize_refs(parsed_args, id_by_index, current_idx=idx)
+            depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
+            tool_name = _read_value(function, "name") or ""
+            mtp_calls.append(
+                ToolCall(
+                    id=call_id,
+                    name=tool_name,
+                    arguments=normalized_args,
+                    depends_on=depends_on,
+                    reasoning=reasoning or None,
+                )
+            )
+            serialized_tool_calls.append(
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(parsed_args),
+                    },
+                    "reasoning": reasoning or None,
+                }
+            )
+
+        plan = ExecutionPlan(
+            batches=calls_to_dependency_batches(mtp_calls),
+            metadata={"provider": "ollama", "model": self.model},
+        )
+        return AgentAction(
+            plan=plan,
+            metadata={
+                **action_meta,
+                "assistant_tool_message": {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": serialized_tool_calls,
+                    "reasoning": reasoning,
+                },
+            },
+        )
 
     def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         ollama_messages = self._to_ollama_messages(messages)
@@ -413,21 +521,84 @@ class OllamaToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=self.think is not None and self.think is not False,
             structured_output_support=structured,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        response = await self._get_async_client().chat(
+            messages=self._to_ollama_messages(messages),
+            **self._request_kwargs(tools),
+        )
+        return self._action_from_response(response)
 
-    async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
-        stream = self.stream_next_action(messages, tools)
-        while True:
-            try:
-                chunk = await asyncio.to_thread(next, stream)
-                yield chunk
-            except StopIteration:
-                break
+    async def astream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> AsyncIterator[AgentAction | dict[str, Any]]:
+        stream = await self._get_async_client().chat(
+            messages=self._to_ollama_messages(messages),
+            **self._request_kwargs(tools, stream=True),
+        )
+        content_acc = ""
+        reasoning_acc = ""
+        tool_calls: list[dict[str, Any]] | None = None
+        usage: dict[str, int] | None = None
+        async for chunk in stream:
+            message = _read_value(chunk, "message") or {}
+            chunk_content = _read_value(message, "content")
+            chunk_reasoning = _read_value(message, "thinking")
+            chunk_tool_calls = _read_value(message, "tool_calls")
+            chunk_usage = self._extract_usage_metrics(chunk)
+            if chunk_usage:
+                usage = chunk_usage
+            if isinstance(chunk_reasoning, str) and chunk_reasoning:
+                reasoning_acc += chunk_reasoning
+                yield {"type": "reasoning_chunk", "chunk": chunk_reasoning}
+            if isinstance(chunk_content, str) and chunk_content:
+                content_acc += chunk_content
+                yield {"type": "text_chunk", "chunk": chunk_content}
+            if isinstance(chunk_tool_calls, list) and chunk_tool_calls:
+                tool_calls = chunk_tool_calls
+
+        yield self._action_from_parts(
+            content=content_acc,
+            reasoning=reasoning_acc,
+            tool_calls=tool_calls,
+            usage=usage,
+        )
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._get_async_client().chat(
+            messages=self._to_ollama_messages(messages), **self._request_kwargs()
+        )
+        self._last_finalize_usage = self._extract_usage_metrics(response) or None
+        message = _read_value(response, "message") or {}
+        tool_calls = _read_value(message, "tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            return "Model requested an additional tool round; rerun with a larger max_rounds."
+        return _read_value(message, "content") or "Done."
+
+    async def afinalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> AsyncIterator[str]:
+        del tool_results
+        self._last_stream_usage = None
+        self._last_stream_thinking = None
+        stream = await self._get_async_client().chat(
+            messages=self._to_ollama_messages(messages),
+            **self._request_kwargs(stream=True),
+        )
+        thinking_acc = ""
+        async for chunk in stream:
+            usage = self._extract_usage_metrics(chunk)
+            if usage:
+                self._last_stream_usage = usage
+            message = _read_value(chunk, "message") or {}
+            thinking = _read_value(message, "thinking")
+            if isinstance(thinking, str) and thinking:
+                thinking_acc += thinking
+                self._last_stream_thinking = thinking_acc
+            content = _read_value(message, "content")
+            if content:
+                yield content
