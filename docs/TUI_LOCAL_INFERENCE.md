@@ -266,8 +266,8 @@ ollama pull qwen3:1.7b
 # Try exact model name
 /model llama3.2:3b
 
-# Refresh models
-/models refresh
+# Select the exact server model ID
+/model llama3.2:3b
 ```
 
 **Issue: Speed metrics seem slow**
@@ -310,14 +310,11 @@ ollama ps
 # List all models
 /models
 
-# Refresh model list (re-discover from local server)
-/models refresh
-
 # Switch to a different model
 /model llama3.2:3b
 
-# Add a custom model
-/model add ollama custom-model:latest
+# Use a custom model ID directly
+/model custom-model:latest
 ```
 
 ### Session Management
@@ -377,8 +374,8 @@ ollama pull llama3.2:3b
 # Verify
 ollama list
 
-# Refresh in TUI
-/models refresh
+# Select the newly pulled model in the TUI
+/model llama3.2:3b
 ```
 
 ### LM Studio: Server Not Running
@@ -400,7 +397,7 @@ ollama list
 2. Go to "My Models" tab
 3. Click on a model to load it
 4. Wait for loading to complete
-5. Refresh in TUI: `/models refresh`
+5. Select the loaded model in the TUI with `/model <model-id>`
 
 ### Model Not Responding
 
@@ -462,7 +459,7 @@ TUI settings are stored in:
 <session-db-path>/tui_provider_settings.json
 ```
 
-Default: `tmp/mtp_tui_sessions/tui_provider_settings.json`
+Default: `~/.mtp/sessions/tui_provider_settings.json`
 
 ### Example Configuration
 
@@ -545,7 +542,7 @@ Enter custom endpoint URL: http://localhost:8080
 2. **Monitor Resources**: Watch RAM/GPU usage
 3. **Use Quantization**: Q4/Q5 models are faster with minimal quality loss
 4. **Cache Models**: Keep frequently used models loaded
-5. **Refresh Models**: Run `/models refresh` after pulling new models
+5. **Select New Models**: Run `/model <model-id>` after pulling or loading a model
 6. **Test Locally First**: Prototype with local models, deploy with cloud
 7. **Hybrid Approach**: Use local for iteration, cloud for production
 

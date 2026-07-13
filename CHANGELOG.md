@@ -1,177 +1,108 @@
 # Changelog
 
-All notable changes to MTPX will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to MTPX are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Added
-- **TUI Session Management Enhancements**:
-  - Auto-generated session titles from first user message (extracts first 3-4 words)
-  - Centralized session storage in `~/.mtp/sessions/` (all projects in one location)
-  - Directory-based session grouping in `/sessions` list
-  - Current directory sessions shown first (marked with ●)
-  - Smart title generation removes file attachments (@file) and cleans whitespace
-  - Fallback to "Quick chat" for very short prompts
-  - Manual labels via `/new [label]` still supported
-  - Sessions accessible from any directory
-  - Sessions persist even if project directories are deleted
+
+- Native asynchronous request and finalization paths across the supported cloud
+  and local provider adapters, with streamed planning/tool-call assembly for
+  OpenAI, Groq, Xiaomi, and compatible paths.
+- Incremental final-response streaming for Anthropic, Gemini, Cohere, Mistral,
+  OpenRouter, Together, Fireworks, Cerebras, DeepSeek, SambaNova, Ollama, and LM
+  Studio where their SDKs expose streaming.
+- Provider capability metadata, normalized safe provider errors, structured
+  request options, strict tool schemas where supported, and provider-specific
+  setup guides.
+- CLI provider inspection in text or JSON, including dependency and credential
+  readiness without exposing secrets.
+- CLI session list, show, delete, export, and import commands with an atomic,
+  versioned, validated JSON interchange format.
+- TUI codebase memory, tool-detail views, model-aware thinking controls,
+  provider credential management, and a searchable command palette.
+- A performance benchmark for runtime scheduling, transcript retention, TUI
+  streaming, and workspace indexing hot paths.
+- CI coverage for every supported Python minor version and a clean built-wheel
+  installation/import/CLI smoke test.
 
 ### Changed
-- **TUI Session Storage**: Default `--session-db` path changed from `tmp/mtp_tui_sessions` to `~/.mtp/sessions/`
-- **Session Display**: `/sessions` command now groups sessions by working directory with visual hierarchy
+
+- Tool execution can run independent calls concurrently with bounded worker
+  counts, dependency failure propagation, cooperative timeout cancellation, and
+  process-tree termination for subprocess-backed tools.
+- Provider adapters prefer native async clients instead of occupying worker
+  threads and consistently stream final text through the Agent event API.
+- The JSON session store uses atomic durable writes, stale-lock recovery,
+  bounded listing, exact owner identity, and safer import semantics.
+- Provider credentials are stored in the OS credential vault; existing
+  plaintext settings are migrated only after a confirmed vault write.
+- TUI streaming updates are incremental, transcript/display state is bounded,
+  workspace suggestions are cached and bounded, and large attachment reads are
+  capped to reduce CPU and memory growth.
+- Model defaults and context metadata for Anthropic and Gemini are centralized
+  in the SDK model catalog.
+- Package runtime version is derived from installed distribution metadata, so
+  it cannot drift from `pyproject.toml`.
+
+### Fixed
+
+- Tool-call reference normalization, malformed JSON tool arguments, dependency
+  scheduling, unsafe overlapping Agent runs, and overly broad provider retry
+  behavior.
+- API keys appearing in interactive history, autocomplete, transcripts, or
+  editor state.
+- MTP harness permission-profile enforcement, workspace path escape, unsafe
+  subprocess patterns, and cancellation of long-running harness commands.
+- Unbounded or unsafe local/remote media reads, including private-network URL
+  fetches and redirect revalidation.
+- Provider response metadata, usage extraction, async reasoning fields, and
+  streamed delta assembly across multiple adapters.
+- Packaging of hidden scaffold template files and runtime behavior when optional
+  provider dependencies are absent.
+
+### Security
+
+- Media URLs reject credentials, non-HTTP schemes, private/link-local/loopback
+  destinations, unsafe redirects, oversized responses, and unsupported content
+  types by default.
+- TUI attachments reject workspace escapes and secret-like files and enforce
+  per-file, count, and aggregate byte limits.
+- Provider exceptions are normalized at the Agent boundary to avoid returning
+  credential-bearing SDK error text.
 
 ## [0.1.15] - 2026-04-17
 
 ### Added
-- **TUI Cat Companion 2.0**:
-  - Interactive eye tracking (pupils follow prompt cursor).
-  - Telemetry HUD sidebar (CWD, Sandbox, Attachments).
-  - Terminal resize stabilization and artifact clearing.
-  - Scroll-smear protection during response generation.
-- **TUI Micro-animations & Aesthetics**:
-  - Phosphor Decay: CRT-style typewriter streaming effect.
-  - Dynamic Input Pulse: Physical border-flash feedback on submission.
-  - Active Tool Spinners: Live tool status with success/fail markers.
-  - Animated Toast Grace: Ease-out cubicglide for notifications.
-  - Nerd Font Mode: Native `/nerdfont` toggle command with `.env` persistence.
 
+- Initial Textual TUI layout, telemetry sidebar, streamed tool status, and
+  session navigation.
 
 ## [0.1.10] - 2026-04-11
 
 ### Added
-- TUI provider onboarding flow for `mtp-openai` backend:
-  - New provider selection command: `/provider <openai|groq|claude|openrouter|gemini>`.
-  - New provider visibility command: `/providers`.
-  - New provider key command: `/api-key <key|env|clear>`.
-- Local provider settings persistence in `tui_provider_settings.json`.
 
-### Changed
-- `mtp tui` now supports `--provider`, `--model`, and `--api-key` for the `mtp-openai` backend.
-- `--openai-model` is kept as a legacy OpenAI-only override for compatibility.
-- Backend separation is explicit: Codex auth flow (`/codex-login`, `codex` backend) remains unchanged and isolated.
-- Package/runtime version updated to `0.1.10`.
-
-## [0.1.8] - 2026-04-10
-
-### Added
-- New features and improvements
-- Enhanced functionality
-
-### Changed
-- Updated dependencies and configurations
-- Performance optimizations
-
-### Fixed
-- Bug fixes and stability improvements
-
-## [0.1.7] - 2026-04-10
-
-### Added
-- New features and improvements
-- Enhanced functionality
-
-### Changed
-- Updated dependencies and configurations
-- Performance optimizations
-
-### Fixed
-- Bug fixes and stability improvements
-
-## [0.1.6] - 2026-04-10
-
-### Added
-- New features and improvements
-- Bug fixes and enhancements
-
-### Changed
-- Updated dependencies and configurations
-- Performance improvements
-
-## [0.1.5] - 2026-04-06
-
-### Added
-- MIT License file with proper copyright attribution
-
-### Changed
-- Updated copyright holder to Prajwal Ghadge
-
-## [0.1.4] - 2026-04-06
-
-### Changed
-- Updated documentation and package metadata
-- Minor improvements and bug fixes
+- Provider selection and initial API-key/model configuration in the TUI.
 
 ## [0.1.3] - 2026-04-06
 
 ### Added
-- CLI interface with `mtp` command
-- Optional dependencies for better package management:
-  - Provider-specific extras (openai, groq, anthropic, etc.)
-  - Toolkit extras for web scraping
-  - Database store extras (postgres, mysql)
-  - Convenience aggregates (providers, all)
-- WebSocket transport support
-- CLI templates support
-- Maintainer field crediting Himesh Mehta
 
-### Changed
-- Improved package structure with optional dependencies
-- Better dependency management for different use cases
-- Updated author information
-
-### Fixed
-- Package metadata and contributor attribution
+- CLI scaffolding and run commands, optional provider/toolkit/store extras,
+  WebSocket transport, and project templates.
 
 ## [0.1.0] - 2026-04-06
 
 ### Added
-- Initial release of MTPX (Model Tool Protocol Extended)
-- Core protocol entities (ToolSpec, ToolCall, ExecutionPlan)
-- Agent runtime with multi-round model-tool-model loops
-- Support for multiple LLM providers:
-  - OpenAI
-  - Groq
-  - Anthropic
-  - Google Gemini
-  - OpenRouter
-  - SambaNova
-  - Cerebras
-  - DeepSeek
-  - Mistral
-  - Cohere
-  - Together AI
-  - Fireworks AI
-- Built-in toolkits:
-  - Calculator
-  - File operations
-  - Python execution
-  - Shell commands
-  - Website scraping
-  - Wikipedia search
-- Session persistence with JSON, PostgreSQL, and MySQL backends
-- Policy-aware execution based on tool risk levels
-- Dependency-aware batch tool execution
-- MCP (Model Context Protocol) JSON-RPC adapter
-- Transport primitives (stdio + HTTP)
-- Event streaming support
-- Multimodal support (Audio, Image, Video, File)
 
-### Documentation
-- Comprehensive documentation in `/docs` directory
-- Quickstart guide
-- Provider integration guides
-- Tool creation guide
-- Architecture documentation
-- Publishing guide
+- Core protocol entities, multi-round Agent runtime, provider adapters, built-in
+  toolkits, session persistence, policy-aware execution, MCP JSON-RPC adapters,
+  transports, events, and multimodal payload types.
 
-[0.1.9]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.9
-[0.1.8]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.8
-[0.1.7]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.7
-[0.1.6]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.6
-[0.1.5]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.5
-[0.1.4]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.4
+[Unreleased]: https://github.com/GodBoii/Model-Tool-protocol-/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.15
+[0.1.10]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.10
 [0.1.3]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.3
 [0.1.0]: https://github.com/GodBoii/Model-Tool-protocol-/releases/tag/v0.1.0
