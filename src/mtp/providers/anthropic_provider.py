@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import base64
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 import json
 import mimetypes
 from pathlib import Path
@@ -39,6 +38,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         max_tokens: int = 1024,
         temperature: float = 0.0,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.max_tokens = max_tokens
@@ -50,7 +50,9 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         self._last_finalize_stop_sequence: str | None = None
         self._last_stream_stop_reason: str | None = None
         self._last_stream_stop_sequence: str | None = None
+        self._api_key = api_key
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     def _make_client(self, api_key: str | None) -> Any:
         try:
@@ -62,6 +64,21 @@ class AnthropicToolCallingProvider(ProviderAdapter):
 
         key = api_key or require_env("ANTHROPIC_API_KEY")
         return anthropic.Anthropic(api_key=key)
+
+    def _get_async_client(self) -> Any:
+        """Return the injected async client or lazily construct Anthropic's native one."""
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise ImportError(
+                "`anthropic` not installed. Please install using `pip install anthropic`"
+            ) from exc
+
+        key = self._api_key or require_env("ANTHROPIC_API_KEY")
+        self._async_client = anthropic.AsyncAnthropic(api_key=key)
+        return self._async_client
 
     def _to_anthropic_tools(self, tools: list[ToolSpec]) -> list[dict[str, Any]]:
         return [
@@ -262,9 +279,11 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         if system_prompt:
             request["system"] = system_prompt
 
-        response = self._client.messages.create(
-            **request,
-        )
+        response = self._client.messages.create(**request)
+        return self._action_from_response(response)
+
+    def _action_from_response(self, response: Any) -> AgentAction:
+        """Parse one Messages API response identically for sync and async clients."""
         usage = extract_usage_metrics(response)
         action_meta: dict[str, Any] = {"provider": "anthropic", "model": self.model}
         if usage:
@@ -411,12 +430,54 @@ class AnthropicToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        system_prompt, anthropic_messages = self._to_anthropic_payload(messages)
+        request: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": anthropic_messages,
+            "tools": self._to_anthropic_tools(tools) if tools else [],
+            "temperature": self.temperature,
+        }
+        if system_prompt:
+            request["system"] = system_prompt
+        response = await self._get_async_client().messages.create(**request)
+        return self._action_from_response(response)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._get_async_client().messages.create(
+            **self._finalize_request(messages)
+        )
+        self._last_finalize_usage = extract_usage_metrics(response) or None
+        self._remember_finalize_response(response)
+        return self._response_text(response) or "Done."
+
+    async def afinalize_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tool_results: list[ToolResult],
+    ) -> AsyncIterator[str]:
+        """Stream final text using Anthropic's native async message stream."""
+        del tool_results
+        self._last_stream_usage = None
+        self._last_stream_stop_reason = None
+        self._last_stream_stop_sequence = None
+        self._last_finalize_message = None
+
+        async with self._get_async_client().messages.stream(
+            **self._finalize_request(messages)
+        ) as stream:
+            async for text in stream.text_stream:
+                if isinstance(text, str) and text:
+                    yield text
+            final_message = await stream.get_final_message()
+
+        usage = extract_usage_metrics(final_message) or None
+        self._last_stream_usage = usage
+        self._last_finalize_usage = usage
+        self._remember_finalize_response(final_message, streamed=True)
