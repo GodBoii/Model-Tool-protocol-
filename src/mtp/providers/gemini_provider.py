@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import mimetypes
 from pathlib import Path
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -41,6 +43,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         self.model_name = model
         self.temperature = temperature
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
@@ -69,10 +72,20 @@ class GeminiToolCallingProvider(ProviderAdapter):
             return Content, Part
         except Exception:
             class _Part:
-                def __init__(self, *, text: str | None = None, function_call: Any = None, function_response: Any = None) -> None:
+                def __init__(
+                    self,
+                    *,
+                    text: str | None = None,
+                    function_call: Any = None,
+                    function_response: Any = None,
+                    thought: bool | None = None,
+                    thought_signature: bytes | None = None,
+                ) -> None:
                     self.text = text
                     self.function_call = function_call
                     self.function_response = function_response
+                    self.thought = thought
+                    self.thought_signature = thought_signature
 
                 @staticmethod
                 def from_text(text: str) -> "_Part":
@@ -100,6 +113,74 @@ class GeminiToolCallingProvider(ProviderAdapter):
                     self.parts = parts
 
             return _Content, _Part
+
+    def _serialize_model_parts(self, parts: list[Any]) -> list[dict[str, Any]]:
+        """Keep Gemini's model parts intact enough for a subsequent tool turn.
+
+        Gemini 3 requires the opaque thought signature on the same function-call
+        part where it was returned.  MTP histories must be JSON serializable, so
+        signatures are stored as base64 and restored to bytes at request time.
+        """
+        serialized: list[dict[str, Any]] = []
+        for part in parts:
+            item: dict[str, Any] = {}
+            text = getattr(part, "text", None)
+            if isinstance(text, str):
+                item["text"] = text
+            function_call = getattr(part, "function_call", None)
+            if function_call is not None:
+                name = getattr(function_call, "name", None)
+                raw_args = getattr(function_call, "args", None)
+                if isinstance(name, str) and name:
+                    try:
+                        args = raw_args if isinstance(raw_args, dict) else dict(raw_args or {})
+                    except (TypeError, ValueError):
+                        args = {}
+                    item["function_call"] = {"name": name, "args": args}
+            thought = getattr(part, "thought", None)
+            if isinstance(thought, bool):
+                item["thought"] = thought
+            signature = getattr(part, "thought_signature", None)
+            if isinstance(signature, bytes):
+                item["thought_signature"] = base64.b64encode(signature).decode("ascii")
+            elif isinstance(signature, str) and signature:
+                # Accommodate lightweight test doubles and future SDK shapes.
+                item["thought_signature"] = signature
+            if item:
+                serialized.append(item)
+        return serialized
+
+    def _restore_model_part(self, item: dict[str, Any], *, Part: Any) -> Any | None:
+        function_call = item.get("function_call")
+        if isinstance(function_call, dict):
+            name = function_call.get("name")
+            args = function_call.get("args")
+            if not isinstance(name, str) or not name:
+                return None
+            part = Part.from_function_call(
+                name=name,
+                args=args if isinstance(args, dict) else {},
+            )
+        elif isinstance(item.get("text"), str):
+            part = Part.from_text(text=item["text"])
+        elif "thought" in item or "thought_signature" in item:
+            part = Part()
+        else:
+            return None
+
+        thought = item.get("thought")
+        if isinstance(thought, bool):
+            setattr(part, "thought", thought)
+        encoded_signature = item.get("thought_signature")
+        if isinstance(encoded_signature, str) and encoded_signature:
+            try:
+                signature = base64.b64decode(encoded_signature, validate=True)
+            except (ValueError, TypeError):
+                # A raw string is not expected from google-genai, but retaining it
+                # is preferable to silently dropping an SDK-compatible value.
+                signature = encoded_signature
+            setattr(part, "thought_signature", signature)
+        return part
 
     def _guess_mime(self, name_or_path: str, default: str) -> str:
         guessed = mimetypes.guess_type(name_or_path)[0]
@@ -194,7 +275,8 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
             parts: list[Any] = []
             text = self._to_text(msg.get("content", ""))
-            if text.strip():
+            has_native_gemini_parts = role == "assistant" and isinstance(msg.get("gemini_parts"), list)
+            if text.strip() and not has_native_gemini_parts:
                 parts.append(Part.from_text(text=text))
 
             if role == "user":
@@ -233,6 +315,17 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 continue
 
             if role == "assistant":
+                gemini_parts = msg.get("gemini_parts")
+                if isinstance(gemini_parts, list):
+                    for item in gemini_parts:
+                        if not isinstance(item, dict):
+                            continue
+                        restored = self._restore_model_part(item, Part=Part)
+                        if restored is not None:
+                            parts.append(restored)
+                    if parts:
+                        contents.append(Content(role="model", parts=parts))
+                        continue
                 tool_calls = msg.get("tool_calls")
                 if isinstance(tool_calls, list):
                     for tool_call in tool_calls:
@@ -295,6 +388,23 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 if isinstance(part_text, str) and part_text:
                     texts.append(part_text)
         return "\n".join(texts).strip()
+
+    def _extract_stream_text(self, response: Any) -> str:
+        """Extract a delta without stripping meaningful whitespace."""
+        try:
+            direct_text = getattr(response, "text", None)
+        except (AttributeError, TypeError, ValueError):
+            direct_text = None
+        if isinstance(direct_text, str):
+            return direct_text
+        texts: list[str] = []
+        for candidate in getattr(response, "candidates", None) or []:
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                part_text = getattr(part, "text", None)
+                if isinstance(part_text, str):
+                    texts.append(part_text)
+        return "".join(texts)
 
     def _is_ref_schema(self, schema: dict[str, Any]) -> bool:
         props = schema.get("properties")
@@ -380,9 +490,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
         serialized_tool_calls: list[dict[str, Any]] = []
         id_by_index: dict[int, str] = {}
         candidates = getattr(response, "candidates", None) or []
+        response_parts: list[Any] = []
         if candidates:
-            parts = getattr(candidates[0].content, "parts", None) or []
-            for idx, part in enumerate(parts):
+            response_parts = list(getattr(candidates[0].content, "parts", None) or [])
+            for idx, part in enumerate(response_parts):
                 fn = getattr(part, "function_call", None)
                 if fn:
                     call_id = f"gemini_call_{idx}"
@@ -420,6 +531,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
                         "role": "assistant",
                         "content": response_text,
                         "tool_calls": serialized_tool_calls,
+                        "gemini_parts": self._serialize_model_parts(response_parts),
                     },
                 },
             )
@@ -440,14 +552,40 @@ class GeminiToolCallingProvider(ProviderAdapter):
         text = self._extract_response_text(response)
         return text or "Done."
 
+    def finalize_stream(
+        self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
+    ) -> Iterator[str]:
+        """Yield native ``google-genai`` text chunks and retain final usage."""
+        contents, system_instruction = self._to_gemini_payload(messages)
+        config: dict[str, Any] = {"temperature": self.temperature}
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+
+        self._last_stream_usage = None
+        # Avoid leaking usage from an earlier non-streaming request if a stream
+        # ends without a usage-bearing final chunk.
+        self._last_finalize_usage = None
+        stream = self._client.models.generate_content_stream(
+            model=self.model_name,
+            contents=contents,
+            config=config,
+        )
+        for chunk in stream:
+            usage = extract_usage_metrics(chunk)
+            if usage:
+                self._last_stream_usage = usage
+            text = self._extract_stream_text(chunk)
+            if text:
+                yield text
+
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider="gemini",
             supports_tool_calling=True,
-            supports_parallel_tool_calls=False,
+            supports_parallel_tool_calls=True,
             input_modalities=["text", "image", "audio", "video", "file"],
             supports_tool_media_output=True,
-            supports_finalize_streaming=False,
+            supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
