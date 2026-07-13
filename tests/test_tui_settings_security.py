@@ -11,6 +11,7 @@ from mtp.cli.tui_settings import (
     ensure_provider_entry,
     load_provider_settings,
     mask_api_key,
+    provider_credential_status,
     save_provider_settings,
     set_provider_api_key,
 )
@@ -148,3 +149,34 @@ def test_unavailable_keyring_gives_actionable_error_and_writes_nothing(
     assert "GROQ_API_KEY" in message
     assert "never-logged-secret" not in message
     assert not path.exists()
+
+
+def test_credential_status_reports_source_without_returning_value(
+    monkeypatch, memory_keyring: _MemoryKeyring
+) -> None:
+    secret = "keyring-status-secret"
+    memory_keyring.values[(tui_settings.KEYRING_SERVICE, "claude")] = secret
+
+    configured, source = provider_credential_status(
+        "anthropic", env_var="ANTHROPIC_API_KEY"
+    )
+
+    assert (configured, source) == (True, "keyring")
+    assert secret not in repr((configured, source))
+
+
+def test_credential_status_survives_locked_keyring_and_uses_environment(
+    monkeypatch,
+) -> None:
+    secret = "environment-status-secret"
+    monkeypatch.setattr(
+        tui_settings,
+        "_keyring",
+        lambda: (_ for _ in ()).throw(RuntimeError("vault locked")),
+    )
+    monkeypatch.setenv("GROQ_API_KEY", secret)
+
+    configured, source = provider_credential_status("groq", env_var="GROQ_API_KEY")
+
+    assert (configured, source) == (True, "environment")
+    assert secret not in repr((configured, source))

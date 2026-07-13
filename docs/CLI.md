@@ -222,7 +222,7 @@ Saved Sessions
 - **Nerd Font Acceleration**: High-fidelity icon support for specialized developer fonts.
 - **Phosphor Decay**: "Hot ink" typewriter effect where streaming text appears bright before "cooling" into the layout.
 - **Dynamic Feedback**: Input pulse animations and smooth toast transitions for tactile responsiveness.
-- **Telemetry HUD**: Right-gutter sidebar displaying CWD, Sandbox mode, and attachment metrics.
+- **Telemetry HUD**: Right-gutter sidebar displaying CWD, Codex sandbox or MTP tool-permission profile, and attachment metrics. MTP permission profiles gate approvals but do not provide OS-level process containment.
 
 ### Provider Setup
 
@@ -236,7 +236,10 @@ not in `provider_settings.json`. The JSON file contains only non-secret choices
 such as models and endpoints. MTPX also reads each provider's standard
 environment variable (for example `GROQ_API_KEY`) when no vault entry exists.
 
-The `/apikey set` command fails with an actionable environment-variable hint if
+Run `/apikey set <provider>` to open a masked key-entry dialog. The key never
+enters chat history, autocomplete, the saved transcript, or editor undo/redo.
+Legacy inline submissions are accepted for compatibility and scrubbed
+immediately. The command fails with an actionable environment-variable hint if
 no usable keyring backend is available; it never falls back to plaintext.
 Existing plaintext settings are migrated automatically and removed from JSON
 only after the vault confirms the write. If migration cannot run, MTPX warns and
@@ -336,7 +339,7 @@ Inside TUI:
 
 **API Key Management:**
 - `/apikey` - List all API keys (masked)
-- `/apikey set <provider> <key>` - Set/update API key
+- `/apikey set <provider>` - Set/update an API key in a masked dialog
 - `/apikey delete <provider>` - Delete API key
 - `/apikey show <provider>` - Show a masked API key
 

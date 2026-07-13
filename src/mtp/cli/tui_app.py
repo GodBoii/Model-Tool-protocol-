@@ -33,7 +33,8 @@ from .tui_widgets.sidebar import Sidebar, SessionInfo, ToolEventLog, RunMetrics,
 from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
-from .tui_commands import MTPCommandProvider, parse_slash_command
+from .tui_widgets.api_key_dialog import APIKeyDialog
+from .tui_commands import MTPCommandProvider, is_secret_bearing_command, parse_slash_command
 from .workspace_file_index import WorkspaceFileIndex
 from .tui_limits import TUILimits, append_bounded, bounded_detail, bounded_tail, trim_display_blocks
 from .tui_workers import (
@@ -294,10 +295,12 @@ class MTPApp(App):
 
     def on_input_area_submitted(self, event: InputArea.Submitted) -> None:
         raw = event.value.strip()
+        event.value = ""
         self._history_index = None
         self._history_draft = ""
-        
-        if raw and (not self._input_history or self._input_history[-1] != raw):
+
+        sensitive = is_secret_bearing_command(raw)
+        if raw and not sensitive and (not self._input_history or self._input_history[-1] != raw):
             append_bounded(self._input_history, raw, self._limits.input_history)
             
         try:
@@ -1656,14 +1659,49 @@ class MTPApp(App):
                 "write": "workspace-write", "workspace-write": "workspace-write",
                 "full": "danger-full-access", "danger-full-access": "danger-full-access",
             }
-            s.codex_sandbox_mode = mode_map.get(arg.lower(), arg.lower())
+            requested = mode_map.get(arg.lower(), arg.lower())
+            from .tui_harness_policy import normalize_sandbox_mode
+            try:
+                s.codex_sandbox_mode = normalize_sandbox_mode(requested)
+            except ValueError as exc:
+                chat_log.add_command_result(str(exc))
+                return
+        # MTP agents capture the profile in their risk policy at construction.
+        # Rebuild on the next prompt so a mode change takes effect immediately.
+        if s.backend != "codex":
+            s.agent = None
         save_tui_session(s)
         icons = {"read-only": "🔒", "workspace-write": "✓", "danger-full-access": "⚠"}
         icon = icons.get(s.codex_sandbox_mode, "?")
-        chat_log.add_command_result(f"✓ Sandbox: {s.codex_sandbox_mode} {icon}")
+        if s.backend == "codex":
+            label = "Codex sandbox"
+        else:
+            label = "MTP permission profile (not OS containment)"
+        chat_log.add_command_result(f"✓ {label}: {s.codex_sandbox_mode} {icon}")
         self._refresh_status_bar()
 
     def _handle_apikey(self, arg: str) -> None:
+        parts = arg.split(None, 2)
+        if len(parts) == 2 and parts[0].lower() == "set":
+            provider_name = parts[1].lower()
+            from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
+
+            if provider_name not in SUPPORTED_TUI_PROVIDERS:
+                self.query_one("#chat-log", ChatLog).add_command_result(
+                    f"Unknown provider: {provider_name}"
+                )
+                return
+
+            def _store(api_key: str | None) -> None:
+                if api_key:
+                    self._apply_apikey_command(f"set {provider_name} {api_key}")
+                self._focus_input()
+
+            self.push_screen(APIKeyDialog(provider_name), callback=_store)
+            return
+        self._apply_apikey_command(arg)
+
+    def _apply_apikey_command(self, arg: str) -> None:
         chat_log = self.query_one("#chat-log", ChatLog)
         try:
             from . import tui as old_tui
@@ -1830,7 +1868,10 @@ class MTPApp(App):
         table.add_row("mode", s.harness_mode)
         if thinking:
             table.add_row(thinking.label, thinking.current_label)
-        table.add_row("sandbox", s.codex_sandbox_mode)
+        table.add_row(
+            "sandbox" if s.backend == "codex" else "permission_profile",
+            s.codex_sandbox_mode,
+        )
         table.add_row("rounds", str(s.max_rounds))
         table.add_row("tool_details", "on" if self._show_tool_details else "off")
         table.add_row("cwd", str(s.cwd))

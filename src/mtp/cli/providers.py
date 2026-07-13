@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
-import os
 from typing import Any
+
+from .tui_settings import provider_credential_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,8 +66,11 @@ def provider_as_row(info: ProviderInfo) -> dict[str, Any]:
     if info.env_var is None:
         key_status = "not-required"
         key_configured = None
+        key_source = None
     else:
-        key_configured = bool(os.environ.get(info.env_var, "").strip())
+        key_configured, key_source = provider_credential_status(
+            info.name, env_var=info.env_var
+        )
         key_status = "configured" if key_configured else "missing"
 
     ready = sdk_installed is not False and key_configured is not False
@@ -78,6 +82,7 @@ def provider_as_row(info: ProviderInfo) -> dict[str, Any]:
         "sdk_status": sdk_status,
         "env": info.env_var or "-",
         "key_status": key_status,
+        "key_source": key_source or "-",
         "ready": ready,
         "notes": info.notes,
     }

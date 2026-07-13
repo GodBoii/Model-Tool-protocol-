@@ -57,6 +57,10 @@ def test_providers_show_reports_readiness_without_secret(monkeypatch, capsys) ->
     secret = "test-secret-that-must-not-be-printed"
     monkeypatch.setenv("GROQ_API_KEY", secret)
     monkeypatch.setattr("mtp.cli.providers.importlib.util.find_spec", lambda _module: object())
+    monkeypatch.setattr(
+        "mtp.cli.providers.provider_credential_status",
+        lambda *_args, **_kwargs: (True, "environment"),
+    )
 
     assert main(["providers", "show", "Groq", "--json"]) == 0
     output = capsys.readouterr().out
@@ -64,6 +68,7 @@ def test_providers_show_reports_readiness_without_secret(monkeypatch, capsys) ->
     assert payload["name"] == "groq"
     assert payload["sdk_status"] == "installed"
     assert payload["key_status"] == "configured"
+    assert payload["key_source"] == "environment"
     assert payload["ready"] is True
     assert secret not in output
 
@@ -71,6 +76,7 @@ def test_providers_show_reports_readiness_without_secret(monkeypatch, capsys) ->
 def test_providers_show_reports_missing_requirements(monkeypatch, capsys) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr("mtp.cli.providers.importlib.util.find_spec", lambda _module: None)
+    monkeypatch.setattr("mtp.cli.providers.provider_credential_status", lambda *_args, **_kwargs: (False, None))
 
     assert main(["providers", "show", "OpenAIToolCallingProvider", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)

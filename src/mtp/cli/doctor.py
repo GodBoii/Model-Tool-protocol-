@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import platform
 from dataclasses import dataclass
 import importlib.util
 
 from ..config import load_dotenv_if_available
 from .providers import ProviderInfo, list_providers
+from .tui_settings import provider_credential_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,12 +46,14 @@ def _check_provider(info: ProviderInfo) -> list[DoctorItem]:
             )
         )
     if info.env_var is not None:
-        present = bool(os.getenv(info.env_var))
+        present, source = provider_credential_status(info.name, env_var=info.env_var)
+        source_detail = f" via {source}" if source else ""
         items.append(
             DoctorItem(
-                f"{info.name}.env",
+                f"{info.name}.credential",
                 _status(present),
-                f"{info.env_var} {'present' if present else 'missing'}",
+                f"credential {'present' if present else 'missing'}{source_detail} "
+                f"({info.env_var} or OS keyring)",
             )
         )
     return items

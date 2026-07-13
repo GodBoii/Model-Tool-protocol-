@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from textual.widgets import OptionList, RichLog
+from textual.widgets import Input, OptionList, RichLog
 
 from mtp import JsonSessionStore
 from mtp.cli.tui_app import MTPApp
@@ -11,6 +11,7 @@ from mtp.cli.tui_state import TUIState
 from mtp.cli.tui_widgets.boot_screen import BootScreen
 from mtp.cli.tui_widgets.chat_log import AssistantMessageWidget, ChatLog
 from mtp.cli.tui_widgets.input_area import InputArea
+from mtp.cli.tui_widgets.api_key_dialog import APIKeyDialog
 from mtp.cli.tui_widgets.sidebar import Sidebar
 from mtp.cli.tui_widgets.status_bar import StatusBar
 
@@ -112,3 +113,84 @@ async def test_pilot_streaming_events_update_one_live_widget_in_place(pilot_app:
         assert pilot_app.query_one(AssistantMessageWidget) is assistant
         assert pilot_app._live_thinking_text == "checking"
         assert pilot_app._live_blocks[-1] == {"type": "text", "text": "hello world"}
+
+
+@pytest.mark.asyncio
+async def test_inline_apikey_is_scrubbed_from_history_undo_transcript_and_rendering(
+    pilot_app: MTPApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mtp.cli import tui_settings
+
+    secret = "gsk-secret-retained-1234"
+    stored: dict[tuple[str, str], str] = {}
+
+    class MemoryKeyring:
+        def get_password(self, service: str, username: str) -> str | None:
+            return stored.get((service, username))
+
+        def set_password(self, service: str, username: str, password: str) -> None:
+            stored[(service, username)] = password
+
+    monkeypatch.setattr(tui_settings, "_keyring", lambda: MemoryKeyring())
+    async with pilot_app.run_test(size=(100, 32)) as pilot:
+        await pilot.pause(0.6)
+        input_area = pilot_app.query_one(InputArea)
+        input_area.text = f"/apikey set groq {secret}"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert stored[(tui_settings.KEYRING_SERVICE, "groq")] == secret
+        assert pilot_app._input_history == []
+        assert pilot_app.state.transcript == []
+        assert input_area.text == ""
+        assert input_area.history.undo_stack == []
+        assert input_area.history.redo_stack == []
+
+        input_area.action_undo()
+        pilot_app.on_input_area_history_navigate(InputArea.HistoryNavigate(-1))
+        await pilot.pause()
+        assert secret not in input_area.text
+        rendered = pilot_app.export_screenshot()
+        assert secret not in rendered
+        assert secret[:4] not in rendered
+        assert secret[-4:] not in rendered
+
+
+@pytest.mark.asyncio
+async def test_apikey_modal_masks_and_scrubs_secret_input(
+    pilot_app: MTPApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mtp.cli import tui_settings
+
+    secret = "sk-modal-secret-5678"
+    stored: dict[tuple[str, str], str] = {}
+
+    class MemoryKeyring:
+        def get_password(self, service: str, username: str) -> str | None:
+            return stored.get((service, username))
+
+        def set_password(self, service: str, username: str, password: str) -> None:
+            stored[(service, username)] = password
+
+    monkeypatch.setattr(tui_settings, "_keyring", lambda: MemoryKeyring())
+    async with pilot_app.run_test(size=(100, 32)) as pilot:
+        await pilot.pause(0.6)
+        pilot_app._dispatch_command("apikey", "set openai")
+        await pilot.pause()
+
+        dialog = pilot_app.screen
+        assert isinstance(dialog, APIKeyDialog)
+        secret_input = dialog.query_one("#api-key-input", Input)
+        assert secret_input.password is True
+        secret_input.value = secret
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert stored[(tui_settings.KEYRING_SERVICE, "openai")] == secret
+        assert secret_input.value == ""
+        assert pilot_app._input_history == []
+        assert pilot_app.state.transcript == []
+        rendered = pilot_app.export_screenshot()
+        assert secret not in rendered
+        assert secret[:4] not in rendered
+        assert secret[-4:] not in rendered

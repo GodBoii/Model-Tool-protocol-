@@ -49,6 +49,12 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     "lmstudio": "LMSTUDIO_API_KEY",
 }
 
+_KEYRING_PROVIDER_ALIAS: dict[str, str] = {
+    # The TUI historically calls this backend ``claude`` while the public SDK
+    # and CLI provider registry use ``anthropic``.
+    "anthropic": "claude",
+}
+
 
 class CredentialStorageError(RuntimeError):
     """Raised when a provider credential cannot be stored safely."""
@@ -58,6 +64,26 @@ def provider_api_key_env(provider_name: str) -> str:
     """Return the documented environment variable for a provider credential."""
     normalized = provider_name.strip().lower()
     return PROVIDER_API_KEY_ENV.get(normalized, f"{normalized.upper()}_API_KEY")
+
+
+def provider_credential_status(
+    provider_name: str, *, env_var: str | None = None
+) -> tuple[bool, str | None]:
+    """Inspect credential readiness without returning credential material.
+
+    Keyring failures (missing backend, locked vault, platform errors) are
+    intentionally treated as an unavailable source; diagnostics remain usable
+    and can still detect an environment fallback.
+    """
+    normalized = provider_name.strip().lower()
+    keyring_name = _KEYRING_PROVIDER_ALIAS.get(normalized, normalized)
+    if _read_keyring_api_key(keyring_name):
+        return True, "keyring"
+    environment_name = env_var or provider_api_key_env(keyring_name)
+    value = os.getenv(environment_name)
+    if isinstance(value, str) and value.strip():
+        return True, "environment"
+    return False, None
 
 
 def _credential_storage_help(provider_name: str) -> str:

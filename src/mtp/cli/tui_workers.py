@@ -394,7 +394,7 @@ def switch_backend(state: TUIState, provider_name: str) -> str:
     settings = load_provider_settings(settings_path)
 
     if not is_provider_configured(settings, provider_name):
-        return f"Provider {provider_name} not configured. Set API key first with /apikey set {provider_name} <key>"
+        return f"Provider {provider_name} not configured. Set its API key with /apikey set {provider_name}"
 
     entry = ensure_provider_entry(settings, provider_name)
     model = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(provider_name, "default")

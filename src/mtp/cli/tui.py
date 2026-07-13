@@ -11,14 +11,13 @@ from mtp import JsonSessionStore, SessionRecord
 
 from .tui_codex_backend import _extract_codex_tool_signal
 from .tui_codex_backend import _parse_codex_json_events as _parse_codex_json_events_with_session
-from .tui_harness_policy import normalize_harness_mode
+from .tui_harness_policy import normalize_harness_mode, normalize_sandbox_mode
 from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
 from .tui_settings import (
     DEFAULT_PROVIDER_MODELS,
     delete_provider_api_key,
     ensure_provider_entry,
     load_provider_settings,
-    mask_api_key,
     provider_settings_path,
     provider_api_key_env,
     save_provider_settings,
@@ -92,7 +91,9 @@ def _load_session_into_state(state: TUIState, record: SessionRecord) -> None:
     )
     state.reasoning_effort = str(tui_meta.get("reasoning_effort") or state.reasoning_effort)
     state.harness_mode = normalize_harness_mode(str(tui_meta.get("harness_mode") or state.harness_mode))
-    state.codex_sandbox_mode = str(tui_meta.get("codex_sandbox_mode") or state.codex_sandbox_mode)
+    state.codex_sandbox_mode = normalize_sandbox_mode(
+        str(tui_meta.get("codex_sandbox_mode") or state.codex_sandbox_mode)
+    )
     state.max_rounds = int(tui_meta.get("max_rounds") or state.max_rounds)
     state.autoresearch = bool(tui_meta.get("autoresearch", state.autoresearch))
     research = tui_meta.get("research_instructions")
@@ -124,18 +125,15 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
         configured = []
         for provider_name in sorted(SUPPORTED_TUI_PROVIDERS):
             entry = ensure_provider_entry(settings, provider_name)
-            key = entry.get("api_key")
-            if isinstance(key, str) and key:
-                masked = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "*" * len(key)
-            else:
-                masked = "(not set)"
-            configured.append(f"{provider_name}: {masked}")
+            source = entry.get("_api_key_source")
+            status = f"configured ({source})" if entry.get("api_key") else "not set"
+            configured.append(f"{provider_name}: {status}")
         return "\n".join(configured)
 
     command = parts[0].lower()
     if command == "set":
         if len(parts) < 3:
-            return "Usage: /apikey set <provider> <key>"
+            return "Usage: /apikey set <provider> (opens secure key entry)"
         provider_name = parts[1].lower()
         api_key = parts[2].strip()
         if provider_name not in SUPPORTED_TUI_PROVIDERS:
@@ -146,8 +144,7 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
         save_provider_settings(settings_path, settings)
         if state.backend == provider_name:
             state.agent = None
-        masked = mask_api_key(api_key)
-        return f"API key for {provider_name} set to {masked}"
+        return f"API key for {provider_name} stored securely"
 
     if command == "delete":
         if len(parts) < 2:
@@ -174,7 +171,8 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
             return f"Unknown provider: {provider_name}"
         entry = ensure_provider_entry(settings, provider_name)
         api_key = entry.get("api_key")
-        return f"{provider_name}: {mask_api_key(api_key)}" if api_key else f"No API key set for {provider_name}"
+        source = entry.get("_api_key_source")
+        return f"{provider_name}: configured ({source})" if api_key else f"No API key set for {provider_name}"
 
     return "Unknown subcommand. Available: set, delete, show"
 

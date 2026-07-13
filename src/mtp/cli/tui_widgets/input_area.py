@@ -14,6 +14,8 @@ from textual.app import ComposeResult
 from textual import events
 from rich.text import Text
 
+from ..tui_commands import is_secret_bearing_command
+
 
 class PromptLabel(Static):
     """Displays the prompt prefix: cwd mtp:backend:session ❯"""
@@ -128,6 +130,11 @@ class InputArea(TextArea):
             if value:
                 self.post_message(self.Submitted(value))
                 self.text = ""
+                # Clearing the visible editor is insufficient: TextArea keeps
+                # deleted text in its undo stack, where Ctrl+Z can resurrect a
+                # submitted key. Scrub undo and redo immediately.
+                if is_secret_bearing_command(value):
+                    self.history.clear()
             return
 
         if event.key == "backspace":

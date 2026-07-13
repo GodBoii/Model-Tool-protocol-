@@ -144,3 +144,17 @@ def parse_slash_command(raw: str) -> tuple[str, str] | None:
         return head, arg
 
     return "unknown", raw
+
+
+def is_secret_bearing_command(raw: str) -> bool:
+    """Return whether *raw* may contain an inline credential.
+
+    Every ``/apikey set`` submission is sensitive, including malformed ones.
+    Dropping a harmless partial command from history is preferable to retaining
+    a credential that was pasted with unexpected spacing.
+    """
+    parsed = parse_slash_command(raw.strip())
+    if parsed is None:
+        return False
+    command, argument = parsed
+    return command == "apikey" and argument.split(None, 1)[:1] == ["set"]

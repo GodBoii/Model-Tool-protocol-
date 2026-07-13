@@ -151,11 +151,15 @@ def _cmd_providers_list(args: argparse.Namespace) -> int:
             str(row["sdk_status"]),
             str(row["env"]),
             str(row["key_status"]),
+            str(row["key_source"]),
             "yes" if row["ready"] else "no",
         ]
         for row in rows_data
     ]
-    _print_table(["name", "alias", "class", "sdk", "sdk_status", "env", "key_status", "ready"], rows)
+    _print_table(
+        ["name", "alias", "class", "sdk", "sdk_status", "env", "key_status", "key_source", "ready"],
+        rows,
+    )
     return 0
 
 
@@ -176,6 +180,7 @@ def _cmd_providers_show(args: argparse.Namespace) -> int:
         ["sdk_status", str(row["sdk_status"])],
         ["key_environment", str(row["env"])],
         ["key_status", str(row["key_status"])],
+        ["key_source", str(row["key_source"])],
         ["ready", "yes" if row["ready"] else "no"],
         ["notes", str(row["notes"] or "-")],
     ]
