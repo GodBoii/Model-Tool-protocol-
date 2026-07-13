@@ -35,6 +35,15 @@ class TestAgentInit:
         with pytest.raises(ValueError, match="only one"):
             Agent(provider=_TextOnlyProvider(), registry=r1, tools=r2)
 
+    def test_structured_finalize_reasoning_is_preserved(self):
+        provider = _TextOnlyProvider("done")
+        provider._last_finalize_reasoning = [
+            {"type": "thinking", "thinking": "check", "signature": "opaque"}
+        ]
+        agent = Agent(provider=provider, tools=ToolRegistry())
+
+        assert agent._finalize_reasoning_text() == provider._last_finalize_reasoning
+
     def test_tools_alias(self):
         reg = ToolRegistry()
         agent = Agent(provider=_TextOnlyProvider(), tools=reg)

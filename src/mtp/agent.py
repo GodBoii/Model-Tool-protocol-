@@ -685,11 +685,16 @@ class Agent:
             return assistant_message
         return {"role": "assistant", "content": final_text}
 
-    def _finalize_reasoning_text(self) -> str | None:
+    def _finalize_reasoning_text(self) -> Any | None:
         for attr_name in ("_last_stream_reasoning", "_last_finalize_reasoning"):
             value = getattr(self.provider, attr_name, None)
             if isinstance(value, str) and value.strip():
                 return value.strip()
+            if isinstance(value, (list, dict)) and value:
+                # Some APIs (notably Anthropic signed thinking) require a
+                # structured block to round-trip safely. Preserve it in the
+                # provider-agnostic event instead of flattening signatures.
+                return value
         return None
 
     def _trim_cacheable_repeated_tool_calls(
