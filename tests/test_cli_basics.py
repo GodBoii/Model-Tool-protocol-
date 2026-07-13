@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from mtp.session_store import JsonSessionStore, SessionRecord
 
 from mtp.cli.main import main
 from mtp.cli.doctor import DoctorItem
@@ -49,3 +50,20 @@ def test_providers_list_json_is_machine_readable(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert isinstance(payload, list)
     assert any(row["name"] == "groq" for row in payload)
+
+
+def test_sessions_list_and_delete(tmp_path, capsys) -> None:
+    JsonSessionStore(db_path=tmp_path).upsert_session(
+        SessionRecord(session_id="session-1", user_id="user-1", messages=[{"role": "user", "content": "hi"}])
+    )
+
+    assert main(["sessions", "list", "--session-db", str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["session_id"] == "session-1"
+
+    assert main(["sessions", "delete", "session-1", "--session-db", str(tmp_path)]) == 2
+    assert main([
+        "sessions", "delete", "session-1", "--session-db", str(tmp_path),
+        "--user-id", "user-1", "--yes",
+    ]) == 0
+    assert JsonSessionStore(db_path=tmp_path).get_session("session-1") is None

@@ -12,6 +12,7 @@ from typing import Iterable
 from .doctor import run_doctor
 from ..agent_os import launch as launch_agent_os
 from ..codebase import CodebaseMemory
+from ..session_store import JsonSessionStore
 from .providers import get_provider, providers_as_rows
 from .scaffold import VALID_TEMPLATES, scaffold_project
 from .tui import run_tui
@@ -156,6 +157,35 @@ def _cmd_tui(args: argparse.Namespace) -> int:
 
 def _cmd_agent_os(_args: argparse.Namespace) -> int:
     return int(launch_agent_os())
+
+
+def _session_store(args: argparse.Namespace) -> JsonSessionStore:
+    return JsonSessionStore(db_path=Path(args.session_db).expanduser())
+
+
+def _cmd_sessions_list(args: argparse.Namespace) -> int:
+    sessions = _session_store(args).list_sessions(user_id=args.user_id, limit=args.limit)
+    if args.json:
+        print(json.dumps([session.to_dict() for session in sessions]))
+    else:
+        rows = [
+            [session.session_id, session.user_id or "", session.updated_at, str(len(session.messages)), str(len(session.runs))]
+            for session in sessions
+        ]
+        _print_table(["session", "user", "updated", "messages", "runs"], rows)
+    return 0
+
+
+def _cmd_sessions_delete(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print("Refusing to delete without --yes.", file=sys.stderr)
+        return 2
+    deleted = _session_store(args).delete_session(args.session_id, user_id=args.user_id)
+    if not deleted:
+        print(f"Session not found: {args.session_id}", file=sys.stderr)
+        return 1
+    print(f"Deleted session: {args.session_id}")
+    return 0
 
 
 def _prompt_codebase_root(start: Path) -> Path:
@@ -340,6 +370,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     agent_os_cmd = sub.add_parser("agent-os", help="Launch Streamlit Agent OS UI.")
     agent_os_cmd.set_defaults(handler=_cmd_agent_os)
+
+    sessions_cmd = sub.add_parser("sessions", help="Inspect and manage persisted TUI sessions.")
+    sessions_sub = sessions_cmd.add_subparsers(dest="sessions_command", required=True)
+    sessions_list = sessions_sub.add_parser("list", help="List persisted sessions, newest first.")
+    sessions_list.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"))
+    sessions_list.add_argument("--user-id", default=None, help="Only list sessions for this user.")
+    sessions_list.add_argument("--limit", type=int, default=100, help="Maximum sessions to return.")
+    sessions_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    sessions_list.set_defaults(handler=_cmd_sessions_list)
+
+    sessions_delete = sessions_sub.add_parser("delete", help="Delete one persisted session.")
+    sessions_delete.add_argument("session_id")
+    sessions_delete.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"))
+    sessions_delete.add_argument("--user-id", default=None, help="Require this exact session owner.")
+    sessions_delete.add_argument("--yes", action="store_true", help="Confirm permanent deletion.")
+    sessions_delete.set_defaults(handler=_cmd_sessions_delete)
 
     codebase_cmd = sub.add_parser("codebase", help="Codebase memory and indexing commands.")
     codebase_sub = codebase_cmd.add_subparsers(dest="codebase_command", required=True)
