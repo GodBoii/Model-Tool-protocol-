@@ -62,6 +62,31 @@ Compile all source and test modules as an additional syntax check:
 python -m compileall -q src tests
 ```
 
+## Performance and memory checks
+
+The opt-in hot-path benchmark covers incremental TUI streaming, workspace file
+indexing and cached suggestions, parallel tool execution and result caching,
+and bounded long-running TUI histories:
+
+```bash
+python scripts/benchmark_hot_paths.py
+```
+
+It reports elapsed time and Python peak/retained memory through `tracemalloc`.
+It also reports the process RSS delta when the optional `psutil` package is
+installed. The deliberately generous budgets are regression guardrails for an
+ordinary development laptop, not promises about exact throughput. Run one area
+by name while iterating, or collect measurements without enforcing budgets:
+
+```bash
+python scripts/benchmark_hot_paths.py tui_streaming
+python scripts/benchmark_hot_paths.py --no-enforce
+```
+
+Do not compare tiny differences from a single run. Close CPU- or disk-heavy
+applications and compare several runs on the same machine when investigating a
+regression.
+
 ## Live provider tests
 
 Live tests make real network requests and are never part of the default CI
