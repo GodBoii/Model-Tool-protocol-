@@ -8,9 +8,8 @@ import re
 from pathlib import Path
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable, Iterator
 from typing import Any
-from urllib.request import Request, urlopen
 
-from ..media import Audio, File, Image, Video
+from ..media import Audio, File, Image, MediaLoadError, Video, fetch_url_bytes
 from ..protocol import ExecutionPlan, ToolBatch, ToolCall, ToolSpec
 
 USAGE_METRICS_NONE = "none"
@@ -463,10 +462,8 @@ def _message_content_text(content: Any) -> str:
 
 def _fetch_url_bytes(url: str) -> bytes | None:
     try:
-        request = Request(url, headers={"User-Agent": "MTP-SDK/0.1"})
-        with urlopen(request, timeout=20) as response:  # noqa: S310
-            return response.read()
-    except Exception:
+        return fetch_url_bytes(url)
+    except MediaLoadError:
         return None
 
 
