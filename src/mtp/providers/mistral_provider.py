@@ -14,6 +14,7 @@ from .common import (
     calls_to_dependency_batches,
     extract_refs,
     extract_usage_metrics,
+    iter_openai_like_stream_content,
     normalize_refs,
     safe_load_arguments,
 )
@@ -38,6 +39,7 @@ class MistralToolCallingProvider(ProviderAdapter):
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self._last_finalize_usage: dict[str, int] | None = None
+        self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
     def _make_client(self, api_key: str | None) -> Any:
@@ -213,6 +215,24 @@ class MistralToolCallingProvider(ProviderAdapter):
         message = response.choices[0].message
         return getattr(message, "content", "") or "Done."
 
+    def finalize_stream(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]):
+        mistral_messages = self._to_mistral_messages(messages)
+        stream = self._client.chat.stream(
+            model=self.model,
+            messages=mistral_messages,
+            temperature=self.temperature,
+        )
+        self._last_stream_usage = None
+
+        def payloads():
+            for event in stream:
+                yield getattr(event, "data", None) or (event.get("data") if isinstance(event, dict) else None) or event
+
+        def capture_usage(usage: dict[str, int]) -> None:
+            self._last_stream_usage = usage
+
+        yield from iter_openai_like_stream_content(payloads(), on_usage=capture_usage)
+
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider="mistral",
@@ -220,7 +240,7 @@ class MistralToolCallingProvider(ProviderAdapter):
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text"],
             supports_tool_media_output=False,
-            supports_finalize_streaming=False,
+            supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_BASIC,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
