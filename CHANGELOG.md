@@ -17,6 +17,8 @@ All notable changes to MTPX are documented here. The format follows
 - Provider capability metadata, normalized safe provider errors, structured
   request options, strict tool schemas where supported, and provider-specific
   setup guides.
+- Native JSON Schema/tool-choice controls for Gemini and Anthropic, including
+  provider call-ID correlation and signed-thinking block preservation.
 - CLI provider inspection in text or JSON, including dependency and credential
   readiness without exposing secrets.
 - CLI session list, show, delete, export, and import commands with an atomic,
@@ -27,6 +29,7 @@ All notable changes to MTPX are documented here. The format follows
   streaming, and workspace indexing hot paths.
 - CI coverage for every supported Python minor version and a clean built-wheel
   installation/import/CLI smoke test.
+- Scheduled CodeQL security analysis.
 
 ### Changed
 
@@ -35,6 +38,8 @@ All notable changes to MTPX are documented here. The format follows
   process-tree termination for subprocess-backed tools.
 - Provider adapters prefer native async clients instead of occupying worker
   threads and consistently stream final text through the Agent event API.
+- Provider request timeouts and optional output-token limits are validated and
+  applied consistently to sync, async, planning, and finalization paths.
 - The JSON session store uses atomic durable writes, stale-lock recovery,
   bounded listing, exact owner identity, and safer import semantics.
 - Provider credentials are stored in the OS credential vault; existing
@@ -62,6 +67,8 @@ All notable changes to MTPX are documented here. The format follows
   streamed delta assembly across multiple adapters.
 - Packaging of hidden scaffold template files and runtime behavior when optional
   provider dependencies are absent.
+- Minimal installations probing a missing dotted SDK module such as
+  `google.genai` no longer crash provider inspection.
 
 ### Security
 
