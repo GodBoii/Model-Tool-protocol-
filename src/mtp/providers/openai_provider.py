@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -19,6 +20,79 @@ from .common import (
     iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
 )
+
+
+def _value(obj: Any, key: str) -> Any:
+    return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+
+
+@dataclass(slots=True)
+class _CallDelta:
+    id: str = ""
+    name: str = ""
+    arguments: str = ""
+
+
+class _ActionStream:
+    """Accumulate interleaved Chat Completions deltas by tool-call index."""
+
+    def __init__(self) -> None:
+        self.content: list[str] = []
+        self.reasoning: list[str] = []
+        self.calls: dict[int, _CallDelta] = {}
+        self.usage: dict[str, int] | None = None
+
+    def add(self, chunk: Any) -> tuple[str | None, str | None]:
+        usage = extract_usage_metrics(chunk)
+        if usage:
+            self.usage = usage
+        choices = _value(chunk, "choices")
+        delta = _value(choices[0], "delta") if choices else None
+        if delta is None:
+            return None, None
+        content = _value(delta, "content")
+        text = content if isinstance(content, str) and content else None
+        if text:
+            self.content.append(text)
+        reasoning = _value(delta, "reasoning_content")
+        if reasoning is None:
+            reasoning = _value(delta, "reasoning")
+        thought = reasoning if isinstance(reasoning, str) and reasoning else None
+        if thought:
+            self.reasoning.append(thought)
+        for fragment in _value(delta, "tool_calls") or []:
+            raw_index = _value(fragment, "index")
+            if isinstance(raw_index, bool):
+                continue
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                continue
+            if index < 0:
+                continue
+            call = self.calls.setdefault(index, _CallDelta())
+            call_id = _value(fragment, "id")
+            if isinstance(call_id, str):
+                call.id += call_id
+            function = _value(fragment, "function")
+            if function is not None:
+                name = _value(function, "name")
+                arguments = _value(function, "arguments")
+                if isinstance(name, str):
+                    call.name += name
+                if isinstance(arguments, str):
+                    call.arguments += arguments
+        return text, thought
+
+    def tool_calls(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": call.id or f"call_{index}",
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments or "{}"},
+            }
+            for index, call in sorted(self.calls.items())
+        ]
 
 
 class OpenAIToolCallingProvider(ProviderAdapter):
@@ -284,6 +358,79 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         response, rate_limits = await self._acreate_with_raw_headers(request_args)
         self._last_rate_limits = rate_limits
         return self._action_from_response(response, rate_limits)
+
+    def _planning_stream_args(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> dict[str, Any]:
+        args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_openai_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            **self._request_options(),
+        }
+        converted = self._to_openai_tools(tools)
+        if converted:
+            args.update(
+                tools=converted,
+                tool_choice=self.tool_choice,
+                parallel_tool_calls=self.parallel_tool_calls,
+            )
+        return args
+
+    def _stream_action(self, stream: _ActionStream) -> AgentAction:
+        content = "".join(stream.content)
+        reasoning = "".join(stream.reasoning).strip()
+        meta: dict[str, Any] = {"provider": "openai", "model": self.model}
+        if stream.usage:
+            meta["usage"] = stream.usage
+        if reasoning:
+            meta["reasoning"] = reasoning
+        calls = stream.tool_calls()
+        if not calls:
+            return AgentAction(response_text=content, metadata=meta)
+        payload = openai_like_tool_call_plan_payload(
+            provider="openai",
+            model=self.model,
+            tool_calls=calls,
+            content=content,
+            reasoning=reasoning or None,
+            tool_call_source="streamed_native_tool_calls",
+        )
+        return AgentAction(plan=payload["plan"], metadata={**meta, **payload["metadata"]})
+
+    def stream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> Iterator[AgentAction | dict[str, Any]]:
+        self._last_rate_limits = None
+        chunks = self._client.chat.completions.create(
+            **self._planning_stream_args(messages, tools)
+        )
+        stream = _ActionStream()
+        for chunk in chunks:
+            text, reasoning = stream.add(chunk)
+            if reasoning:
+                yield {"type": "reasoning_chunk", "chunk": reasoning}
+            if text:
+                yield {"type": "text_chunk", "chunk": text}
+        yield self._stream_action(stream)
+
+    async def astream_next_action(
+        self, messages: list[dict[str, Any]], tools: list[ToolSpec]
+    ) -> AsyncIterator[AgentAction | dict[str, Any]]:
+        self._last_rate_limits = None
+        chunks = await self._get_async_client().chat.completions.create(
+            **self._planning_stream_args(messages, tools)
+        )
+        stream = _ActionStream()
+        async for chunk in chunks:
+            text, reasoning = stream.add(chunk)
+            if reasoning:
+                yield {"type": "reasoning_chunk", "chunk": reasoning}
+            if text:
+                yield {"type": "text_chunk", "chunk": text}
+        yield self._stream_action(stream)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         del tool_results
