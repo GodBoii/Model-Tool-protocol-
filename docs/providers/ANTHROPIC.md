@@ -84,7 +84,7 @@ print(reply)
 | Tool calling | Yes |
 | Parallel tool calls | Yes |
 | Input modalities | text, image, file |
-| Streaming | Fallback |
+| Streaming | Native final-response streaming |
 | Usage metrics | Rich |
 | Reasoning metadata | No |
 | Native async | No (uses thread fallback) |
