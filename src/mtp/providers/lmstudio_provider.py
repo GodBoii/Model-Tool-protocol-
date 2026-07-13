@@ -17,6 +17,7 @@ from .common import (
     normalize_refs,
     safe_load_arguments,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 
 class LMStudioToolCallingProvider(ProviderAdapter):
@@ -40,6 +41,8 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
+        max_tokens: int | None = None,
+        timeout_seconds: float = 300.0,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -48,6 +51,8 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self.max_tokens = optional_positive_int(max_tokens, field="max_tokens")
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._api_key = api_key or os.getenv("LMSTUDIO_API_KEY") or "lm-studio"
@@ -63,7 +68,11 @@ class LMStudioToolCallingProvider(ProviderAdapter):
                 "Install with: pip install openai"
             ) from exc
 
-        return OpenAI(base_url=self.base_url, api_key=self._api_key)
+        return OpenAI(
+            base_url=self.base_url,
+            api_key=self._api_key,
+            timeout=self.timeout_seconds,
+        )
 
     def _get_async_client(self) -> Any:
         """Return a lazily-created native OpenAI-compatible async client."""
@@ -77,9 +86,16 @@ class LMStudioToolCallingProvider(ProviderAdapter):
                 "Install with: pip install openai"
             ) from exc
         self._async_client = AsyncOpenAI(
-            base_url=self.base_url, api_key=self._api_key
+            base_url=self.base_url,
+            api_key=self._api_key,
+            timeout=self.timeout_seconds,
         )
         return self._async_client
+
+    def _generation_args(self) -> dict[str, Any]:
+        if self.max_tokens is None:
+            return {}
+        return {"max_tokens": self.max_tokens}
 
     async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
         """Create a completion, tolerating older LM Studio tool APIs."""
@@ -260,6 +276,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         lmstudio_tools = self._to_lmstudio_tools(tools)
 
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": lmstudio_messages,
             "temperature": self.temperature,
@@ -334,6 +351,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         lmstudio_tools = self._to_lmstudio_tools(tools)
 
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": lmstudio_messages,
             "temperature": self.temperature,
@@ -452,6 +470,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         lmstudio_messages = self._to_lmstudio_messages(messages)
         response = self._client.chat.completions.create(
+            **self._generation_args(),
             model=self.model,
             messages=lmstudio_messages,
             temperature=self.temperature,
@@ -466,6 +485,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
         lmstudio_messages = self._to_lmstudio_messages(messages)
         self._last_stream_usage = None
         stream = self._client.chat.completions.create(
+            **self._generation_args(),
             model=self.model,
             messages=lmstudio_messages,
             temperature=self.temperature,
@@ -500,6 +520,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         lmstudio_tools = self._to_lmstudio_tools(tools)
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": self._to_lmstudio_messages(messages),
             "temperature": self.temperature,
@@ -518,6 +539,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
     ) -> AsyncIterator[AgentAction | dict[str, Any]]:
         lmstudio_tools = self._to_lmstudio_tools(tools)
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": self._to_lmstudio_messages(messages),
             "temperature": self.temperature,

@@ -68,6 +68,23 @@ reply = agent.run_loop("Your prompt here")
 print(reply)
 ```
 
+## Request limits and timeouts
+
+Network providers expose a finite `timeout_seconds` (60 seconds by default).
+Local Ollama and LM Studio providers default to 300 seconds because first-load and
+CPU inference can take longer. The value must be finite and greater than zero.
+
+Completion limits are optional and are forwarded unchanged to the provider:
+
+- `max_tokens` for Mistral, Cohere, DeepSeek, SambaNova, Xiaomi, and LM Studio
+- `max_completion_tokens` for Groq (the current Groq API field)
+- Ollama output length remains configurable through `options`, for example
+  `options={"num_predict": 2048}`
+
+Leaving a completion limit as `None` preserves the provider/model default. MTP
+does not add another automatic retry loop; the official SDK retry policy remains
+authoritative, avoiding compounded retries and unexpectedly long requests.
+
 ## `.env` File Setup (recommended)
 
 1. Install dotenv support:

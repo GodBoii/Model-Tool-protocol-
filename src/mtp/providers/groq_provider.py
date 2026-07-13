@@ -17,6 +17,7 @@ from .common import (
     format_openai_like_message,
     openai_like_tool_call_plan_payload,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 
 def _value(obj: Any, key: str) -> Any:
@@ -125,6 +126,8 @@ class GroqToolCallingProvider(ProviderAdapter):
         reasoning_format: str | None = None,
         reasoning_effort: str | None = None,
         stream_include_usage: bool = True,
+        max_completion_tokens: int | None = None,
+        timeout_seconds: float = 60.0,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -139,6 +142,10 @@ class GroqToolCallingProvider(ProviderAdapter):
         self.reasoning_format = reasoning_format
         self.reasoning_effort = reasoning_effort
         self.stream_include_usage = stream_include_usage
+        self.max_completion_tokens = optional_positive_int(
+            max_completion_tokens, field="max_completion_tokens"
+        )
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self._last_response: Any | None = None
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
@@ -156,7 +163,7 @@ class GroqToolCallingProvider(ProviderAdapter):
             ) from exc
 
         key = api_key or require_env("GROQ_API_KEY")
-        return Groq(api_key=key, timeout=60.0)
+        return Groq(api_key=key, timeout=self.timeout_seconds)
 
     def _make_async_client(self, api_key: str | None) -> Any:
         try:
@@ -164,7 +171,12 @@ class GroqToolCallingProvider(ProviderAdapter):
         except Exception as exc:
             raise ImportError("groq is not installed. Install with: pip install groq") from exc
         key = api_key or require_env("GROQ_API_KEY")
-        return AsyncGroq(api_key=key, timeout=60.0)
+        return AsyncGroq(api_key=key, timeout=self.timeout_seconds)
+
+    def _request_defaults(self) -> dict[str, Any]:
+        if self.max_completion_tokens is None:
+            return {}
+        return {"max_completion_tokens": self.max_completion_tokens}
 
     def _create_completion(self, request_args: dict[str, Any]) -> Any:
         try:
@@ -274,6 +286,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         groq_tools = self._to_groq_tools(tools)
 
         request_args: dict[str, Any] = {
+            **self._request_defaults(),
             "model": self.model,
             "messages": groq_messages,
             "temperature": self.temperature,
@@ -343,6 +356,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         self, messages: list[dict[str, Any]], tools: list[ToolSpec]
     ) -> dict[str, Any]:
         request_args: dict[str, Any] = {
+            **self._request_defaults(),
             "model": self.model,
             "messages": self._to_groq_messages(messages),
             "temperature": self.temperature,
@@ -438,6 +452,7 @@ class GroqToolCallingProvider(ProviderAdapter):
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         groq_messages = self._to_groq_messages(messages)
         request_args: dict[str, Any] = {
+            **self._request_defaults(),
             "model": self.model,
             "messages": groq_messages,
             "temperature": self.temperature,
@@ -460,6 +475,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         groq_messages = self._to_groq_messages(messages)
         self._last_stream_usage = None
         request_args: dict[str, Any] = {
+            **self._request_defaults(),
             "model": self.model,
             "messages": groq_messages,
             "temperature": self.temperature,
@@ -507,6 +523,7 @@ class GroqToolCallingProvider(ProviderAdapter):
             return await asyncio.to_thread(self.next_action, messages, tools)
         groq_tools = self._to_groq_tools(tools)
         request_args: dict[str, Any] = {
+            **self._request_defaults(),
             "model": self.model,
             "messages": self._to_groq_messages(messages),
             "temperature": self.temperature,
@@ -549,6 +566,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         if self._async_client is None:
             return await asyncio.to_thread(self.finalize, messages, tool_results)
         request_args: dict[str, Any] = {
+            **self._request_defaults(),
             "model": self.model,
             "messages": self._to_groq_messages(messages),
             "temperature": self.temperature,

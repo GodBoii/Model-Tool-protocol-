@@ -19,6 +19,7 @@ from .common import (
     extract_refs,
     normalize_refs,
 )
+from ._config import positive_timeout_seconds
 
 
 def _read_value(obj: Any, key: str) -> Any:
@@ -45,6 +46,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
         format: dict[str, Any] | str | None = None,
         keep_alive: float | str | None = None,
         think: bool | str | None = None,
+        timeout_seconds: float = 300.0,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -56,6 +58,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
         if isinstance(think, str) and think not in {"low", "medium", "high"}:
             raise ValueError("think must be a boolean or one of: low, medium, high")
         self.think = think
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._last_stream_thinking: str | None = None  # Track thinking from stream
@@ -72,7 +75,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
             ) from exc
 
         resolved_api_key = api_key or os.getenv("OLLAMA_API_KEY")
-        client_kwargs: dict[str, Any] = {}
+        client_kwargs: dict[str, Any] = {"timeout": self.timeout_seconds}
         if self.host:
             client_kwargs["host"] = self.host
         if resolved_api_key:
@@ -91,7 +94,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
             ) from exc
 
         resolved_api_key = self._api_key or os.getenv("OLLAMA_API_KEY")
-        client_kwargs: dict[str, Any] = {}
+        client_kwargs: dict[str, Any] = {"timeout": self.timeout_seconds}
         if self.host:
             client_kwargs["host"] = self.host
         if resolved_api_key:

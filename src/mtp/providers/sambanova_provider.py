@@ -17,6 +17,7 @@ from .common import (
     iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 
 class SambaNovaToolCallingProvider(ProviderAdapter):
@@ -32,12 +33,16 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
+        max_tokens: int | None = None,
+        timeout_seconds: float = 60.0,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.tool_choice = tool_choice
+        self.max_tokens = optional_positive_int(max_tokens, field="max_tokens")
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
@@ -57,6 +62,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
         return OpenAI(
             base_url="https://api.sambanova.ai/v1",
             api_key=key,
+            timeout=self.timeout_seconds,
         )
 
     def _make_async_client(self, api_key: str | None) -> Any:
@@ -68,7 +74,16 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
             ) from exc
 
         key = api_key or require_env("SAMBANOVA_API_KEY")
-        return AsyncOpenAI(base_url="https://api.sambanova.ai/v1", api_key=key)
+        return AsyncOpenAI(
+            base_url="https://api.sambanova.ai/v1",
+            api_key=key,
+            timeout=self.timeout_seconds,
+        )
+
+    def _generation_args(self) -> dict[str, Any]:
+        if self.max_tokens is None:
+            return {}
+        return {"max_tokens": self.max_tokens}
 
     async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
         if self._async_client is None:
@@ -114,6 +129,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
         openai_tools = self._to_openai_tools(tools)
 
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": openai_messages,
             "temperature": self.temperature,
@@ -148,6 +164,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         openai_messages = self._to_openai_messages(messages)
         response = self._client.chat.completions.create(
+            **self._generation_args(),
             model=self.model,
             messages=openai_messages,
             temperature=self.temperature,
@@ -163,6 +180,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
     ) -> Iterator[str]:
         self._last_stream_usage = None
         stream = self._client.chat.completions.create(
+            **self._generation_args(),
             model=self.model,
             messages=self._to_openai_messages(messages),
             temperature=self.temperature,
@@ -194,6 +212,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
         if self._async_client is None:
             return await asyncio.to_thread(self.next_action, messages, tools)
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": self._to_openai_messages(messages),
             "temperature": self.temperature,
@@ -226,6 +245,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
             return await asyncio.to_thread(self.finalize, messages, tool_results)
         response = await self._acreate_completion(
             {
+                **self._generation_args(),
                 "model": self.model,
                 "messages": self._to_openai_messages(messages),
                 "temperature": self.temperature,
@@ -247,6 +267,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
         self._last_stream_usage = None
         stream = await self._acreate_completion(
             {
+                **self._generation_args(),
                 "model": self.model,
                 "messages": self._to_openai_messages(messages),
                 "temperature": self.temperature,

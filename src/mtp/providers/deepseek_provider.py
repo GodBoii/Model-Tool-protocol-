@@ -17,6 +17,7 @@ from .common import (
     iter_openai_like_stream_content,
     openai_like_tool_call_plan_payload,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 
 class DeepSeekToolCallingProvider(ProviderAdapter):
@@ -48,6 +49,8 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         # R1-specific: set True when using deepseek-reasoner to capture
         # the chain-of-thought reasoning trace in action metadata.
         capture_reasoning: bool = True,
+        max_tokens: int | None = None,
+        timeout_seconds: float = 60.0,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -56,6 +59,8 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self.capture_reasoning = capture_reasoning
+        self.max_tokens = optional_positive_int(max_tokens, field="max_tokens")
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
@@ -80,6 +85,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         return OpenAI(
             base_url="https://api.deepseek.com/v1",
             api_key=key,
+            timeout=self.timeout_seconds,
         )
 
     def _make_async_client(self, api_key: str | None) -> Any:
@@ -92,7 +98,16 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             ) from exc
 
         key = api_key or require_env("DEEPSEEK_API_KEY")
-        return AsyncOpenAI(base_url="https://api.deepseek.com/v1", api_key=key)
+        return AsyncOpenAI(
+            base_url="https://api.deepseek.com/v1",
+            api_key=key,
+            timeout=self.timeout_seconds,
+        )
+
+    def _generation_args(self) -> dict[str, Any]:
+        if self.max_tokens is None:
+            return {}
+        return {"max_tokens": self.max_tokens}
 
     async def _acreate_completion(self, request_args: dict[str, Any]) -> Any:
         if self._async_client is None:
@@ -155,6 +170,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         is_reasoner = self._is_reasoner()
 
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": deepseek_messages,
             "temperature": self.temperature,
@@ -208,6 +224,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         deepseek_messages = self._to_deepseek_messages(messages)
         response = self._client.chat.completions.create(
+            **self._generation_args(),
             model=self.model,
             messages=deepseek_messages,
             temperature=self.temperature,
@@ -223,6 +240,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
     ) -> Iterator[str]:
         self._last_stream_usage = None
         stream = self._client.chat.completions.create(
+            **self._generation_args(),
             model=self.model,
             messages=self._to_deepseek_messages(messages),
             temperature=self.temperature,
@@ -258,6 +276,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         deepseek_tools = self._to_deepseek_tools(tools)
         is_reasoner = self._is_reasoner()
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": self._to_deepseek_messages(messages),
             "temperature": self.temperature,
@@ -302,6 +321,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             return await asyncio.to_thread(self.finalize, messages, tool_results)
         response = await self._acreate_completion(
             {
+                **self._generation_args(),
                 "model": self.model,
                 "messages": self._to_deepseek_messages(messages),
                 "temperature": self.temperature,
@@ -323,6 +343,7 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         self._last_stream_usage = None
         stream = await self._acreate_completion(
             {
+                **self._generation_args(),
                 "model": self.model,
                 "messages": self._to_deepseek_messages(messages),
                 "temperature": self.temperature,

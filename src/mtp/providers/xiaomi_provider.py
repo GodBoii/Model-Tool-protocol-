@@ -15,6 +15,7 @@ from .common import (
     format_openai_like_message,
     openai_like_tool_call_plan_payload,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 DEFAULT_XIAOMI_BASE_URL = "https://token-plan-ams.xiaomimimo.com/v1"
 
@@ -39,6 +40,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         thinking_mode: str = "adaptive",
         final_thinking_mode: str | None = "enabled",
         timeout_seconds: float = 60.0,
+        max_tokens: int | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -50,7 +52,8 @@ class XiaomiToolCallingProvider(ProviderAdapter):
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
-        self.timeout_seconds = float(timeout_seconds)
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
+        self.max_tokens = optional_positive_int(max_tokens, field="max_tokens")
         self.thinking_mode = self._normalize_thinking_mode(thinking_mode, field_name="thinking_mode")
         self.final_thinking_mode = self._normalize_thinking_mode(
             final_thinking_mode,
@@ -187,6 +190,8 @@ class XiaomiToolCallingProvider(ProviderAdapter):
             "messages": self._to_xiaomi_messages(messages),
             "temperature": self.temperature,
         }
+        if self.max_tokens is not None:
+            request_args["max_tokens"] = self.max_tokens
         openai_tools = self._to_xiaomi_tools(tools or [])
         if openai_tools:
             request_args["tools"] = openai_tools

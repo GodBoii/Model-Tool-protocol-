@@ -16,6 +16,7 @@ from .common import (
     normalize_refs,
     safe_load_arguments,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 
 class CohereToolCallingProvider(ProviderAdapter):
@@ -54,12 +55,14 @@ class CohereToolCallingProvider(ProviderAdapter):
         preamble: str | None = None,
         force_single_step: bool = False,
         strict_tools: bool = True,
+        timeout_seconds: float = 60.0,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.max_tokens = optional_positive_int(max_tokens, field="max_tokens")
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self.preamble = preamble          # Cohere's version of system prompt
         self.force_single_step = force_single_step
         self.strict_tools = strict_tools
@@ -83,7 +86,7 @@ class CohereToolCallingProvider(ProviderAdapter):
             ) from exc
 
         key = api_key or require_env("COHERE_API_KEY")
-        return cohere.ClientV2(api_key=key)
+        return cohere.ClientV2(api_key=key, timeout=self.timeout_seconds)
 
     def _get_async_client(self) -> Any:
         """Return the injected client or lazily construct Cohere's native V2 client."""
@@ -97,7 +100,9 @@ class CohereToolCallingProvider(ProviderAdapter):
             ) from exc
 
         key = self._api_key or require_env("COHERE_API_KEY")
-        self._async_client = cohere.AsyncClientV2(api_key=key)
+        self._async_client = cohere.AsyncClientV2(
+            api_key=key, timeout=self.timeout_seconds
+        )
         return self._async_client
 
     # ------------------------------------------------------------------

@@ -21,6 +21,7 @@ from .common import (
     normalize_refs,
     safe_load_arguments,
 )
+from ._config import optional_positive_int, positive_timeout_seconds
 
 class MistralToolCallingProvider(ProviderAdapter):
     """
@@ -35,12 +36,16 @@ class MistralToolCallingProvider(ProviderAdapter):
         temperature: float = 0.0,
         tool_choice: str = "auto",
         parallel_tool_calls: bool = True,
+        max_tokens: int | None = None,
+        timeout_seconds: float = 60.0,
         client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self.max_tokens = optional_positive_int(max_tokens, field="max_tokens")
+        self.timeout_seconds = positive_timeout_seconds(timeout_seconds)
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
@@ -56,7 +61,12 @@ class MistralToolCallingProvider(ProviderAdapter):
                     "`mistralai` not installed. Please install using `pip install mistralai`"
                 ) from exc
         key = api_key or require_env("MISTRAL_API_KEY")
-        return Mistral(api_key=key)
+        return Mistral(api_key=key, timeout_ms=int(self.timeout_seconds * 1000))
+
+    def _generation_args(self) -> dict[str, Any]:
+        if self.max_tokens is None:
+            return {}
+        return {"max_tokens": self.max_tokens}
 
     def _to_text(self, content: Any) -> str:
         if isinstance(content, str):
@@ -142,6 +152,7 @@ class MistralToolCallingProvider(ProviderAdapter):
     def _planning_args(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> dict[str, Any]:
         mistral_tools = self._to_mistral_tools(tools)
         request_args: dict[str, Any] = {
+            **self._generation_args(),
             "model": self.model,
             "messages": self._to_mistral_messages(messages),
             "temperature": self.temperature,
@@ -214,6 +225,7 @@ class MistralToolCallingProvider(ProviderAdapter):
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         mistral_messages = self._to_mistral_messages(messages)
         response = self._client.chat.complete(
+            **self._generation_args(),
             model=self.model,
             messages=mistral_messages,
             temperature=self.temperature,
@@ -225,6 +237,7 @@ class MistralToolCallingProvider(ProviderAdapter):
     def finalize_stream(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]):
         mistral_messages = self._to_mistral_messages(messages)
         stream = self._client.chat.stream(
+            **self._generation_args(),
             model=self.model,
             messages=mistral_messages,
             temperature=self.temperature,
@@ -267,6 +280,7 @@ class MistralToolCallingProvider(ProviderAdapter):
         if not callable(complete_async):
             return await asyncio.to_thread(self.finalize, messages, tool_results)
         response = await complete_async(
+            **self._generation_args(),
             model=self.model,
             messages=self._to_mistral_messages(messages),
             temperature=self.temperature,
@@ -283,6 +297,7 @@ class MistralToolCallingProvider(ProviderAdapter):
                 yield chunk
             return
         stream = stream_async(
+            **self._generation_args(),
             model=self.model,
             messages=self._to_mistral_messages(messages),
             temperature=self.temperature,
