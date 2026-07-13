@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from mtp.cli.main import main
 from mtp.cli.doctor import DoctorItem
 
@@ -28,3 +30,22 @@ def test_doctor_failure_returns_nonzero(monkeypatch) -> None:
     )
 
     assert main(["doctor"]) == 1
+
+
+def test_doctor_json_is_machine_readable(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        "mtp.cli.main.run_doctor",
+        lambda provider_filter=None: [DoctorItem("python", "OK", "Python 3")],
+    )
+
+    assert main(["doctor", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == [
+        {"check": "python", "status": "OK", "detail": "Python 3"}
+    ]
+
+
+def test_providers_list_json_is_machine_readable(capsys) -> None:
+    assert main(["providers", "list", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, list)
+    assert any(row["name"] == "groq" for row in payload)

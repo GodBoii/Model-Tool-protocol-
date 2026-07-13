@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+import json
 import os
 from pathlib import Path
 import runpy
@@ -120,14 +121,20 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             provider_filter.add(info.name)
             provider_filter.add(info.alias.lower())
     items = run_doctor(provider_filter=provider_filter)
-    rows = [[row.name, row.status, row.detail] for row in items]
-    _print_table(["check", "status", "detail"], rows)
+    if args.json:
+        print(json.dumps([{"check": row.name, "status": row.status, "detail": row.detail} for row in items]))
+    else:
+        rows = [[row.name, row.status, row.detail] for row in items]
+        _print_table(["check", "status", "detail"], rows)
     has_failure = any(row.status == "FAIL" for row in items)
     return 1 if has_failure else 0
 
 
-def _cmd_providers_list(_args: argparse.Namespace) -> int:
+def _cmd_providers_list(args: argparse.Namespace) -> int:
     rows_data = providers_as_rows()
+    if args.json:
+        print(json.dumps(rows_data))
+        return 0
     rows = [
         [
             str(row["name"]),
@@ -260,11 +267,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Filter checks to one or more providers (repeatable).",
     )
+    doctor_cmd.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     doctor_cmd.set_defaults(handler=_cmd_doctor)
 
     providers_cmd = sub.add_parser("providers", help="Provider metadata commands.")
     providers_sub = providers_cmd.add_subparsers(dest="providers_command", required=True)
     providers_list = providers_sub.add_parser("list", help="List known providers, SDK modules, and key env vars.")
+    providers_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     providers_list.set_defaults(handler=_cmd_providers_list)
 
     tui_cmd = sub.add_parser("tui", help="Launch interactive TUI for MTP + Codex bridge.")
