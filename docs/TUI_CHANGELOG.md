@@ -149,10 +149,11 @@ Saved Sessions
 - `/apikey` - List all API keys (masked display)
 - `/apikey set <provider> <key>` - Set/update API key
 - `/apikey delete <provider>` - Delete API key
-- `/apikey show <provider>` - Show full API key
+- `/apikey show <provider>` - Show a masked API key
 
 **Security:**
-- Keys stored in `~/.mtp/settings/provider_settings.json`
+- Keys stored in the operating-system credential vault; environment variables
+  are supported as a read-only fallback and JSON contains no credentials
 - Masked display by default (`*******`)
 - Validation to prevent saving truncated keys
 - Warning for keys that look suspicious
@@ -340,13 +341,15 @@ openai/gpt-oss-120b · autoresearch off · groq · turns 3
 {
   "providers": {
     "groq": {
-      "api_key": "gsk_...",
       "model": "llama-3.3-70b-versatile",
       "models": ["custom-model-1", "custom-model-2"]
     }
   }
 }
 ```
+
+Provider API keys are stored separately in the operating-system credential
+vault and are never serialized in this file.
 
 ### Session Storage
 **Location:** `~/.mtp/sessions/mtp_json_db`

@@ -472,7 +472,6 @@ Default: `tmp/mtp_tui_sessions/tui_provider_settings.json`
     "ollama": {
       "deployment_type": "local",
       "base_url": "http://localhost:11434",
-      "api_key": null,
       "model": "llama3.2:3b",
       "models": [
         "llama3.2:3b",
@@ -483,7 +482,6 @@ Default: `tmp/mtp_tui_sessions/tui_provider_settings.json`
     "lmstudio": {
       "deployment_type": "local",
       "base_url": "http://127.0.0.1:1234/v1",
-      "api_key": null,
       "model": "qwen3-4b-thinking-2507",
       "models": [
         "qwen3-4b-thinking-2507",
@@ -493,6 +491,9 @@ Default: `tmp/mtp_tui_sessions/tui_provider_settings.json`
   }
 }
 ```
+
+API keys for secured remote endpoints use the operating-system credential
+vault (or the provider environment variable) and never appear in this JSON.
 
 ## Advanced Usage
 
