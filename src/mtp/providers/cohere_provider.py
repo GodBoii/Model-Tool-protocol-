@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
@@ -56,6 +55,7 @@ class CohereToolCallingProvider(ProviderAdapter):
         force_single_step: bool = False,
         strict_tools: bool = True,
         client: Any | None = None,
+        async_client: Any | None = None,
     ) -> None:
         self.model = model
         self.temperature = temperature
@@ -63,10 +63,12 @@ class CohereToolCallingProvider(ProviderAdapter):
         self.preamble = preamble          # Cohere's version of system prompt
         self.force_single_step = force_single_step
         self.strict_tools = strict_tools
+        self._api_key = api_key
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._last_stream_finish_reason: str | None = None
         self._client = client or self._make_client(api_key=api_key)
+        self._async_client = async_client
 
     # ------------------------------------------------------------------
     # Client construction
@@ -82,6 +84,21 @@ class CohereToolCallingProvider(ProviderAdapter):
 
         key = api_key or require_env("COHERE_API_KEY")
         return cohere.ClientV2(api_key=key)
+
+    def _get_async_client(self) -> Any:
+        """Return the injected client or lazily construct Cohere's native V2 client."""
+        if self._async_client is not None:
+            return self._async_client
+        try:
+            import cohere
+        except ImportError as exc:
+            raise ImportError(
+                "`cohere` not installed. Install with: pip install cohere"
+            ) from exc
+
+        key = self._api_key or require_env("COHERE_API_KEY")
+        self._async_client = cohere.AsyncClientV2(api_key=key)
+        return self._async_client
 
     # ------------------------------------------------------------------
     # Tool formatting  (Cohere native format)
@@ -239,7 +256,12 @@ class CohereToolCallingProvider(ProviderAdapter):
     # Core protocol methods
     # ------------------------------------------------------------------
 
-    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+    def _action_request(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSpec],
+    ) -> dict[str, Any]:
+        """Build one V2 tool-use request for both sync and async transports."""
         cohere_messages = self._to_cohere_messages(messages)
         cohere_tools = self._to_cohere_tools(tools)
 
@@ -260,7 +282,14 @@ class CohereToolCallingProvider(ProviderAdapter):
                     {"role": "system", "content": self.preamble}
                 ] + cohere_messages
 
-        response = self._client.chat(**request_args)
+        return request_args
+
+    def next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
+        response = self._client.chat(**self._action_request(messages, tools))
+        return self._action_from_response(response)
+
+    def _action_from_response(self, response: Any) -> AgentAction:
+        """Parse a V2 response identically for sync and async clients."""
         message = response.message
         tool_calls = getattr(message, "tool_calls", None) or []
         usage = self._extract_cohere_usage(response)
@@ -346,6 +375,10 @@ class CohereToolCallingProvider(ProviderAdapter):
         del tool_results  # Tool results are already represented in ``messages``.
         response = self._client.chat(**self._finalize_request(messages))
         self._last_finalize_usage = self._extract_cohere_usage(response) or None
+        return self._finalize_response_text(response)
+
+    def _finalize_response_text(self, response: Any) -> str:
+        """Extract final text while retaining Cohere's extra-tool-round signal."""
         message = response.message
         if getattr(message, "tool_calls", None):
             return "Model requested an additional tool round; rerun with a larger max_rounds."
@@ -390,25 +423,35 @@ class CohereToolCallingProvider(ProviderAdapter):
 
         stream = self._client.chat_stream(**self._finalize_request(messages))
         for event in stream:
-            event_type = self._read_value(event, "type")
-            if event_type == "content-delta":
-                delta = self._read_value(event, "delta")
-                message = self._read_value(delta, "message")
-                content = self._read_value(message, "content")
-                text = self._read_value(content, "text")
-                if isinstance(text, str) and text:
-                    yield text
-                continue
+            text = self._handle_stream_event(event)
+            if text:
+                yield text
 
-            if event_type == "message-end":
-                usage = self._extract_cohere_usage(event)
-                self._last_stream_usage = usage
-                self._last_finalize_usage = usage
-                delta = self._read_value(event, "delta")
-                finish_reason = self._read_value(delta, "finish_reason")
-                self._last_stream_finish_reason = (
-                    finish_reason if isinstance(finish_reason, str) else None
-                )
+    def _reset_stream_metadata(self) -> None:
+        self._last_stream_usage = None
+        self._last_finalize_usage = None
+        self._last_stream_finish_reason = None
+
+    def _handle_stream_event(self, event: Any) -> str | None:
+        """Parse one V2 event and retain terminal metadata for either transport."""
+        event_type = self._read_value(event, "type")
+        if event_type == "content-delta":
+            delta = self._read_value(event, "delta")
+            message = self._read_value(delta, "message")
+            content = self._read_value(message, "content")
+            text = self._read_value(content, "text")
+            return text if isinstance(text, str) and text else None
+
+        if event_type == "message-end":
+            usage = self._extract_cohere_usage(event)
+            self._last_stream_usage = usage
+            self._last_finalize_usage = usage
+            delta = self._read_value(event, "delta")
+            finish_reason = self._read_value(delta, "finish_reason")
+            self._last_stream_finish_reason = (
+                finish_reason if isinstance(finish_reason, str) else None
+            )
+        return None
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -421,12 +464,39 @@ class CohereToolCallingProvider(ProviderAdapter):
             usage_metrics_quality=USAGE_METRICS_BASIC,
             supports_reasoning_metadata=False,
             structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
-            supports_native_async=False,
+            supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
-        return await asyncio.to_thread(self.next_action, messages, tools)
+        response = await self._get_async_client().chat(
+            **self._action_request(messages, tools)
+        )
+        return self._action_from_response(response)
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
-        return await asyncio.to_thread(self.finalize, messages, tool_results)
+        del tool_results
+        response = await self._get_async_client().chat(
+            **self._finalize_request(messages)
+        )
+        self._last_finalize_usage = self._extract_cohere_usage(response) or None
+        return self._finalize_response_text(response)
+
+    async def afinalize_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tool_results: list[ToolResult],
+    ) -> AsyncIterator[str]:
+        """Stream final text using Cohere V2's native asynchronous transport."""
+        del tool_results
+        self._reset_stream_metadata()
+
+        # Cohere's AsyncClientV2 returns the async iterator from an awaited
+        # ``chat_stream`` call (unlike SDKs whose method is itself a generator).
+        stream = await self._get_async_client().chat_stream(
+            **self._finalize_request(messages)
+        )
+        async for event in stream:
+            text = self._handle_stream_event(event)
+            if text:
+                yield text
