@@ -4,7 +4,7 @@ Direction alignment:
 - Roadmap items should be evaluated against the protocol-vs-SDK boundaries in
   [Project Direction](PROJECT_DIRECTION.md).
 
-## Current implementation snapshot (2026-04-06)
+## Current implementation snapshot (2026-07-13)
 
 Implemented in codebase:
 - Protocol objects, plan validation, risk policy, and runtime caching.
@@ -25,17 +25,19 @@ Implemented in codebase:
 - Delegation/orchestration mode (`mode="delegator"`/`"orchestration"` with member agents as tools).
 - Transport primitives: stdio + HTTP + optional WebSocket, with shared cancel control envelope semantics.
 - Runtime in-flight cancellation checks for running tool execution (async direct, sync cooperative).
+- First-party `mtp new` scaffolding, provider readiness diagnostics, session transfer commands, and a Textual TUI.
+- Provider extras, native async paths, final-response streaming, structured-output controls, and explicit capability metadata.
+- Performance budgets for hot runtime, TUI streaming, workspace-index, and transient-history paths.
 
 Still missing from roadmap goals:
 - MCP auth ecosystem integrations beyond auth-provider hook level (OAuth discovery endpoints, scope negotiation standards, refresh lifecycle workflows).
 - External MCP client compatibility matrix automation and broader conformance harness (real third-party client runs in CI).
 - Durable resumability beyond single-node file-backed replay (for example shared/distributed event stores for clustered deployments).
-- Provider capability matrix and deeper per-provider structured-output feature parity guarantees.
-- First-party CLI scaffolding (`mtp new`) and template generation.
+- Automated live-provider conformance coverage beyond the credentials available in CI.
+- Deeper per-model capability discovery for gateway providers whose features vary by routed model.
 - Centralized tracing/analytics query APIs over persisted run data.
 - Broader integration matrix/benchmarks across optional provider SDKs.
-- Packaging ergonomics (extras groups for provider/toolkit/database optional dependencies).
-- Test harness hardening for mixed local environments (ignoring transient `tmp/` dirs during discovery, sandbox-aware temp path strategy).
+- Signed release provenance and automated security/dependency scanning gates.
 
 ## Phase 0 (current)
 - Protocol objects for tools, calls, results, and plans.
@@ -88,7 +90,7 @@ Still missing from roadmap goals:
   - `PostgresSessionStore`
   - `MySQLSessionStore`
 
-## Phase 2
+## Phase 2 (substantially implemented)
 - Provider depth:
   - richer per-provider feature flags
   - native structured output modes where available
@@ -110,10 +112,10 @@ Still missing from roadmap goals:
 - Unified tracing events for all tool calls.
 - Rich analytics/query APIs on top of persisted session data.
 
-## Phase 4
+## Phase 4 (in progress)
 - Developer experience:
-  - `mtp new` project template
-  - tool decorator package (`@mtp_tool`)
+  - `mtp new` project templates (implemented)
+  - tool decorator package (`@mtp_tool`, implemented)
   - docs site with runnable examples and cookbook
   - integration test matrix across providers
   - published provider/toolkit capability matrix and conformance badges
