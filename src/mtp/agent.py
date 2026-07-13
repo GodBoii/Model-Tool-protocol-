@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from contextlib import contextmanager
+from functools import wraps
+import inspect
 from itertools import count
 from datetime import UTC, datetime
 import json
@@ -10,6 +13,7 @@ from time import perf_counter
 from dataclasses import dataclass, field
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, Callable, Protocol
+import threading
 from uuid import uuid4
 
 from .events import EventStreamContext
@@ -28,6 +32,52 @@ from .tools import tool_spec_from_callable
 from .protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .schema import ToolArgumentsValidationError, validate_tool_arguments
 from .strict import validate_strict_dependencies
+
+
+class ConcurrentRunError(RuntimeError):
+    """Raised when one mutable Agent instance is used for overlapping runs."""
+
+
+@contextmanager
+def _claim_agent_run(agent: "Agent"):
+    if not agent._run_lock.acquire(blocking=False):
+        raise ConcurrentRunError(
+            "This Agent already has an active run. Create one Agent per concurrent conversation "
+            "or wait for the current run to finish."
+        )
+    try:
+        yield
+    finally:
+        agent._run_lock.release()
+
+
+def _single_active_run(function):
+    """Guard regular, coroutine, generator, and async-generator run engines."""
+    if inspect.isasyncgenfunction(function):
+        @wraps(function)
+        async def async_generator_wrapper(self, *args, **kwargs):
+            with _claim_agent_run(self):
+                async for item in function(self, *args, **kwargs):
+                    yield item
+        return async_generator_wrapper
+    if inspect.iscoroutinefunction(function):
+        @wraps(function)
+        async def async_wrapper(self, *args, **kwargs):
+            with _claim_agent_run(self):
+                return await function(self, *args, **kwargs)
+        return async_wrapper
+    if inspect.isgeneratorfunction(function):
+        @wraps(function)
+        def generator_wrapper(self, *args, **kwargs):
+            with _claim_agent_run(self):
+                yield from function(self, *args, **kwargs)
+        return generator_wrapper
+
+    @wraps(function)
+    def wrapper(self, *args, **kwargs):
+        with _claim_agent_run(self):
+            return function(self, *args, **kwargs)
+    return wrapper
 
 
 @dataclass(slots=True)
@@ -126,6 +176,7 @@ class Agent:
             raise ValueError("Missing tools registry. Pass `tools=` (or legacy `registry=`).")
 
         self.provider = provider
+        self._run_lock = threading.Lock()
         self.registry = resolved_tools
         self.tools = resolved_tools
         self.debug_mode = debug_mode
@@ -1204,6 +1255,7 @@ class Agent:
 
         return last_results, None, cancelled, total_tool_calls, paused, None
 
+    @_single_active_run
     def run_output(
         self,
         user_input: Any,
@@ -1570,6 +1622,7 @@ class Agent:
 
         return last_results, None, cancelled, total_tool_calls, paused, None
 
+    @_single_active_run
     async def arun_output(
         self,
         user_input: Any,
@@ -1793,6 +1846,7 @@ class Agent:
         finally:
             self._complete_run(resolved_run_id)
 
+    @_single_active_run
     def run_loop_stream(
         self,
         user_input: Any,
@@ -1875,6 +1929,7 @@ class Agent:
         finally:
             self._complete_run(resolved_run_id)
 
+    @_single_active_run
     def run_loop_events(
         self,
         user_input: Any,
@@ -2247,6 +2302,7 @@ class Agent:
         finally:
             self._complete_run(resolved_run_id)
 
+    @_single_active_run
     async def arun_loop_events(
         self,
         user_input: Any,

@@ -8,7 +8,7 @@ except PackageNotFoundError:
 from .events import EventStreamContext
 from .config import load_dotenv_if_available
 from .policy import PolicyDecision, RiskPolicy
-from .agent import Agent, AgentAction, ProviderAdapter, RunOutput
+from .agent import Agent, AgentAction, ConcurrentRunError, ProviderAdapter, RunOutput
 from .session_store import (
     JsonSessionStore,
     MySQLSessionStore,
