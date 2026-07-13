@@ -6,6 +6,7 @@ from typing import Any
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
+from ..provider_errors import ProviderErrorCategory, raise_normalized_provider_error
 from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
@@ -68,18 +69,29 @@ class GroqToolCallingProvider(ProviderAdapter):
         except TypeError:
             request_args.pop("parallel_tool_calls", None)
             request_args.pop("stream_options", None)
-            return self._client.chat.completions.create(**request_args)
+            try:
+                return self._client.chat.completions.create(**request_args)
+            except Exception as exc:
+                raise_normalized_provider_error(exc, provider="groq")
         except Exception as exc:
-            raise RuntimeError(f"Groq API request failed: {exc}") from exc
+            raise_normalized_provider_error(exc, provider="groq")
 
     @staticmethod
     def _first_choice_message(response: Any) -> Any:
         choices = getattr(response, "choices", None)
         if not choices:
-            raise RuntimeError("Groq response did not include any choices.")
+            raise_normalized_provider_error(
+                ValueError(),
+                provider="groq",
+                category=ProviderErrorCategory.INVALID_RESPONSE,
+            )
         message = getattr(choices[0], "message", None)
         if message is None:
-            raise RuntimeError("Groq response choice did not include a message.")
+            raise_normalized_provider_error(
+                ValueError(),
+                provider="groq",
+                category=ProviderErrorCategory.INVALID_RESPONSE,
+            )
         return message
 
     def _to_groq_tools(self, tools: list[ToolSpec]) -> list[dict[str, Any]]:
@@ -246,16 +258,19 @@ class GroqToolCallingProvider(ProviderAdapter):
         if self.reasoning_effort is not None:
             request_args["reasoning_effort"] = self.reasoning_effort
         stream = self._create_completion(request_args)
-        for chunk in stream:
-            chunk_usage = extract_usage_metrics(chunk)
-            if chunk_usage:
-                self._last_stream_usage = chunk_usage
-            if not getattr(chunk, "choices", None):
-                continue
-            delta = chunk.choices[0].delta
-            content = getattr(delta, "content", None)
-            if content:
-                yield content
+        try:
+            for chunk in stream:
+                chunk_usage = extract_usage_metrics(chunk)
+                if chunk_usage:
+                    self._last_stream_usage = chunk_usage
+                if not getattr(chunk, "choices", None):
+                    continue
+                delta = chunk.choices[0].delta
+                content = getattr(delta, "content", None)
+                if content:
+                    yield content
+        except Exception as exc:
+            raise_normalized_provider_error(exc, provider="groq")
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(

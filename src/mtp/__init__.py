@@ -18,6 +18,12 @@ from .session_store import (
     SessionStore,
 )
 from .exceptions import RetryAgentRun, StopAgentRun
+from .provider_errors import (
+    ProviderError,
+    ProviderErrorCategory,
+    ProviderErrorDetails,
+    normalize_provider_error,
+)
 from .protocol import (
     ExecutionPlan,
     ToolOutput,
@@ -178,4 +184,8 @@ __all__ = [
     "ToolArgumentsValidationError",
     "RetryAgentRun",
     "StopAgentRun",
+    "ProviderError",
+    "ProviderErrorCategory",
+    "ProviderErrorDetails",
+    "normalize_provider_error",
 ]

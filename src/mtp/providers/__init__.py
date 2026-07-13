@@ -22,6 +22,13 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "XiaomiToolCallingProvider": (".xiaomi_provider", "XiaomiToolCallingProvider"),
 }
 
+_ERROR_EXPORTS = {
+    "ProviderError",
+    "ProviderErrorCategory",
+    "ProviderErrorDetails",
+    "normalize_provider_error",
+}
+
 _ALIASES: dict[str, str] = {
     "Groq": "GroqToolCallingProvider",
     "OpenRouter": "OpenRouterToolCallingProvider",
@@ -40,7 +47,7 @@ _ALIASES: dict[str, str] = {
     "Xiaomi": "XiaomiToolCallingProvider",
 }
 
-__all__ = sorted([*_EXPORTS.keys(), *_ALIASES.keys()])
+__all__ = sorted([*_EXPORTS.keys(), *_ALIASES.keys(), *_ERROR_EXPORTS])
 
 
 def _load(name: str) -> Any:
@@ -55,6 +62,11 @@ def _load(name: str) -> Any:
 
 
 def __getattr__(name: str) -> Any:
+    if name in _ERROR_EXPORTS:
+        module = import_module("..provider_errors", package=__name__)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
     if name in _EXPORTS or name in _ALIASES:
         return _load(name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
