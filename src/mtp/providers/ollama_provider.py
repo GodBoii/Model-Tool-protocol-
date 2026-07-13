@@ -234,7 +234,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
         action_meta: dict[str, Any] = {"provider": "ollama", "model": self.model}
         if usage:
             action_meta["usage"] = usage
-        reasoning = reasoning.strip()
+        reasoning = reasoning.strip() if isinstance(reasoning, str) else ""
         if reasoning:
             action_meta["reasoning"] = reasoning
         if not tool_calls:

@@ -87,6 +87,16 @@ async def test_ollama_native_async_finalize_stream_accumulates_thinking_and_usag
     assert provider._last_stream_usage["total_tokens"] == 3
 
 
+@pytest.mark.asyncio
+async def test_ollama_native_async_finalize_records_usage():
+    client = AsyncOllama([{
+        "message": {"content": "final"}, "prompt_eval_count": 6, "eval_count": 2,
+    }])
+    provider = OllamaToolCallingProvider(client=object(), async_client=client)
+    assert await provider.afinalize([], []) == "final"
+    assert provider._last_finalize_usage["total_tokens"] == 8
+
+
 def lm_response(content="", tool_calls=None):
     return SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=tool_calls, reasoning_content="think"))],
@@ -143,3 +153,14 @@ async def test_lmstudio_native_async_finalize_stream_records_usage():
     assert [part async for part in provider.afinalize_stream([], [])] == ["hello"]
     assert provider._last_stream_usage["total_tokens"] == 3
     assert completions.requests[0]["stream_options"] == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_native_async_finalize_records_usage():
+    completions = AsyncCompletions([lm_response("final")])
+    provider = LMStudioToolCallingProvider(
+        client=object(),
+        async_client=SimpleNamespace(chat=SimpleNamespace(completions=completions)),
+    )
+    assert await provider.afinalize([], []) == "final"
+    assert provider._last_finalize_usage["total_tokens"] == 7
