@@ -7,13 +7,25 @@ from textual.widgets import Input, OptionList, RichLog
 
 from mtp import JsonSessionStore
 from mtp.cli.tui_app import MTPApp
-from mtp.cli.tui_state import TUIState
+from mtp.cli.tui_state import TUIState, deserialize_transcript
 from mtp.cli.tui_widgets.boot_screen import BootScreen
 from mtp.cli.tui_widgets.chat_log import AssistantMessageWidget, ChatLog
 from mtp.cli.tui_widgets.input_area import InputArea
 from mtp.cli.tui_widgets.api_key_dialog import APIKeyDialog
 from mtp.cli.tui_widgets.sidebar import Sidebar
 from mtp.cli.tui_widgets.status_bar import StatusBar
+
+
+def test_deserialize_transcript_retains_configured_tail(monkeypatch) -> None:
+    monkeypatch.setenv("MTP_TUI_TRANSCRIPT_TURNS", "2")
+    payload = [
+        {"prompt": f"prompt-{index}", "response": "ok"}
+        for index in range(4)
+    ]
+
+    transcript = deserialize_transcript(payload)
+
+    assert [turn.prompt for turn in transcript] == ["prompt-2", "prompt-3"]
 
 
 def _state(tmp_path: Path) -> TUIState:

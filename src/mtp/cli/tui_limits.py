@@ -1,8 +1,8 @@
 """Memory bounds for ephemeral TUI data.
 
-These limits apply only to interactive history and live preview buffers.  Session
-transcripts are deliberately not modified, so saving/reloading a session remains
-lossless.
+These limits keep both interactive buffers and persisted transcripts from growing
+without bound. They are configurable through environment variables for users who
+prefer longer local retention.
 """
 from __future__ import annotations
 
@@ -31,6 +31,11 @@ class TUILimits:
     live_warnings: int = 100
     live_blocks: int = 300
     tool_preview_chars: int = 8_000
+    transcript_turns: int = 200
+    transcript_text_chars: int = 100_000
+    transcript_thinking_chars: int = 50_000
+    transcript_details: int = 100
+    transcript_blocks: int = 100
 
     @classmethod
     def from_env(cls) -> "TUILimits":
@@ -43,6 +48,11 @@ class TUILimits:
             live_warnings=_env_int("MTP_TUI_LIVE_WARNINGS", 100),
             live_blocks=_env_int("MTP_TUI_LIVE_BLOCKS", 300),
             tool_preview_chars=_env_int("MTP_TUI_TOOL_PREVIEW_CHARS", 8_000),
+            transcript_turns=_env_int("MTP_TUI_TRANSCRIPT_TURNS", 200),
+            transcript_text_chars=_env_int("MTP_TUI_TRANSCRIPT_TEXT_CHARS", 100_000),
+            transcript_thinking_chars=_env_int("MTP_TUI_TRANSCRIPT_THINKING_CHARS", 50_000),
+            transcript_details=_env_int("MTP_TUI_TRANSCRIPT_DETAILS", 100),
+            transcript_blocks=_env_int("MTP_TUI_TRANSCRIPT_BLOCKS", 100),
         )
 
 

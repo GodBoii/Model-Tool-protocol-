@@ -110,6 +110,18 @@ class TestJsonSafe:
 
 
 class TestJsonSessionStore:
+    def test_rejects_nonpositive_store_limit(self, tmp_path):
+        with pytest.raises(ValueError, match="positive"):
+            JsonSessionStore(db_path=tmp_path, max_store_bytes=0)
+
+    def test_refuses_oversized_store_before_reading(self, tmp_path):
+        store = JsonSessionStore(db_path=tmp_path, max_store_bytes=8)
+        store.db_path.mkdir(parents=True, exist_ok=True)
+        store.file_path.write_text("[" + " " * 20 + "]", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="safety limit"):
+            store.list_sessions()
+
     def test_upsert_and_get(self, tmp_path):
         store = JsonSessionStore(db_path=tmp_path)
         record = SessionRecord(session_id="s1", user_id="u1")

@@ -26,10 +26,12 @@ def test_limits_from_env_falls_back_and_clamps(monkeypatch) -> None:
     monkeypatch.setenv("MTP_TUI_INPUT_HISTORY", "3")
     monkeypatch.setenv("MTP_TUI_LIVE_EVENTS", "invalid")
     monkeypatch.setenv("MTP_TUI_LIVE_WARNINGS", "0")
+    monkeypatch.setenv("MTP_TUI_TRANSCRIPT_TURNS", "7")
     limits = TUILimits.from_env()
     assert limits.input_history == 3
     assert limits.live_events == 200
     assert limits.live_warnings == 1
+    assert limits.transcript_turns == 7
 
 
 def test_trim_display_blocks_bounds_aggregate_payload() -> None:

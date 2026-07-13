@@ -133,12 +133,16 @@ class JsonSessionStore:
         session_table: str = "mtp_sessions",
         lock_timeout_seconds: float = 10.0,
         stale_lock_seconds: float = 60.0,
+        max_store_bytes: int = 256 * 1024 * 1024,
     ) -> None:
         self.db_path = Path(db_path)
         # The table name becomes a filename, so reject separators and traversal.
         self.session_table = _validate_sql_identifier(session_table)
         self.lock_timeout_seconds = max(0.1, float(lock_timeout_seconds))
         self.stale_lock_seconds = max(self.lock_timeout_seconds, float(stale_lock_seconds))
+        if int(max_store_bytes) < 1:
+            raise ValueError("max_store_bytes must be positive")
+        self.max_store_bytes = int(max_store_bytes)
         self._lock = threading.RLock()
 
     @property
@@ -203,6 +207,11 @@ class JsonSessionStore:
         if not self.file_path.exists():
             self._write_all([])
             return []
+        size = self.file_path.stat().st_size
+        if size > self.max_store_bytes:
+            raise ValueError(
+                f"Session store exceeds {self.max_store_bytes} byte safety limit: {self.file_path}"
+            )
         raw = self.file_path.read_text(encoding="utf-8")
         if not raw.strip():
             return []

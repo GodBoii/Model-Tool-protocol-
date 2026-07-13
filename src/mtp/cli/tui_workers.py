@@ -21,6 +21,7 @@ from .tui_state import (
     BACKENDS, REASONING_EFFORTS,
     MODEL_SHORTCUTS, REASONING_SHORTCUTS,
 )
+from .tui_limits import TUILimits, append_bounded, bounded_detail, bounded_tail, trim_display_blocks
 
 if TYPE_CHECKING:
     from .tui_app import MTPApp
@@ -67,19 +68,29 @@ def save_tui_session(state: TUIState) -> None:
 
 def record_turn(state: TUIState, prompt: str, result: ChatResult) -> None:
     """Record a conversation turn and save."""
-    state.transcript.append(TranscriptTurn(
-        prompt=prompt,
-        response=result.text,
+    limits = TUILimits.from_env()
+    details = [bounded_detail(detail, limits.tool_preview_chars) for detail in result.tool_details]
+    details = details[-limits.transcript_details :]
+    blocks = [dict(block) for block in result.assistant_blocks]
+    trim_display_blocks(
+        blocks,
+        max_blocks=limits.transcript_blocks,
+        max_chars=limits.transcript_text_chars,
+    )
+    turn = TranscriptTurn(
+        prompt=bounded_tail(prompt, limits.transcript_text_chars),
+        response=bounded_tail(result.text, limits.transcript_text_chars),
         backend=state.backend,
         model=active_model_name(state),
         attachments=list(result.attachments),
         warnings=list(result.warnings),
         usage_lines=list(result.usage_lines),
         created_at=now_label(),
-        tool_details=list(result.tool_details),
-        assistant_blocks=list(result.assistant_blocks),
-        thinking_text=result.thinking_text,
-    ))
+        tool_details=details,
+        assistant_blocks=blocks,
+        thinking_text=bounded_tail(result.thinking_text, limits.transcript_thinking_chars),
+    )
+    append_bounded(state.transcript, turn, limits.transcript_turns)
     state.last_usage_lines = list(result.usage_lines)
     state.last_tool_details = list(result.tool_details)
     save_tui_session(state)

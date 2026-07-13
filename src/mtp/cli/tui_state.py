@@ -150,7 +150,10 @@ def deserialize_transcript(payload: Any) -> list[TranscriptTurn]:
     if not isinstance(payload, list):
         return []
     transcript: list[TranscriptTurn] = []
-    for item in payload:
+    from .tui_limits import TUILimits
+
+    limits = TUILimits.from_env()
+    for item in payload[-limits.transcript_turns :]:
         if not isinstance(item, dict):
             continue
         transcript.append(TranscriptTurn(
