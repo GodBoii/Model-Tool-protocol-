@@ -61,6 +61,8 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
         # Fireworks supports structured JSON output — set a JSON schema here
         # to force structured responses (used in finalize for complex tasks).
         response_format: dict[str, Any] | None = None,
+        strict_tools: bool = False,
+        input_modalities: list[str] | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -70,6 +72,8 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
         self.parallel_tool_calls = parallel_tool_calls
         self.max_tokens = max_tokens
         self.response_format = response_format
+        self.strict_tools = strict_tools
+        self.input_modalities = sorted(set(input_modalities or ["text"]))
         self._api_key = api_key
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
@@ -152,17 +156,20 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
         return formatted
 
     def _to_fireworks_tools(self, tools: list[ToolSpec]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema or {"type": "object", "properties": {}},
-                },
+        formatted: list[dict[str, Any]] = []
+        for tool in tools:
+            function: dict[str, Any] = {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema or {"type": "object", "properties": {}},
             }
-            for tool in tools
-        ]
+            if self.strict_tools:
+                function["strict"] = True
+            formatted.append({
+                "type": "function",
+                "function": function,
+            })
+        return formatted
 
     # ------------------------------------------------------------------
     # Core protocol methods
@@ -182,7 +189,7 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             request_args["tools"] = fw_tools
             request_args["tool_choice"] = self.tool_choice
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
-        if self.response_format:
+        if self.response_format is not None:
             request_args["response_format"] = self.response_format
 
         try:
@@ -224,7 +231,7 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
-        if self.response_format:
+        if self.response_format is not None:
             request_args["response_format"] = self.response_format
 
         response = self._client.chat.completions.create(**request_args)
@@ -244,8 +251,9 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
-        if self.response_format:
+        if self.response_format is not None:
             request_args["response_format"] = self.response_format
         stream = self._client.chat.completions.create(**request_args)
 
@@ -264,8 +272,8 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             provider="fireworks",
             supports_tool_calling=True,
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
-            input_modalities=["text", "image"],
-            supports_tool_media_output=True,
+            input_modalities=self.input_modalities,
+            supports_tool_media_output="image" in self.input_modalities,
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
@@ -286,7 +294,7 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             request_args["tools"] = fw_tools
             request_args["tool_choice"] = self.tool_choice
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
-        if self.response_format:
+        if self.response_format is not None:
             request_args["response_format"] = self.response_format
         completions = self._get_async_client().chat.completions
         try:
@@ -319,7 +327,7 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
-        if self.response_format:
+        if self.response_format is not None:
             request_args["response_format"] = self.response_format
         response = await self._get_async_client().chat.completions.create(**request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
@@ -339,8 +347,9 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
-        if self.response_format:
+        if self.response_format is not None:
             request_args["response_format"] = self.response_format
         stream = await self._get_async_client().chat.completions.create(**request_args)
 

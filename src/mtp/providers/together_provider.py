@@ -9,6 +9,8 @@ from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+    STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     USAGE_METRICS_RICH,
     aiter_openai_like_stream_content,
     extract_usage_metrics,
@@ -55,6 +57,8 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
         max_tokens: int = 4096,
+        response_format: dict[str, Any] | None = None,
+        input_modalities: list[str] | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -63,6 +67,14 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self.max_tokens = max_tokens
+        self.response_format = response_format
+        model_key = model.casefold()
+        inferred_modalities = (
+            ["text", "image"]
+            if any(token in model_key for token in ("llama-4-scout", "llama-4-maverick", "vision", "-vl"))
+            else ["text"]
+        )
+        self.input_modalities = sorted(set(input_modalities or inferred_modalities))
         self._api_key = api_key
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
@@ -162,6 +174,8 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         if together_tools:
             request_args["tools"] = together_tools
             request_args["tool_choice"] = self.tool_choice
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
 
         try:
             if together_tools:
@@ -198,12 +212,15 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         together_messages = self._to_together_messages(messages)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=together_messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": together_messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = self._client.chat.completions.create(**request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
@@ -214,14 +231,17 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
     ) -> Iterator[str]:
         self._last_stream_usage = None
-        stream = self._client.chat.completions.create(
-            model=self.model,
-            messages=self._to_together_messages(messages),
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_together_messages(messages),
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        stream = self._client.chat.completions.create(**request_args)
 
         def remember_usage(usage: dict[str, int]) -> None:
             self._last_stream_usage = usage
@@ -229,16 +249,21 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
         yield from iter_openai_like_stream_content(stream, on_usage=remember_usage)
 
     def capabilities(self) -> ProviderCapabilities:
+        response_type = self.response_format.get("type") if self.response_format else None
+        structured = {
+            "json_object": STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+            "json_schema": STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
+        }.get(response_type, STRUCTURED_OUTPUT_CLIENT_VALIDATED)
         return ProviderCapabilities(
             provider="together",
             supports_tool_calling=True,
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
-            input_modalities=["text", "image"],
-            supports_tool_media_output=True,
+            input_modalities=self.input_modalities,
+            supports_tool_media_output="image" in self.input_modalities,
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
-            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            structured_output_support=structured,
             supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
@@ -255,6 +280,8 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
             request_args["tools"] = together_tools
             request_args["tool_choice"] = self.tool_choice
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
         completions = self._get_async_client().chat.completions
         try:
             response = await completions.create(**request_args)
@@ -280,12 +307,15 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         del tool_results
-        response = await self._get_async_client().chat.completions.create(
-            model=self.model,
-            messages=self._to_together_messages(messages),
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_together_messages(messages),
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = await self._get_async_client().chat.completions.create(**request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
@@ -297,14 +327,17 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
     ) -> AsyncIterator[str]:
         del tool_results
         self._last_stream_usage = None
-        stream = await self._get_async_client().chat.completions.create(
-            model=self.model,
-            messages=self._to_together_messages(messages),
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_together_messages(messages),
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        stream = await self._get_async_client().chat.completions.create(**request_args)
 
         def remember_usage(usage: dict[str, int]) -> None:
             self._last_stream_usage = usage

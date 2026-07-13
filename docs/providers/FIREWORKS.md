@@ -78,7 +78,10 @@ print(reply)
 | `parallel_tool_calls` | `bool` | `True` | Allow parallel tool calls |
 | `max_tokens` | `int` | `4096` | Maximum response tokens |
 | `response_format` | `dict \| None` | `None` | Structured output format (JSON schema) |
+| `strict_tools` | `bool` | `False` | Add Fireworks' documented `strict: true` to function definitions |
+| `input_modalities` | `list[str] \| None` | `["text"]` | Explicit modalities supported by the selected model |
 | `client` | `Any \| None` | `None` | Pre-configured client instance |
+| `async_client` | `Any \| None` | `None` | Pre-configured async OpenAI-compatible client |
 
 ## Capabilities
 
@@ -86,12 +89,12 @@ print(reply)
 |---|---|
 | Tool calling | Yes |
 | Parallel tool calls | Yes (configurable) |
-| Input modalities | text, image |
-| Streaming | Fallback |
+| Input modalities | text by default; model-specific explicit override |
+| Streaming | Native, with terminal usage requested |
 | Usage metrics | Rich |
 | Reasoning metadata | No |
 | Structured output | Native JSON object or JSON schema (according to `response_format.type`) |
-| Native async | No (uses thread fallback) |
+| Native async | Yes |
 
 ## Recommended Models
 
@@ -156,7 +159,11 @@ print(reply)
 - Model IDs must be account-qualified (e.g., `accounts/fireworks/models/...`).
 - `firefunction-v2` is purpose-built for function/tool calling and may give better results for agent workflows.
 - Capability metadata distinguishes `json_object` from the stricter `json_schema` response mode.
+- Fireworks model capabilities vary. Pass `input_modalities=["text", "image"]` only for a selected vision model instead of assuming every Fireworks model accepts images.
+- `strict_tools=True` forwards strict function schemas exactly as documented by the Chat Completions API.
 
 ## Source
 
 `src/mtp/providers/fireworks_provider.py`
+
+Official references: [structured outputs](https://docs.fireworks.ai/structured-responses/structured-response-formatting), [Chat Completions API](https://docs.fireworks.ai/api-reference/post-chatcompletions).

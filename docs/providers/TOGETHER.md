@@ -77,7 +77,10 @@ print(reply)
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
 | `parallel_tool_calls` | `bool` | `True` | Allow parallel tool calls |
 | `max_tokens` | `int` | `4096` | Maximum response tokens |
+| `response_format` | `dict \| None` | `None` | Native JSON object/schema response format on supported models |
+| `input_modalities` | `list[str] \| None` | inferred | Explicit model input modalities when model metadata is known |
 | `client` | `Any \| None` | `None` | Pre-configured client instance |
+| `async_client` | `Any \| None` | `None` | Pre-configured async OpenAI-compatible client |
 
 ## Capabilities
 
@@ -85,11 +88,12 @@ print(reply)
 |---|---|
 | Tool calling | Yes (model-dependent) |
 | Parallel tool calls | Yes (configurable) |
-| Input modalities | text, image |
-| Streaming | Fallback |
+| Input modalities | text; image for known vision models or explicit override |
+| Streaming | Native |
 | Usage metrics | Rich |
 | Reasoning metadata | No |
-| Native async | No (uses thread fallback) |
+| Structured output | Native JSON object/schema when configured and supported by the model |
+| Native async | Yes |
 
 ## Recommended Models for Tool Calling
 
@@ -127,9 +131,13 @@ print(reply)
 
 - Together AI prefers the native `together` SDK when available, falls back to OpenAI client at `https://api.together.xyz/v1`.
 - Model IDs use the format `org/model-name` (e.g., `meta-llama/Llama-4-Scout-17B-16E-Instruct`).
+- Model capabilities vary. MTP infers vision only for recognized vision model names; pass `input_modalities` from Together's model catalog for other models.
+- Together documents structured output as model-dependent. Pass its documented `response_format` shape and also instruct the model to return JSON.
 - Widest model selection of any provider — great for comparing model performance on the same task.
 - Competitive pricing (~$0.18/1M tokens for 70B models).
 
 ## Source
 
 `src/mtp/providers/together_provider.py`
+
+Official references: [structured outputs](https://docs.together.ai/docs/inference/chat/structured-outputs), [function calling](https://docs.together.ai/docs/inference/function-calling/overview).

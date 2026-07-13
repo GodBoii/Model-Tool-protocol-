@@ -48,8 +48,7 @@ class _StreamingCompletions:
         (OpenAIToolCallingProvider, True),
         (OpenRouterToolCallingProvider, True),
         (TogetherAIToolCallingProvider, True),
-        # Fireworks includes usage in the terminal chunk by default.
-        (FireworksAIToolCallingProvider, False),
+        (FireworksAIToolCallingProvider, True),
         # Cerebras documents `stream`, but not OpenAI's `stream_options`.
         (CerebrasToolCallingProvider, False),
         (DeepSeekToolCallingProvider, True),
@@ -111,3 +110,4 @@ def test_fireworks_stream_preserves_finalize_request_options() -> None:
 
     assert completions.request["max_tokens"] == 123
     assert completions.request["response_format"] == response_format
+    assert completions.request["stream_options"] == {"include_usage": True}

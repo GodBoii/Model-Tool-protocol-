@@ -127,7 +127,10 @@ async def test_compatible_adapters_use_injected_native_async_client(
     assert planning_request["tools"][0]["function"]["name"] == "weather.get"
     assert ("parallel_tool_calls" in planning_request) is expects_parallel
     assert completions.requests[2]["stream"] is True
-    assert completions.requests[2]["stream_options"] == {"include_usage": True}
+    if provider_name == "cerebras":
+        assert "stream_options" not in completions.requests[2]
+    else:
+        assert completions.requests[2]["stream_options"] == {"include_usage": True}
     assert provider.capabilities().supports_native_async is True
 
 
@@ -150,4 +153,3 @@ async def test_deepseek_reasoner_async_preserves_unsupported_tool_restrictions()
     assert "tools" not in completions.requests[0]
     assert "tool_choice" not in completions.requests[0]
     assert "parallel_tool_calls" not in completions.requests[0]
-

@@ -9,6 +9,8 @@ from ..protocol import ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+    STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     USAGE_METRICS_RICH,
     extract_usage_metrics,
     aiter_openai_like_stream_content,
@@ -43,6 +45,7 @@ class CerebrasToolCallingProvider(ProviderAdapter):
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
+        response_format: dict[str, Any] | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -50,6 +53,7 @@ class CerebrasToolCallingProvider(ProviderAdapter):
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self.response_format = response_format
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
@@ -149,6 +153,8 @@ class CerebrasToolCallingProvider(ProviderAdapter):
             request_args["tool_choice"] = self.tool_choice
             # parallel_tool_calls supported by Cerebras SDK
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
 
         try:
             response = self._client.chat.completions.create(**request_args)
@@ -182,11 +188,14 @@ class CerebrasToolCallingProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         cerebras_messages = self._to_cerebras_messages(messages)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=cerebras_messages,
-            temperature=self.temperature,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": cerebras_messages,
+            "temperature": self.temperature,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = self._client.chat.completions.create(**request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
@@ -196,13 +205,19 @@ class CerebrasToolCallingProvider(ProviderAdapter):
     def finalize_stream(
         self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
     ) -> Iterator[str]:
+        if self.response_format and self.response_format.get("type") == "json_object":
+            yield self.finalize(messages, tool_results)
+            return
         self._last_stream_usage = None
-        stream = self._client.chat.completions.create(
-            model=self.model,
-            messages=self._to_cerebras_messages(messages),
-            temperature=self.temperature,
-            stream=True,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_cerebras_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        stream = self._client.chat.completions.create(**request_args)
 
         def remember_usage(usage: dict[str, int]) -> None:
             self._last_stream_usage = usage
@@ -210,16 +225,21 @@ class CerebrasToolCallingProvider(ProviderAdapter):
         yield from iter_openai_like_stream_content(stream, on_usage=remember_usage)
 
     def capabilities(self) -> ProviderCapabilities:
+        response_type = self.response_format.get("type") if self.response_format else None
+        structured = {
+            "json_object": STRUCTURED_OUTPUT_NATIVE_JSON_OBJECT,
+            "json_schema": STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
+        }.get(response_type, STRUCTURED_OUTPUT_CLIENT_VALIDATED)
         return ProviderCapabilities(
             provider="cerebras",
             supports_tool_calling=True,
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text"],
             supports_tool_media_output=False,
-            supports_finalize_streaming=True,
+            supports_finalize_streaming=response_type != "json_object",
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
-            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            structured_output_support=structured,
             supports_native_async=self._async_client is not None,
             allow_finalize_stream_fallback=True,
         )
@@ -239,6 +259,8 @@ class CerebrasToolCallingProvider(ProviderAdapter):
                 tool_choice=self.tool_choice,
                 parallel_tool_calls=self.parallel_tool_calls,
             )
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
         response = await self._acreate_completion(request_args)
         message = response.choices[0].message
         usage = extract_usage_metrics(response)
@@ -263,13 +285,14 @@ class CerebrasToolCallingProvider(ProviderAdapter):
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         if self._async_client is None:
             return await asyncio.to_thread(self.finalize, messages, tool_results)
-        response = await self._acreate_completion(
-            {
-                "model": self.model,
-                "messages": self._to_cerebras_messages(messages),
-                "temperature": self.temperature,
-            }
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_cerebras_messages(messages),
+            "temperature": self.temperature,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        response = await self._acreate_completion(request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):
@@ -279,20 +302,23 @@ class CerebrasToolCallingProvider(ProviderAdapter):
     async def afinalize_stream(
         self, messages: list[dict[str, Any]], tool_results: list[ToolResult]
     ) -> AsyncIterator[str]:
+        if self.response_format and self.response_format.get("type") == "json_object":
+            yield await self.afinalize(messages, tool_results)
+            return
         if self._async_client is None:
             for chunk in self.finalize_stream(messages, tool_results):
                 yield chunk
             return
         self._last_stream_usage = None
-        stream = await self._acreate_completion(
-            {
-                "model": self.model,
-                "messages": self._to_cerebras_messages(messages),
-                "temperature": self.temperature,
-                "stream": True,
-                "stream_options": {"include_usage": True},
-            }
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_cerebras_messages(messages),
+            "temperature": self.temperature,
+            "stream": True,
+        }
+        if self.response_format is not None:
+            request_args["response_format"] = self.response_format
+        stream = await self._acreate_completion(request_args)
 
         def remember_usage(usage: dict[str, int]) -> None:
             self._last_stream_usage = usage

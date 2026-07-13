@@ -165,7 +165,7 @@ async def test_compatible_anext_action_is_native_and_preserves_request_options(
                 "max_tokens": 432,
                 "response_format": {"type": "json_object"},
             },
-            False,
+            True,
         ),
     ],
 )

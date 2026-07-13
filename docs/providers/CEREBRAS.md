@@ -76,7 +76,9 @@ print(reply)
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
 | `parallel_tool_calls` | `bool` | `True` | Allow parallel tool calls |
+| `response_format` | `dict \| None` | `None` | Native `json_object` or strict `json_schema` response format |
 | `client` | `Any \| None` | `None` | Pre-configured `Cerebras` client instance |
+| `async_client` | `Any \| None` | `None` | Pre-configured `AsyncCerebras` client instance |
 
 ## Capabilities
 
@@ -85,10 +87,11 @@ print(reply)
 | Tool calling | Yes |
 | Parallel tool calls | Yes (configurable) |
 | Input modalities | text |
-| Streaming | Fallback |
+| Streaming | Native, except legacy `json_object` mode |
 | Usage metrics | Rich |
 | Reasoning metadata | No |
-| Native async | No (uses thread fallback) |
+| Structured output | Native JSON object/schema when configured |
+| Native async | Yes with `AsyncCerebras`; safe thread bridge for injected sync-only clients |
 
 ## Recommended Models
 
@@ -122,10 +125,14 @@ print(reply)
 
 ## Notes
 
-- Cerebras uses the native `cerebras-cloud-sdk` when available, falls back to the OpenAI client pointed at Cerebras endpoint.
+- Cerebras uses the native `cerebras-cloud-sdk`.
 - Text-only input (no image/audio/video support).
 - The `parallel_tool_calls` parameter is gracefully handled if the SDK version doesn't support it.
+- Cerebras documents legacy `json_object` as incompatible with streaming. MTP automatically uses one non-streaming completion for that mode.
+- Strict JSON schemas must follow Cerebras schema requirements, including an object root and `additionalProperties: false` for object definitions.
 
 ## Source
 
 `src/mtp/providers/cerebras_provider.py`
+
+Official references: [structured outputs](https://inference-docs.cerebras.ai/capabilities/structured-outputs), [Chat Completions API](https://inference-docs.cerebras.ai/api-reference/chat-completions).

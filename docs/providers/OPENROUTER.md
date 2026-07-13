@@ -79,19 +79,21 @@ print(reply)
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
 | `parallel_tool_calls` | `bool` | `True` | Allow supported routed models to request multiple tools |
 | `response_format` | `dict \| None` | `None` | Native `json_object` or `json_schema` response format |
+| `input_modalities` | `list[str] \| None` | `["text"]` | Modalities from the selected model's Models API metadata |
 | `client` | `Any \| None` | `None` | Pre-configured `openai.OpenAI` client instance |
+| `async_client` | `Any \| None` | `None` | Pre-configured `openai.AsyncOpenAI` client instance |
 
 ## Capabilities
 
 | Capability | Value |
 |---|---|
 | Tool calling | Yes (model-dependent) |
-| Parallel tool calls | No |
-| Input modalities | text, image, audio, video, file |
-| Streaming | Fallback |
+| Parallel tool calls | Yes when enabled and supported by the routed model |
+| Input modalities | text by default; model-specific explicit override |
+| Streaming | Native |
 | Usage metrics | Rich |
 | Reasoning metadata | No |
-| Native async | No (uses thread fallback) |
+| Native async | Yes |
 
 ## Recommended Models for Tool Calling
 
@@ -131,9 +133,12 @@ print(reply)
 - OpenRouter uses the OpenAI-compatible API at `https://openrouter.ai/api/v1`.
 - Model IDs use the format `provider/model-name` (e.g., `anthropic/claude-3.5-sonnet`).
 - Tool calling support and quality depends on the underlying model.
+- Modalities and supported request parameters also depend on the underlying model. Read `architecture.input_modalities` and `supported_parameters` from OpenRouter's Models API, then pass the modalities explicitly; MTP deliberately does not advertise gateway-wide audio/video/image support for every model.
 - Free models are available with `:free` suffix.
 - The `site_url` and `site_name` parameters help with OpenRouter rankings and attribution.
 
 ## Source
 
 `src/mtp/providers/openrouter_provider.py`
+
+Official references: [Models API and capability metadata](https://openrouter.ai/docs/guides/overview/models), [multimodal compatibility](https://openrouter.ai/docs/guides/overview/multimodal/overview), [API parameters](https://openrouter.ai/docs/api/reference/parameters).

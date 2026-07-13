@@ -40,6 +40,7 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         tool_choice: str | dict[str, Any] = "auto",
         parallel_tool_calls: bool = True,
         response_format: dict[str, Any] | None = None,
+        input_modalities: list[str] | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
@@ -48,6 +49,9 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self.response_format = response_format
+        # OpenRouter capabilities belong to the routed model, not the gateway.
+        # Stay text-only unless the caller supplies modalities from /api/v1/models.
+        self.input_modalities = sorted(set(input_modalities or ["text"]))
         self.site_url = site_url
         self.site_name = site_name
         self._api_key = api_key
@@ -370,8 +374,10 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
             provider="openrouter",
             supports_tool_calling=True,
             supports_parallel_tool_calls=bool(self.parallel_tool_calls),
-            input_modalities=["text", "image", "audio", "video", "file"],
-            supports_tool_media_output=True,
+            input_modalities=self.input_modalities,
+            supports_tool_media_output=any(
+                modality != "text" for modality in self.input_modalities
+            ),
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
             supports_reasoning_metadata=False,
