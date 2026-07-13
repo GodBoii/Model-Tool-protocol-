@@ -17,6 +17,7 @@ from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA,
     USAGE_METRICS_RICH,
     calls_to_dependency_batches,
     extract_refs,
@@ -38,13 +39,25 @@ class GeminiToolCallingProvider(ProviderAdapter):
         model: str = GEMINI_DEFAULT_MODEL,
         api_key: str | None = None,
         temperature: float = 0.0,
+        tool_choice: str | dict[str, Any] = "auto",
+        response_schema: Any | None = None,
+        response_json_schema: dict[str, Any] | None = None,
+        response_mime_type: str | None = None,
         client: Any | None = None,
         async_client: Any | None = None,
     ) -> None:
         self.model_name = model
         self.temperature = temperature
+        self.tool_choice = tool_choice
+        if response_schema is not None and response_json_schema is not None:
+            raise ValueError("Pass only one of response_schema or response_json_schema")
+        self.response_schema = response_schema
+        self.response_json_schema = response_json_schema
+        self.response_mime_type = response_mime_type
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
+        self._last_finalize_reasoning: str | None = None
+        self._last_stream_reasoning: str | None = None
         self._api_key = api_key
         self._client = client or self._make_client(api_key=api_key)
         self._async_client = async_client
@@ -122,11 +135,13 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
                 @staticmethod
                 def from_function_call(*, name: str, args: dict[str, Any]) -> "_Part":
-                    return _Part(function_call=SimpleNamespace(name=name, args=args))
+                    return _Part(function_call=SimpleNamespace(name=name, args=args, id=None))
 
                 @staticmethod
                 def from_function_response(*, name: str, response: dict[str, Any]) -> "_Part":
-                    return _Part(function_response=SimpleNamespace(name=name, response=response))
+                    return _Part(
+                        function_response=SimpleNamespace(name=name, response=response, id=None)
+                    )
 
             class _Content:
                 def __init__(self, *, role: str, parts: list[Any]) -> None:
@@ -158,6 +173,9 @@ class GeminiToolCallingProvider(ProviderAdapter):
                     except (TypeError, ValueError):
                         args = {}
                     item["function_call"] = {"name": name, "args": args}
+                    call_id = getattr(function_call, "id", None)
+                    if isinstance(call_id, str) and call_id:
+                        item["function_call"]["id"] = call_id
             thought = getattr(part, "thought", None)
             if isinstance(thought, bool):
                 item["thought"] = thought
@@ -182,6 +200,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 name=name,
                 args=args if isinstance(args, dict) else {},
             )
+            call_id = function_call.get("id")
+            restored_call = getattr(part, "function_call", None)
+            if isinstance(call_id, str) and call_id and restored_call is not None:
+                setattr(restored_call, "id", call_id)
         elif isinstance(item.get("text"), str):
             part = Part.from_text(text=item["text"])
         elif "thought" in item or "thought_signature" in item:
@@ -201,6 +223,21 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 # is preferable to silently dropping an SDK-compatible value.
                 signature = encoded_signature
             setattr(part, "thought_signature", signature)
+        return part
+
+    def _function_response_part(
+        self,
+        *,
+        Part: Any,
+        name: str,
+        response: dict[str, Any],
+        call_id: str | None,
+    ) -> Any:
+        """Build a response part while preserving Gemini's call correlation ID."""
+        part = Part.from_function_response(name=name, response=response)
+        function_response = getattr(part, "function_response", None)
+        if isinstance(call_id, str) and call_id and function_response is not None:
+            setattr(function_response, "id", call_id)
         return part
 
     def _guess_mime(self, name_or_path: str, default: str) -> str:
@@ -297,7 +334,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
             parts: list[Any] = []
             text = self._to_text(msg.get("content", ""))
             has_native_gemini_parts = role == "assistant" and isinstance(msg.get("gemini_parts"), list)
-            if text.strip() and not has_native_gemini_parts:
+            if role in {"user", "assistant"} and text.strip() and not has_native_gemini_parts:
                 parts.append(Part.from_text(text=text))
 
             if role == "user":
@@ -379,7 +416,15 @@ class GeminiToolCallingProvider(ProviderAdapter):
                     result_payload = tool_content
                 else:
                     result_payload = self._to_text(tool_content)
-                parts.append(Part.from_function_response(name=tool_name, response={"result": result_payload}))
+                call_id = msg.get("tool_call_id")
+                parts.append(
+                    self._function_response_part(
+                        Part=Part,
+                        name=tool_name,
+                        response={"result": result_payload},
+                        call_id=call_id if isinstance(call_id, str) else None,
+                    )
+                )
                 contents.append(Content(role="user", parts=parts))
                 continue
 
@@ -396,36 +441,50 @@ class GeminiToolCallingProvider(ProviderAdapter):
         return merged, system_instruction
 
     def _extract_response_text(self, response: Any) -> str:
-        direct_text = getattr(response, "text", None)
-        if isinstance(direct_text, str) and direct_text.strip():
-            return direct_text.strip()
         texts: list[str] = []
         candidates = getattr(response, "candidates", None) or []
         for candidate in candidates:
             content = getattr(candidate, "content", None)
             parts = getattr(content, "parts", None) or []
             for part in parts:
+                if getattr(part, "thought", False) is True:
+                    continue
                 part_text = getattr(part, "text", None)
                 if isinstance(part_text, str) and part_text:
                     texts.append(part_text)
-        return "\n".join(texts).strip()
+        if texts:
+            return "\n".join(texts).strip()
+        direct_text = getattr(response, "text", None)
+        return direct_text.strip() if isinstance(direct_text, str) else ""
 
-    def _extract_stream_text(self, response: Any) -> str:
-        """Extract a delta without stripping meaningful whitespace."""
-        try:
-            direct_text = getattr(response, "text", None)
-        except (AttributeError, TypeError, ValueError):
-            direct_text = None
-        if isinstance(direct_text, str):
-            return direct_text
+    def _extract_reasoning_text(self, response: Any) -> str:
         texts: list[str] = []
         for candidate in getattr(response, "candidates", None) or []:
             content = getattr(candidate, "content", None)
             for part in getattr(content, "parts", None) or []:
+                text = getattr(part, "text", None)
+                if getattr(part, "thought", False) is True and isinstance(text, str) and text:
+                    texts.append(text)
+        return "".join(texts).strip()
+
+    def _extract_stream_text(self, response: Any) -> str:
+        """Extract a delta without stripping meaningful whitespace."""
+        texts: list[str] = []
+        for candidate in getattr(response, "candidates", None) or []:
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                if getattr(part, "thought", False) is True:
+                    continue
                 part_text = getattr(part, "text", None)
                 if isinstance(part_text, str):
                     texts.append(part_text)
-        return "".join(texts)
+        if texts:
+            return "".join(texts)
+        try:
+            direct_text = getattr(response, "text", None)
+        except (AttributeError, TypeError, ValueError):
+            direct_text = None
+        return direct_text if isinstance(direct_text, str) else ""
 
     def _is_ref_schema(self, schema: dict[str, Any]) -> bool:
         props = schema.get("properties")
@@ -475,6 +534,44 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
         return sanitized
 
+    def _function_calling_config(self) -> dict[str, Any]:
+        """Translate MTP's common tool-choice forms to google-genai config."""
+        choice = self.tool_choice
+        if isinstance(choice, str):
+            normalized = choice.strip().lower()
+            modes = {
+                "auto": "AUTO",
+                "none": "NONE",
+                "required": "ANY",
+                "any": "ANY",
+                "validated": "VALIDATED",
+            }
+            if normalized in modes:
+                return {"mode": modes[normalized]}
+            if normalized:
+                return {"mode": "ANY", "allowed_function_names": [choice]}
+        elif isinstance(choice, dict):
+            function = choice.get("function")
+            name = function.get("name") if isinstance(function, dict) else choice.get("name")
+            if isinstance(name, str) and name:
+                return {"mode": "ANY", "allowed_function_names": [name]}
+        raise ValueError(
+            "Gemini tool_choice must be auto, none, required/any, validated, "
+            "a function name, or a function-selection mapping"
+        )
+
+    def _base_config(self) -> dict[str, Any]:
+        config: dict[str, Any] = {"temperature": self.temperature}
+        if self.response_schema is not None:
+            config["response_schema"] = self.response_schema
+        if self.response_json_schema is not None:
+            config["response_json_schema"] = self.response_json_schema
+        if self.response_schema is not None or self.response_json_schema is not None:
+            config["response_mime_type"] = self.response_mime_type or "application/json"
+        elif self.response_mime_type is not None:
+            config["response_mime_type"] = self.response_mime_type
+        return config
+
     def _action_request(
         self, messages: list[dict[str, Any]], tools: list[ToolSpec]
     ) -> dict[str, Any]:
@@ -493,11 +590,15 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 })
             genai_tools = [{"function_declarations": functions}]
 
-        config: dict[str, Any] = {"temperature": self.temperature}
+        config = self._base_config()
         if system_instruction:
             config["system_instruction"] = system_instruction
         if genai_tools:
             config["tools"] = genai_tools
+            config["automatic_function_calling"] = {"disable": True}
+            config["tool_config"] = {
+                "function_calling_config": self._function_calling_config()
+            }
         return {"model": self.model_name, "contents": contents, "config": config}
 
     def _action_from_response(self, response: Any) -> AgentAction:
@@ -505,6 +606,9 @@ class GeminiToolCallingProvider(ProviderAdapter):
         action_meta: dict[str, Any] = {"provider": "gemini", "model": self.model_name}
         if usage:
             action_meta["usage"] = usage
+        reasoning = self._extract_reasoning_text(response)
+        if reasoning:
+            action_meta["reasoning"] = reasoning
 
         calls: list[ToolCall] = []
         serialized_tool_calls: list[dict[str, Any]] = []
@@ -517,7 +621,12 @@ class GeminiToolCallingProvider(ProviderAdapter):
             for idx, part in enumerate(response_parts):
                 fn = getattr(part, "function_call", None)
                 if fn:
-                    call_id = f"gemini_call_{idx}"
+                    native_call_id = getattr(fn, "id", None)
+                    call_id = (
+                        native_call_id
+                        if isinstance(native_call_id, str) and native_call_id
+                        else f"gemini_call_{idx}"
+                    )
                     id_by_index[idx] = call_id
                     raw_fn_args = getattr(fn, "args", None)
                     try:
@@ -572,7 +681,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
     def _finalize_request(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         contents, system_instruction = self._to_gemini_payload(messages)
-        config: dict[str, Any] = {"temperature": self.temperature}
+        config = self._base_config()
         if system_instruction:
             config["system_instruction"] = system_instruction
         return {"model": self.model_name, "contents": contents, "config": config}
@@ -583,8 +692,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         del tool_results
+        self._last_finalize_reasoning = None
         response = self._client.models.generate_content(**self._finalize_request(messages))
         self._last_finalize_usage = extract_usage_metrics(response) or None
+        self._last_finalize_reasoning = self._extract_reasoning_text(response) or None
         text = self._extract_response_text(response)
         return text or "Done."
 
@@ -594,6 +705,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         """Yield native ``google-genai`` text chunks and retain final usage."""
         del tool_results
         self._last_stream_usage = None
+        self._last_stream_reasoning = None
         # Avoid leaking usage from an earlier non-streaming request if a stream
         # ends without a usage-bearing final chunk.
         self._last_finalize_usage = None
@@ -602,11 +714,19 @@ class GeminiToolCallingProvider(ProviderAdapter):
             usage = extract_usage_metrics(chunk)
             if usage:
                 self._last_stream_usage = usage
+            reasoning = self._extract_reasoning_text(chunk)
+            if reasoning:
+                self._last_stream_reasoning = (self._last_stream_reasoning or "") + reasoning
             text = self._extract_stream_text(chunk)
             if text:
                 yield text
 
     def capabilities(self) -> ProviderCapabilities:
+        structured_output = (
+            STRUCTURED_OUTPUT_NATIVE_JSON_SCHEMA
+            if self.response_schema is not None or self.response_json_schema is not None
+            else STRUCTURED_OUTPUT_CLIENT_VALIDATED
+        )
         return ProviderCapabilities(
             provider="gemini",
             supports_tool_calling=True,
@@ -615,8 +735,8 @@ class GeminiToolCallingProvider(ProviderAdapter):
             supports_tool_media_output=True,
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,
-            supports_reasoning_metadata=False,
-            structured_output_support=STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+            supports_reasoning_metadata=True,
+            structured_output_support=structured_output,
             supports_native_async=True,
             allow_finalize_stream_fallback=True,
         )
@@ -629,10 +749,12 @@ class GeminiToolCallingProvider(ProviderAdapter):
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         del tool_results
+        self._last_finalize_reasoning = None
         response = await self._get_async_client().models.generate_content(
             **self._finalize_request(messages)
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
+        self._last_finalize_reasoning = self._extract_reasoning_text(response) or None
         text = self._extract_response_text(response)
         return text or "Done."
 
@@ -642,6 +764,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         """Yield Gemini's native async stream without occupying a worker thread."""
         del tool_results
         self._last_stream_usage = None
+        self._last_stream_reasoning = None
         self._last_finalize_usage = None
         stream = self._get_async_client().models.generate_content_stream(
             **self._finalize_request(messages)
@@ -652,6 +775,9 @@ class GeminiToolCallingProvider(ProviderAdapter):
             usage = extract_usage_metrics(chunk)
             if usage:
                 self._last_stream_usage = usage
+            reasoning = self._extract_reasoning_text(chunk)
+            if reasoning:
+                self._last_stream_reasoning = (self._last_stream_reasoning or "") + reasoning
             text = self._extract_stream_text(chunk)
             if text:
                 yield text

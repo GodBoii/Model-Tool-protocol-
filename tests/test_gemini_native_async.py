@@ -149,7 +149,16 @@ async def test_gemini_afinalize_stream_is_native_and_records_final_usage() -> No
     models = _AsyncModels(
         chunks=[
             SimpleNamespace(text="Hello ", usage_metadata=None),
-            _response(text="async", parts=(), prompt=6, output=2, reasoning=0),
+            _response(
+                text="async",
+                parts=[
+                    SimpleNamespace(text="checking", thought=True),
+                    SimpleNamespace(text="async", thought=False),
+                ],
+                prompt=6,
+                output=2,
+                reasoning=0,
+            ),
         ]
     )
     provider = _provider(models)
@@ -170,5 +179,5 @@ async def test_gemini_afinalize_stream_is_native_and_records_final_usage() -> No
         "total_tokens": 8,
         "reasoning_tokens": 0,
     }
+    assert provider._last_stream_reasoning == "checking"
     assert models.requests[0][0] == "generate_content_stream"
-

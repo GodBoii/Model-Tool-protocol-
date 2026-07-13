@@ -74,19 +74,25 @@ print(reply)
 | `model` | `str` | `"gemini-3.5-flash"` | Gemini model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `GEMINI_API_KEY` env var) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
+| `tool_choice` | `str \| dict` | `"auto"` | Function mode: `"auto"`, `"none"`, `"required"`/`"any"`, `"validated"`, a function name, or a function selector |
+| `response_schema` | `Any \| None` | `None` | Native Google schema or Pydantic model for structured output |
+| `response_json_schema` | `dict \| None` | `None` | Standard JSON Schema for native structured output |
+| `response_mime_type` | `str \| None` | `None` | Response MIME type; defaults to `application/json` when a schema is set |
 | `client` | `Any \| None` | `None` | Pre-configured `google.genai.Client` instance |
+| `async_client` | `Any \| None` | `None` | Optional native async client (otherwise `client.aio` is used) |
 
 ## Capabilities
 
 | Capability | Value |
 |---|---|
 | Tool calling | Yes |
-| Parallel tool calls | No |
+| Parallel tool calls | Yes, correlated with Gemini call IDs |
 | Input modalities | text, image, audio, video, file |
-| Streaming | Fallback |
+| Streaming | Native sync and async final streaming |
 | Usage metrics | Rich |
-| Reasoning metadata | No |
-| Native async | No (uses thread fallback) |
+| Reasoning metadata | Yes, when Gemini returns thought parts |
+| Native async | Yes (`google.genai.Client.aio`) |
+| Structured output | Native JSON Schema / Google schema |
 
 ## Recommended Models
 
@@ -120,6 +126,39 @@ reply = agent.run_loop({
 })
 ```
 
+## Function Calling Controls
+
+MTP disables the Google SDK's automatic Python-function execution because MTP executes and
+polices tools itself. `tool_choice` is translated to Gemini's `FunctionCallingConfig`:
+
+```python
+provider = Gemini(tool_choice="required")       # require a declared function
+provider = Gemini(tool_choice="lookup_order")   # require this function
+provider = Gemini(tool_choice="none")           # disable function calls
+```
+
+Gemini's native function-call IDs are preserved in session history and copied into each
+function response. This correlates out-of-order parallel results, including multiple calls
+to the same function name.
+
+## Structured Output
+
+Use standard JSON Schema with `response_json_schema`, or a Google/Pydantic schema with
+`response_schema`:
+
+```python
+provider = Gemini(
+    response_json_schema={
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    }
+)
+```
+
+Do not set both schema parameters. MTP automatically requests `application/json` unless
+`response_mime_type` is explicitly supplied.
+
 ## Full Example
 
 ```python
@@ -147,8 +186,14 @@ print(reply)
 
 - Gemini uses `function_declarations` in tools (not the OpenAI `function` wrapper format). MTP handles the translation automatically.
 - Tool schemas are sanitized to remove unsupported JSON Schema keys before sending to Gemini.
-- Parallel tool calls are not supported by Gemini's API as of now.
+- Thinking-model thought signatures and function-call IDs are round-tripped in their
+  original parts so multi-turn function calling remains valid.
+- Input modality support depends on the selected Gemini model.
 
 ## Source
 
 `src/mtp/providers/gemini_provider.py`
+
+Official references: [Google Gen AI Python SDK](https://googleapis.github.io/python-genai/),
+[Gemini function calling](https://ai.google.dev/gemini-api/docs/function-calling), and
+[Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output).
