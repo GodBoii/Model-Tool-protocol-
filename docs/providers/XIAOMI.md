@@ -79,6 +79,7 @@ print(reply)
 | `final_thinking_mode` | `str \| None` | `"enabled"` | Thinking mode for finalization: `"adaptive"`, `"enabled"`, `"disabled"`, or `None` |
 | `timeout_seconds` | `float` | `60.0` | Request timeout passed to the OpenAI-compatible client |
 | `client` | `Any \| None` | `None` | Pre-configured `openai.OpenAI` client instance |
+| `async_client` | `Any \| None` | `None` | Pre-configured `openai.AsyncOpenAI` client instance; otherwise created lazily |
 
 ## Capabilities
 
@@ -90,7 +91,7 @@ print(reply)
 | Streaming | Yes (both `stream_next_action` and `finalize_stream`) |
 | Usage metrics | Rich |
 | Reasoning metadata | Yes |
-| Native async | No (uses thread fallback) |
+| Native async | Yes (planning, planning streams, finalization, and final streams) |
 
 ## Thinking Modes
 
