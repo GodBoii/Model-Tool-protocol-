@@ -31,29 +31,38 @@ class MTPRunResult:
     thinking_text: str
 
 
+# Below this length a repeated payload is treated as a real repeated token
+# ("ha" + "ha"), not as a provider resending its whole answer.
+_REPLAY_MIN_CHARS = 32
+
+
 def _merge_stream_text(existing: str, incoming: str) -> str:
-    """Append streamed text while avoiding obvious duplicate full-payload replays."""
+    """Append a streamed delta to ``existing``.
+
+    Streams send deltas, so the default is plain concatenation. The only
+    exception is a provider replaying the full accumulated payload: an exact
+    repeat, or a cumulative snapshot that starts with everything seen so far.
+    Both are only recognised once ``existing`` is long enough that a false
+    match on ordinary tokens is implausible.
+    """
     if not incoming:
         return existing
     if not existing:
         return incoming
-    if incoming in existing:
-        return existing
-    if existing in incoming:
-        return incoming
-
-    max_overlap = min(len(existing), len(incoming), 4000)
-    for size in range(max_overlap, 0, -1):
-        if existing.endswith(incoming[:size]):
-            return existing + incoming[size:]
+    if len(existing) >= _REPLAY_MIN_CHARS:
+        if incoming == existing:
+            return existing
+        if incoming.startswith(existing):
+            return incoming
     return existing + incoming
 
 
 def _append_unique_text(chunks: list[str], chunk: str) -> None:
+    """Merge ``chunk`` into a single-element accumulator list."""
     if not chunk:
         return
-    merged = _merge_stream_text("".join(chunks), chunk)
-    chunks[:] = [merged]
+    existing = chunks[0] if chunks else ""
+    chunks[:] = [_merge_stream_text(existing, chunk)]
 
 
 def _format_tool_result_preview(tool_name: str, payload: Any) -> str:
