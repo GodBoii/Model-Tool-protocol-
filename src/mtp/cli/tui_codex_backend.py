@@ -18,7 +18,7 @@ import tomllib
 from typing import Any, Callable
 
 
-_REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
+_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gpt-5.5": 400_000,
     "gpt-5.4": 400_000,
@@ -65,6 +65,9 @@ class CodexAccountInfo:
     usage_lines: list[str]
     limit_warnings: list[str]
     quota_note: str
+    plan_type: str | None = None
+    subscription_status: str = "unknown"
+    cli_version: str | None = None
 
 
 class CodexConfigIssue(str, Enum):
@@ -198,7 +201,8 @@ def build_codex_account_info(
     config_path: Path | None = None,
     last_usage_lines: list[str] | None = None,
     last_warnings: list[str] | None = None,
-) -> str:
+    live: bool = False,
+) -> CodexAccountInfo:
     auth_file = auth_path or codex_auth_path()
     config_file = config_path or codex_config_path()
     auth = _read_auth(auth_file)
@@ -216,6 +220,12 @@ def build_codex_account_info(
     access_exp = _format_epoch(access_claims.get("exp"))
     id_exp = _format_epoch(id_claims.get("exp"))
     masked_account = _mask_identifier(account_id)
+    auth_claims = id_claims.get("https://api.openai.com/auth") or access_claims.get("https://api.openai.com/auth")
+    auth_claims = auth_claims if isinstance(auth_claims, dict) else {}
+    plan_type = auth_claims.get("chatgpt_plan_type")
+    subscription_status = "cached credentials" if plan_type else "unknown"
+    cli_version = None
+    quota_note = "Live subscription limits have not been fetched. Use /codex account."
 
     config_values: dict[str, Any] = {}
     for key in ("model", "model_reasoning_effort", "approval_policy", "sandbox_mode", "service_tier", "web_search"):
@@ -234,6 +244,29 @@ def build_codex_account_info(
         and line.strip()
         and any(token in line.lower() for token in ("usage", "rate", "limit", "quota", "credit"))
     ]
+    if live and codex_bin:
+        from .tui_codex_metadata import CodexMetadataError, read_codex_account
+
+        try:
+            version = subprocess.run([codex_bin, "--version"], capture_output=True, text=True, timeout=5)
+            cli_version = version.stdout.strip() if version.returncode == 0 else None
+            account_result, limits, limit_error = read_codex_account(codex_bin)
+            account = account_result.get("account")
+            if isinstance(account, dict):
+                auth_mode = account.get("type") or auth_mode
+                email = account.get("email") or email
+                plan_type = account.get("planType")
+                subscription_status = "signed in" if plan_type else "API credentials" if auth_mode == "apiKey" else "signed in; plan unavailable"
+            else:
+                auth_mode, plan_type, subscription_status = "none", None, "not signed in"
+            usage = [*format_codex_rate_limits(limits), *usage]
+            quota_note = limit_error or (
+                "Subscription windows fetched from Codex."
+                if limits else "Subscription windows are unavailable for this authentication mode."
+            )
+        except (OSError, CodexMetadataError, subprocess.SubprocessError) as exc:
+            # Cached profile remains useful when disconnected; mark it explicitly.
+            quota_note = f"Live Codex account unavailable: {type(exc).__name__}. Cached profile shown."
     return CodexAccountInfo(
         codex_bin=codex_bin,
         auth_file=auth_file,
@@ -248,8 +281,42 @@ def build_codex_account_info(
         config_values=config_values,
         usage_lines=usage,
         limit_warnings=limit_warnings[-3:],
-        quota_note="Codex CLI does not expose a separate quota/rate-limit endpoint here; live quota errors and JSON event usage are shown after runs.",
+        quota_note=quota_note,
+        plan_type=str(plan_type) if plan_type else None,
+        subscription_status=subscription_status,
+        cli_version=cli_version,
     )
+
+
+def format_codex_rate_limits(payload: dict[str, Any]) -> list[str]:
+    """Show real subscription windows, preserving unknown values."""
+    buckets = payload.get("rateLimitsByLimitId")
+    if not isinstance(buckets, dict) or not buckets:
+        legacy = payload.get("rateLimits")
+        buckets = {"codex": legacy} if isinstance(legacy, dict) else {}
+    lines = []
+    for key, bucket in buckets.items():
+        if not isinstance(bucket, dict):
+            continue
+        label = bucket.get("limitName") or bucket.get("limitId") or key
+        for name in ("primary", "secondary"):
+            window = bucket.get(name)
+            if not isinstance(window, dict):
+                continue
+            used = window.get("usedPercent")
+            remaining = f"{max(0, min(100, 100 - used)):g}%" if isinstance(used, (int, float)) and not isinstance(used, bool) else "unknown"
+            duration = window.get("windowDurationMins")
+            reset = _format_epoch(window.get("resetsAt")) or "unknown"
+            lines.append(f"{label}.{name}={remaining} remaining; window={duration if duration is not None else 'unknown'} min; resets={reset}")
+        credits = bucket.get("credits")
+        if isinstance(credits, dict):
+            if credits.get("unlimited") is True:
+                lines.append(f"{label}.credits=unlimited")
+            elif credits.get("balance") is not None:
+                lines.append(f"{label}.credits={credits['balance']}")
+        if bucket.get("rateLimitReachedType"):
+            lines.append(f"{label}.limit_reached={bucket['rateLimitReachedType']}")
+    return lines
 
 
 def build_codex_account_summary(
@@ -273,6 +340,8 @@ def build_codex_account_summary(
     lines.append(f"auth_file={info.auth_file}")
     lines.append(f"config_file={info.config_file}")
     lines.append(f"auth_mode={info.auth_mode}")
+    lines.append(f"subscription={info.plan_type or 'unknown'}")
+    lines.append(f"subscription_status={info.subscription_status}")
     lines.append(f"email={info.email}")
     if info.name:
         lines.append(f"name={info.name}")
@@ -374,8 +443,11 @@ def _coerce_int(value: Any) -> int | None:
 
 
 def _context_usage_lines(model_name: str | None, request_tokens: int | None) -> list[str]:
+    from .tui_codex_metadata import get_codex_model
+
     normalized_model = (model_name or "").strip()
-    window = _MODEL_CONTEXT_WINDOWS.get(normalized_model)
+    model = get_codex_model(normalized_model)
+    window = model.context_window if model and model.context_window else _MODEL_CONTEXT_WINDOWS.get(normalized_model)
     if window is None:
         return [f"context_window={_format_int(request_tokens)} tokens / window=unknown ({model_name})"]
     if request_tokens is None:
@@ -844,6 +916,20 @@ def _emit_codex_live_line(raw_line: str, emitted: dict[str, Any], emit: Callable
         if not emitted.get("assistant_started"):
             emitted["assistant_started"] = True
             emit("status", "assistant is drafting the response")
+        delta = event.get("delta") if event_type.endswith(".delta") else event.get("text")
+        if isinstance(delta, str) and delta:
+            emitted["assistant_text"] = str(emitted.get("assistant_text") or "") + delta
+            emit("text", delta)
+        return
+    item = event.get("item")
+    if event_type == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message":
+        text = item.get("text")
+        if isinstance(text, str) and text:
+            prior = str(emitted.get("assistant_text") or "")
+            if text != prior:
+                delta = text[len(prior):] if prior and text.startswith(prior) else ("\n\n" if prior else "") + text
+                emit("text", delta)
+            emitted["assistant_text"] = text
         return
     if tool_name:
         key = tool_key or f"{tool_name}::{event_type}"
@@ -980,8 +1066,8 @@ def _build_codex_exec_command(
     
     if model:
         cmd.extend(["-m", model])
-    if reasoning_effort in _REASONING_EFFORTS and reasoning_effort != "none":
-        cmd.extend(["-c", f'reasoning_effort="{reasoning_effort}"'])
+    if reasoning_effort in _REASONING_EFFORTS:
+        cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     cmd.append(prompt)
     return cmd
 

@@ -278,6 +278,15 @@ def _run_codex(
         )
 
     conversation_history = [(t.prompt, t.history_reply()) for t in state.transcript]
+    from .tui_codex_metadata import get_codex_model
+
+    model_info = get_codex_model(state.codex_model)
+    if model_info and state.reasoning_effort not in model_info.efforts:
+        return ChatResult(
+            text="", tool_events=[], attachments=[], warnings=[], usage_lines=[],
+            status=TURN_FAILED,
+            error=f"Reasoning {state.reasoning_effort!r} is unavailable for {model_info.model}. Use /reasoning with: {', '.join(model_info.efforts)}.",
+        )
     codex_result = codex_backend.run_codex_prompt(
         codex_bin=codex_bin,
         cwd=state.cwd,

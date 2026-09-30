@@ -40,6 +40,8 @@ COMMANDS: list[tuple[str, str, str, str]] = [
     ("Reasoning: Medium", "Set reasoning effort to medium", "reasoning", "medium"),
     ("Reasoning: High", "Set reasoning effort to high", "reasoning", "high"),
     ("Reasoning: XHigh", "Set reasoning effort to extra high", "reasoning", "xhigh"),
+    ("Reasoning: Max", "Set maximum reasoning when supported", "reasoning", "max"),
+    ("Reasoning: Ultra", "Set ultra reasoning when supported", "reasoning", "ultra"),
     ("Thinking", "Open the thinking/reasoning control", "thinking", ""),
     # Mode
     ("Mode: Plan", "Set harness mode to plan", "mode", "plan"),
@@ -57,6 +59,7 @@ COMMANDS: list[tuple[str, str, str, str]] = [
     ("Codex Logout", "Remove stored Codex credentials", "codex", "logout"),
     ("Codex Status", "Show Codex login status", "codex", "status"),
     ("Codex Account", "Show Codex account, profile, and usage summary", "codex", "account"),
+    ("Codex Models", "Refresh Codex models and supported reasoning levels", "codex", "models"),
     ("Codex Doctor", "Run Codex diagnostics", "codex", "doctor"),
     ("Codex Repair Config", "Repair known Codex config problems", "codex", "repair-config"),
 ]

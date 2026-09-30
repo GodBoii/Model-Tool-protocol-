@@ -48,11 +48,15 @@ def _load_provider_entry_for_state(state: TUIState) -> dict:
 
 def get_thinking_capability(state: TUIState) -> ThinkingCapability | None:
     if state.backend == "codex":
-        current = state.reasoning_effort if state.reasoning_effort in REASONING_EFFORTS else "medium"
+        from .tui_codex_metadata import get_codex_model
+
+        model = get_codex_model(state.codex_model)
+        efforts = model.efforts if model else REASONING_EFFORTS
+        current = state.reasoning_effort if state.reasoning_effort in efforts else model.default_effort if model else "medium"
         return ThinkingCapability(
             backend="codex",
             label="reasoning",
-            options=tuple(ThinkingOption(value=name, label=name) for name in REASONING_EFFORTS),
+            options=tuple(ThinkingOption(value=name, label=name) for name in efforts),
             current_value=current,
             current_label=current,
         )
@@ -84,7 +88,8 @@ def apply_thinking_value(state: TUIState, value: str, *, persist: bool = True) -
     """Apply a reasoning/thinking choice. With ``persist=False`` the caller saves."""
     if state.backend == "codex":
         resolved = resolve_reasoning(value)
-        if resolved is None:
+        capability = get_thinking_capability(state)
+        if resolved is None or capability is None or resolved not in {option.value for option in capability.options}:
             raise ValueError("Unsupported reasoning level")
         state.reasoning_effort = resolved
         if persist:

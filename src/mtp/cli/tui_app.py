@@ -29,7 +29,6 @@ from .tui_state import (
     TUIState, ChatResult, TranscriptTurn, active_model_name,
     new_session_id, generate_session_title_from_prompt,
     resolve_model,
-    MODEL_PRESETS, REASONING_SHORTCUTS,
 )
 from .tui_settings import pop_settings_recoveries
 from .tui_shortcuts import SHORTCUTS
@@ -162,6 +161,7 @@ class MTPApp(App):
         self._memory_refresh_queued = False
         self._memory_launch_scan_done = False
         self._backend_switch_seq = 0
+        self._codex_catalog_source = "Fallback catalog; discovery pending"
         self.session_saver = SessionSaver(
             on_error=lambda exc: self.post_message(SessionSaveFailed(exc)),
         )
@@ -381,6 +381,8 @@ class MTPApp(App):
         self._show_boot_info()
         # Typing works as soon as the first frame is up; no fixed delay.
         self.call_after_refresh(self._focus_input)
+        if self._state.codex_bin:
+            self.call_after_refresh(self._refresh_codex_models)
         # Memory status touches sqlite; start it after the first paint.
         self.call_after_refresh(
             lambda: self._request_background_memory_refresh(reason="startup", prefer_full_scan=True)
@@ -832,8 +834,7 @@ class MTPApp(App):
             options = ["codex"] + sorted(SUPPORTED_TUI_PROVIDERS)
             matches = [p for p in options if partial in p.lower()]
         elif cmd == "model":
-            from .tui_state import MODEL_PRESETS
-            options = [m for m, d in MODEL_PRESETS]
+            options = self._model_choices()
             matches = [m for m in options if partial in m.lower()]
         elif cmd in ("load", "sessions", "open"):
             signature = file_signature(self._state.session_store.file_path)
@@ -848,9 +849,9 @@ class MTPApp(App):
         elif cmd == "mode":
             from .tui_harness_policy import HARNESS_MODES
             matches = [m for m in HARNESS_MODES if partial in m.lower()]
-        elif cmd == "reasoning":
-            from .tui_state import REASONING_SHORTCUTS
-            matches = [m for m in REASONING_SHORTCUTS.values() if partial in m.lower()]
+        elif cmd in {"reasoning", "thinking"}:
+            capability = get_thinking_capability(self._state)
+            matches = [option.label for option in capability.options if partial in option.label.lower()] if capability else []
         elif cmd == "details":
             options = ["toggle", "on", "off"]
             matches = [m for m in options if partial in m.lower()]
@@ -870,7 +871,7 @@ class MTPApp(App):
                 matches = [m for m in ["memory", "status"] if m.startswith(normalized)]
         elif cmd == "codex":
             normalized = partial.strip().lower()
-            options = ["login", "logout", "status", "account", "doctor", "repair-config"]
+            options = ["login", "logout", "status", "account", "models", "doctor", "repair-config"]
             matches = [item for item in options if item.startswith(normalized)]
             
         if not matches:
@@ -884,7 +885,7 @@ class MTPApp(App):
     def _command_supports_arguments(cmd: str) -> bool:
         return cmd in {
             "backend", "model", "load", "sessions", "open", "mode",
-            "reasoning", "details", "sandbox", "codebase", "codex",
+            "reasoning", "thinking", "details", "sandbox", "codebase", "codex",
         }
 
     def _show_next_command_suggestions(self, input_area: InputArea) -> None:
@@ -930,8 +931,8 @@ class MTPApp(App):
             needs_more = cmd == "codebase" and val == "memory"
             # Replace the current argument. Only codebase memory has a second
             # picker slot; a completed single argument must never be appended.
-            base = parts[0] + " "
-            if cmd == "codebase" and len(parts) >= 2 and parts[1] == "memory" and val != "memory":
+            base = ("/load" if cmd == "sessions" else parts[0]) + " "
+            if cmd == "codebase" and len(parts) >= 2 and parts[1].lower() == "memory" and val != "memory":
                 base += "memory "
             new_line = base + val
             if needs_more:
@@ -1750,6 +1751,40 @@ class MTPApp(App):
 
         self.run_worker(job(), name=f"command:{label}", group=_COMMAND_WORKER_GROUP, exclusive=False, exit_on_error=False)
 
+    def _model_choices(self) -> list[str]:
+        if self._state.backend == "codex":
+            from .tui_codex_metadata import get_codex_models
+
+            return [item.model for item in get_codex_models()]
+        from .tui_settings import get_provider_models, load_provider_settings, provider_settings_path
+
+        settings = load_provider_settings(provider_settings_path(self._state.session_store.file_path))
+        return get_provider_models(settings, self._state.backend)
+
+    def _refresh_codex_models(self, *, show: bool = False) -> None:
+        from .tui_codex_backend import detect_codex_bin
+        from .tui_codex_metadata import refresh_codex_models, get_codex_model
+
+        codex_bin = self._state.codex_bin or detect_codex_bin()
+        if not codex_bin:
+            if show:
+                self._write_cmd_log("Codex CLI not found. Install: npm install -g @openai/codex")
+            return
+
+        def ready(source: str) -> None:
+            self._codex_catalog_source = source
+            for conv in self._conversations:
+                model = get_codex_model(conv.state.codex_model)
+                if conv.state.backend == "codex" and model and conv.state.reasoning_effort not in model.efforts:
+                    conv.state.reasoning_effort = model.default_effort
+                    self._save_session(conv)
+            self._refresh_status_bar()
+            self._update_suggestions(self.query_one(InputArea))
+            if show:
+                self._write_cmd_log(self._build_models_text())
+
+        self._run_blocking_command("Codex models", lambda: refresh_codex_models(codex_bin), ready)
+
     def _start_backend_switch(self, provider_name: str, chat_log: Any) -> None:
         self._backend_switch_seq += 1
         seq = self._backend_switch_seq
@@ -1860,8 +1895,8 @@ class MTPApp(App):
         parts = shlex.split(arg or "", posix=(os.name != "nt"))
         action = parts[0].lower() if parts else ""
         extra_args = parts[1:]
-        if action not in {"login", "logout", "status", "account", "doctor", "repair-config"}:
-            chat_log.add_command_result("Usage: /codex <login|logout|status|account|doctor|repair-config> [codex CLI flags]")
+        if action not in {"login", "logout", "status", "account", "models", "doctor", "repair-config"}:
+            chat_log.add_command_result("Usage: /codex <login|logout|status|account|models|doctor|repair-config> [codex CLI flags]")
             return
 
         codex_bin = self._state.codex_bin or codex_backend.detect_codex_bin()
@@ -1869,6 +1904,9 @@ class MTPApp(App):
             chat_log.add_command_result("Codex CLI not found. Install: npm install -g @openai/codex")
             return
         self._state.codex_bin = codex_bin
+        if action == "models":
+            self._refresh_codex_models(show=True)
+            return
 
         def _format_result(result: Any, *, fallback: str) -> str:
             output = str(getattr(result, "output", "") or "").strip()
@@ -1886,7 +1924,7 @@ class MTPApp(App):
             return fallback
 
         try:
-            if action == "status":
+            if action == "status" and extra_args:
                 chat_log.add_command_result("Checking Codex login status...")
 
                 def show_status(result: Any) -> None:
@@ -1912,7 +1950,7 @@ class MTPApp(App):
                 )
                 return
 
-            if action == "account":
+            if action in {"account", "status"}:
                 chat_log.add_command_result("Loading Codex account...")
                 usage_lines = list(self._state.last_usage_lines)
                 last_warnings = list(self._state.last_warnings)
@@ -1923,6 +1961,7 @@ class MTPApp(App):
                         codex_bin=codex_bin,
                         last_usage_lines=usage_lines,
                         last_warnings=last_warnings,
+                        live=True,
                     )
                     return status, info
 
@@ -1958,6 +1997,7 @@ class MTPApp(App):
             self._save_session()
             if result.return_code == 0:
                 chat_log.add_command_result(f"Codex {action} completed.")
+                self._refresh_codex_models()
             else:
                 chat_log.add_command_result(
                     _format_result(result, fallback=f"Codex {action} exited: {result.return_code}")
@@ -1977,6 +2017,10 @@ class MTPApp(App):
         if status_output:
             account.add_row("status", status_output.strip())
         account.add_row("auth", getattr(info, "auth_mode", "unknown"))
+        account.add_row("subscription", getattr(info, "plan_type", None) or "unknown")
+        account.add_row("subscription status", getattr(info, "subscription_status", "unknown"))
+        if getattr(info, "cli_version", None):
+            account.add_row("CLI version", info.cli_version)
         account.add_row("email", getattr(info, "email", "unknown"))
         if getattr(info, "name", None):
             account.add_row("name", info.name)
@@ -2114,10 +2158,15 @@ class MTPApp(App):
     def _handle_model_switch(self, arg: str) -> None:
         chat_log = self.active_chat_log
         s = self._state
-        resolved = resolve_model(arg)
+        resolved = resolve_model(arg) if s.backend == "codex" else arg.strip()
 
         if s.backend == "codex":
             s.codex_model = None if resolved.lower() in {"default", "auto"} else resolved
+            from .tui_codex_metadata import get_codex_model
+
+            model = get_codex_model(s.codex_model)
+            if model and s.reasoning_effort not in model.efforts:
+                s.reasoning_effort = model.default_effort
             self._save_session()
             chat_log.add_command_result(f"✓ Codex model: {s.codex_model or '(default)'}")
         else:
@@ -2407,13 +2456,23 @@ class MTPApp(App):
         table.add_column("Model", style="bold #fbbf24")
         table.add_column("Description", style="#f4f4f6")
         
-        for i, (m, d) in enumerate(MODEL_PRESETS, 1):
-            active = "●" if m == self._state.codex_model else "○"
-            table.add_row(active, f"[{i}]", m, d)
+        from .tui_codex_metadata import get_codex_models
+
+        if self._state.backend == "codex":
+            for i, model in enumerate(get_codex_models(), 1):
+                active = "●" if model.model == self._state.codex_model or model.is_default and self._state.codex_model is None else "○"
+                table.add_row(active, f"[{i}]", model.model, model.description + "\nReasoning: " + ", ".join(model.efforts))
+        else:
+            for model in self._model_choices():
+                table.add_row("●" if model == active_model_name(self._state) else "○", "", model, "")
             
         text = Text("\nReasoning: ", style="bold #c084fc")
         text.append(f"{self._state.reasoning_effort}\n", style="#38bdf8")
-        text.append("Levels: " + " ".join(f"[{k}]={v}" for k, v in REASONING_SHORTCUTS.items()), style="#71717a")
+        capability = get_thinking_capability(self._state)
+        if capability:
+            text.append("Levels: " + ", ".join(option.label for option in capability.options), style="#71717a")
+        if self._state.backend == "codex":
+            text.append("\nCatalog: " + self._codex_catalog_source, style="#71717a")
         text.append("\n\nUsage: /model <name>  or  /model add <provider> <name>", style="italic #71717a")
         
         from rich.console import Group

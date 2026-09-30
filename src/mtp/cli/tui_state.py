@@ -28,21 +28,20 @@ BACKENDS = {
     "mistral", "cohere", "sambanova", "cerebras", "deepseek",
     "togetherai", "fireworksai", "xiaomi", "ollama", "lmstudio",
 }
-REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 MAX_ATTACHMENTS = 8
 MAX_ATTACHMENT_CHARS = 16_000
 
 MODEL_PRESETS: list[tuple[str, str]] = [
-    ("gpt-5.5", "Latest frontier coding model"),
-    ("gpt-5.4", "Frontier general coding model"),
-    ("gpt-5.4-mini", "Faster/cheaper coding model"),
-    ("gpt-5.3-codex", "Codex-optimized coding model"),
-    ("gpt-5.2", "Previous frontier model"),
+    ("gpt-6.1-sol", "Coding and everyday work"),
+    ("gpt-6-astra", "Complex reasoning"),
+    ("gpt-6-sol", "General coding"),
+    ("gpt-6-luna", "Faster tasks"),
 ]
 
-MODEL_SHORTCUTS = {"1": "gpt-5.5", "2": "gpt-5.4", "3": "gpt-5.4-mini", "4": "gpt-5.3-codex"}
+MODEL_SHORTCUTS = {str(index): name for index, (name, _) in enumerate(MODEL_PRESETS, 1)}
 
-REASONING_SHORTCUTS = {"0": "none", "1": "low", "2": "medium", "3": "high", "4": "xhigh"}
+REASONING_SHORTCUTS = {"0": "none", "1": "low", "2": "medium", "3": "high", "4": "xhigh", "5": "max", "6": "ultra"}
 
 
 # ── Data Classes ─────────────────────────────────────────────────────────────
@@ -211,7 +210,14 @@ def deserialize_transcript(payload: Any) -> list[TranscriptTurn]:
 
 def resolve_model(arg: str) -> str:
     normalized = arg.strip().lower()
-    return MODEL_SHORTCUTS.get(normalized, arg.strip())
+    if normalized.isdigit():
+        from .tui_codex_metadata import get_codex_models
+
+        index = int(normalized) - 1
+        models = get_codex_models()
+        if 0 <= index < len(models):
+            return models[index].model
+    return arg.strip()
 
 
 def resolve_reasoning(arg: str) -> str | None:

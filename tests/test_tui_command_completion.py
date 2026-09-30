@@ -19,6 +19,9 @@ from test_tui_app_lifecycle import _make_state
     ("/sandbox ", "read-only", ("sandbox", "read-only")),
     ("/codex ", "account", ("codex", "account")),
     ("/codebase memory ", "on", ("codebase", "memory on")),
+    ("/codebase Memory ", "on", ("codebase", "memory on")),
+    ("/thinking ", "high", ("thinking", "high")),
+    ("/model gp", "gpt-6.1-sol", ("model", "gpt-6.1-sol")),
 ])
 def test_final_argument_selection_executes_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, choice: str, expected: tuple[str, str],
@@ -79,5 +82,48 @@ def test_slash_picker_advances_then_executes(tmp_path: Path, monkeypatch: pytest
             await pilot.press("enter")
             await pilot.pause()
             assert calls == [("codebase", "memory on")]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("key", ["enter", "tab"])
+def test_first_completion_key_selects_without_extra_press(tmp_path, monkeypatch, key) -> None:
+    calls = []
+    monkeypatch.setattr(MTPApp, "_dispatch_command", lambda self, cmd, arg: calls.append((cmd, arg)))
+
+    async def scenario():
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            input_area = app.query_one(InputArea)
+            input_area.text = "/backend gr"
+            input_area.cursor_location = (0, len(input_area.text))
+            input_area.focus()
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+            assert calls == [("backend", "groq")]
+
+    asyncio.run(scenario())
+
+
+def test_sessions_argument_opens_selected_session(tmp_path, monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(MTPApp, "_dispatch_command", lambda self, cmd, arg: calls.append((cmd, arg)))
+
+    async def scenario():
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            input_area = app.query_one(InputArea)
+            input_area.text = "/sessions "
+            input_area.cursor_location = (0, len(input_area.text))
+            await pilot.pause()
+            app._populate_and_show_suggestions(["saved001"], prefix="-> ")
+            options = app.query_one("#suggestion-list", OptionList)
+            options.highlighted = 0
+            options.focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert calls == [("load", "saved001")]
+            assert input_area.text == ""
 
     asyncio.run(scenario())

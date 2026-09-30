@@ -300,8 +300,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tui_cmd.add_argument(
         "--codex-model",
-        default="gpt-5.5",
-        help="Model for Codex backend.",
+        default=None,
+        help="Model for Codex backend. Defaults to Codex's configured model.",
     )
     tui_cmd.add_argument("--openai-model", default="gpt-5.4-mini", help="Initial model for the OpenAI MTP backend.")
     tui_cmd.add_argument("--max-rounds", type=int, default=6, help="max_rounds for MTP SDK provider backends.")
@@ -318,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tui_cmd.add_argument(
         "--reasoning-effort",
-        choices=["none", "low", "medium", "high", "xhigh"],
+        choices=["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         default="medium",
         help="Reasoning effort preference used by codex backend.",
     )

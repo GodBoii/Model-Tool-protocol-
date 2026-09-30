@@ -113,7 +113,7 @@ class InputArea(TextArea):
                             option_list.action_cursor_down()
                         elif event.key == "up":
                             option_list.action_cursor_up()
-                        elif event.key == "enter":
+                        if event.key in {"enter", "tab"}:
                             option_list.action_select()
                     event.prevent_default()
                     event.stop()

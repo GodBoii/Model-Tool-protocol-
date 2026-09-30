@@ -173,10 +173,14 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
 
 
 def run_tui(args: Any) -> int:
+    from .tui_codex_backend import detect_codex_bin, codex_config_path, _read_toml
+
+    config = _read_toml(codex_config_path())
+    configured_model = config.get("model")
     session_store = JsonSessionStore(db_path=args.session_db)
     state = TUIState(
         backend=args.backend,
-        codex_model=args.codex_model,
+        codex_model=args.codex_model or (configured_model if isinstance(configured_model, str) else None),
         openai_model=args.openai_model,
         max_rounds=int(args.max_rounds),
         cwd=Path(args.cwd).expanduser().resolve(),
@@ -192,6 +196,7 @@ def run_tui(args: Any) -> int:
         session_label=None,
         user_id="tui-user",
         codex_session_id=None,
+        codex_bin=detect_codex_bin(),
     )
     if args.session_id:
         existing = _load_session_record(state, args.session_id)
