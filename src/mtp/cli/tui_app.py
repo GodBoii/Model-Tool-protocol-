@@ -16,6 +16,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import OptionList, RichLog
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.timer import Timer
 from textual.worker import Worker, WorkerState
 
 from .tui_state import (
@@ -40,6 +41,15 @@ from .tui_workers import (
 
 _ARG_SUGGESTION_PREFIX = "-> "
 _SUGGESTION_SEPARATOR = " | "
+
+# Minimum seconds between live-preview renders. Events arriving faster are
+# coalesced and flushed by a trailing timer so the last chunk is never lost.
+_LIVE_RENDER_INTERVAL = 0.10
+
+# Worker groups. Textual's ``exclusive=True`` only cancels workers in the same
+# group, so LLM runs and codebase-memory jobs must not share one.
+_LLM_WORKER_GROUP = "llm"
+_MEMORY_WORKER_GROUP = "memory"
 
 
 @dataclass(slots=True)
@@ -104,6 +114,8 @@ class MTPApp(App):
         self._memory_refresh_dirty = False
         self._memory_launch_scan_done = False
         self._current_run_id: str | None = None
+        self._llm_worker: Worker[ChatResult] | None = None
+        self._live_flush_timer: Timer | None = None
 
     @property
     def state(self) -> TUIState:
@@ -722,9 +734,9 @@ class MTPApp(App):
         self._memory_refresh_dirty = False
         self._current_run_id = f"run-{uuid4().hex[:12]}"
 
-        self.run_worker(
+        self._llm_worker = self.run_worker(
             self._run_llm_worker(expanded, attachments, att_warnings),
-            name="llm_call", exclusive=True,
+            name="llm_call", group=_LLM_WORKER_GROUP, exclusive=True,
         )
 
     async def _run_llm_worker(
@@ -733,15 +745,17 @@ class MTPApp(App):
         """Worker coroutine — runs blocking LLM call in thread."""
         import asyncio
 
+        run_id = self._current_run_id
+
         def emit_live(kind: str, message: Any) -> None:
-            self.call_from_thread(self._handle_live_event, kind, message)
+            self.call_from_thread(self._handle_run_event, run_id, kind, message)
 
         result = await asyncio.to_thread(
             run_prompt_blocking,
             self._state,
             expanded_prompt,
             emit_callback=emit_live,
-            run_id=self._current_run_id,
+            run_id=run_id,
         )
         result.attachments = attachments
         result.warnings = [*att_warnings, *result.warnings]
@@ -781,10 +795,10 @@ class MTPApp(App):
 
     def _update_codebase_scan_progress(self, percent: int, files_seen: int, changed_files: int) -> None:
         self._codebase_scan_progress = f"Indexing codebase {percent}%  files={files_seen} changed={changed_files}"
-        try:
-            self.query_one("#spinner", SpinnerWidget).update_label(self._codebase_scan_progress)
-        except Exception:
-            pass
+        if self._llm_worker_running:
+            # The spinner belongs to the active run; keep its label.
+            return
+        self.query_one("#spinner", SpinnerWidget).update_label(self._codebase_scan_progress)
 
     def _append_cmd_log(self, message: str, *, style: str = "#a78bfa") -> None:
         from rich.text import Text
@@ -812,13 +826,13 @@ class MTPApp(App):
         should_full_scan = prefer_full_scan or not status.last_scan_at or status.file_count == 0 or status.chunk_count == 0
         if should_full_scan:
             self._memory_launch_scan_done = True
-            spinner = self.query_one("#spinner", SpinnerWidget)
-            spinner.start("Indexing codebase 0%")
+            self._show_scan_spinner("Indexing codebase 0%")
             self._codebase_scan_root = self._state.cwd
             self._codebase_scan_progress = "Indexing codebase 0%"
             self.run_worker(
                 self._run_codebase_scan_worker(self._state.cwd),
                 name="codebase_scan",
+                group=_MEMORY_WORKER_GROUP,
                 exclusive=True,
             )
             return
@@ -827,6 +841,7 @@ class MTPApp(App):
         self.run_worker(
             self._run_codebase_refresh_worker(self._state.cwd),
             name="codebase_refresh",
+            group=_MEMORY_WORKER_GROUP,
             exclusive=False,
         )
 
@@ -938,15 +953,30 @@ class MTPApp(App):
         self._live_tool_details = []
         self._live_warnings = []
         self._last_live_render_at = 0.0
+        self._cancel_live_flush()
         try:
             self.query_one("#chat-log", ChatLog).clear_live_assistant_message()
         except Exception:
             pass
 
+    def _cancel_live_flush(self) -> None:
+        if self._live_flush_timer is not None:
+            self._live_flush_timer.stop()
+            self._live_flush_timer = None
+
+    def _flush_live_preview(self) -> None:
+        self._live_flush_timer = None
+        self._render_live_preview(force=True)
+
     def _render_live_preview(self, *, force: bool = False) -> None:
         now = time.monotonic()
-        if not force and now - self._last_live_render_at < 0.10:
+        wait = _LIVE_RENDER_INTERVAL - (now - self._last_live_render_at)
+        if not force and wait > 0:
+            # Throttled: make sure a render still happens once the window ends.
+            if self._live_flush_timer is None:
+                self._live_flush_timer = self.set_timer(wait, self._flush_live_preview)
             return
+        self._cancel_live_flush()
         self._last_live_render_at = now
         if not self._pending_display_prompt:
             return
@@ -966,6 +996,16 @@ class MTPApp(App):
                 is_live=True,
             )
         )
+
+    def _handle_run_event(self, run_id: str | None, kind: str, message: Any) -> None:
+        """Route a live event to the UI only if it belongs to the active run.
+
+        Worker threads outlive cancellation of their asyncio wrapper, so a
+        previous run can keep emitting after a new one has started.
+        """
+        if run_id is None or run_id != self._current_run_id:
+            return
+        self._handle_live_event(kind, message)
 
     def _handle_live_event(self, kind: str, message: Any) -> None:
         spinner = self.query_one("#spinner", SpinnerWidget)
@@ -1011,8 +1051,9 @@ class MTPApp(App):
         spinner = self.query_one("#spinner", SpinnerWidget)
 
         if event.worker.name == "codebase_scan":
+            if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
+                self._release_scan_spinner()
             if event.state == WorkerState.SUCCESS:
-                spinner.stop()
                 result: CodebaseScanResult = event.worker.result
                 self._state.cwd = result.root
                 self._state.agent = None
@@ -1027,11 +1068,9 @@ class MTPApp(App):
                 )
                 self._codebase_scan_progress = None
             elif event.state == WorkerState.ERROR:
-                spinner.stop()
                 self._append_cmd_log(f"Codebase scan failed: {event.worker.error}", style="bold #f43f5e")
                 self._codebase_scan_progress = None
             elif event.state == WorkerState.CANCELLED:
-                spinner.stop()
                 self._append_cmd_log("Codebase scan cancelled.", style="#fbbf24")
                 self._codebase_scan_progress = None
             if self._memory_refresh_queued:
@@ -1063,9 +1102,14 @@ class MTPApp(App):
         if event.worker.name != "llm_call":
             return
 
+        if event.worker is not self._llm_worker:
+            # A superseded run finishing late must not reset the active turn.
+            return
+
         if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
             self._llm_worker_running = False
             self._current_run_id = None
+            self._llm_worker = None
 
         if event.state == WorkerState.SUCCESS:
             spinner.stop()
@@ -1347,7 +1391,10 @@ class MTPApp(App):
                     chat_log.add_command_result(cleaned)
                 except Exception as e:
                     chat_log.add_command_result(f"Load failed: {e}")
+                # Redraw from state so a successfully loaded transcript is visible.
+                self._rebuild_chat_log()
                 self._refresh_status_bar()
+                self._refresh_sidebar()
                 self._refresh_prompt_label()
         elif cmd == "open":
             if not arg:
@@ -1570,16 +1617,35 @@ class MTPApp(App):
             self._open_codebase_memory_picker(root, chat_log)
             return
 
-        spinner = self.query_one("#spinner", SpinnerWidget)
-        spinner.start("Indexing codebase 0%")
+        self._start_codebase_scan(root, chat_log)
+
+    def _start_codebase_scan(self, root: Path, chat_log: Any) -> None:
+        self._show_scan_spinner("Indexing codebase 0%")
         self._codebase_scan_root = root
         self._codebase_scan_progress = "Indexing codebase 0%"
         chat_log.add_command_result(f"Starting codebase memory scan for {root}")
         self.run_worker(
             self._run_codebase_scan_worker(root),
             name="codebase_scan",
+            group=_MEMORY_WORKER_GROUP,
             exclusive=True,
         )
+
+    def _show_scan_spinner(self, label: str) -> None:
+        """Show scan progress without resetting a spinner owned by an LLM run."""
+        spinner = self.query_one("#spinner", SpinnerWidget)
+        if self._llm_worker_running:
+            spinner.update_label(label)
+        else:
+            spinner.start(label)
+
+    def _release_scan_spinner(self) -> None:
+        """Hide the spinner after a scan, unless an LLM run still needs it."""
+        spinner = self.query_one("#spinner", SpinnerWidget)
+        if self._llm_worker_running:
+            spinner.update_label(self._live_status or "Thinking")
+        else:
+            spinner.stop()
 
     def _open_codebase_memory_picker(self, root: Path, chat_log: Any) -> None:
         from mtp.codebase import CodebaseMemory
