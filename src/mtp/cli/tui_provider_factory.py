@@ -71,7 +71,12 @@ def _openai_builder(model: str, api_key: str | None, base_url: str | None, provi
 
 def _groq_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import Groq
-    return Groq(model=model, api_key=api_key)
+    from .tui_thinking import groq_thinking_efforts
+    efforts = groq_thinking_efforts(model)
+    effort = (provider_options or {}).get("reasoning_effort")
+    if efforts and effort not in efforts:
+        effort = "medium"
+    return Groq(model=model, api_key=api_key, reasoning_effort=effort if efforts else None)
 
 
 def _claude_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:

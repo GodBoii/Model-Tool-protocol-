@@ -10,6 +10,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
+from rich.text import Text
 
 from ..tui_provider_factory import SUPPORTED_TUI_PROVIDERS
 from ..tui_local_providers import discover_models
@@ -96,7 +97,7 @@ class ProviderSetup(ModalScreen[str | None]):
     """
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, provider: str, settings_path: Path, *, switching: bool = False, refresh_models: bool = False) -> None:
+    def __init__(self, provider: str, settings_path: Path, *, switching: bool = False, refresh_models: bool = False, delete_key: bool = False) -> None:
         super().__init__()
         self.provider = provider
         self.settings_path = settings_path
@@ -105,6 +106,7 @@ class ProviderSetup(ModalScreen[str | None]):
         self._delete_confirmed = False
         self._refresh_models = refresh_models
         self._discovered_models: list[str] = []
+        self._delete_key = delete_key
 
     def compose(self) -> ComposeResult:
         settings = load_provider_settings(self.settings_path)
@@ -144,6 +146,12 @@ class ProviderSetup(ModalScreen[str | None]):
         self.query_one("#setup-endpoint" if self.local else "#setup-key", Input).focus()
         if self.local and self._refresh_models:
             self.call_after_refresh(self._begin_model_load)
+        if self._delete_key and self.query("#setup-delete"):
+            self._delete_confirmed = True
+            button = self.query_one("#setup-delete", Button)
+            button.label = "Confirm removal of saved key"
+            self.query_one("#setup-message").update("Remove this provider's saved key? Environment credentials are kept.")
+            button.focus()
 
     def _error(self, message: str, selector: str | None = None) -> None:
         error = self.query_one("#setup-error", Static)
@@ -215,7 +223,7 @@ class ProviderSetup(ModalScreen[str | None]):
             options = self.query_one("#discovered-models", OptionList)
             self._discovered_models = names
             options.clear_options()
-            options.add_options([Option(name, id=name) for name in names])
+            options.add_options([Option(Text(name), id=name) for name in names])
             options.display = True
             options.highlighted = 0
             options.focus()

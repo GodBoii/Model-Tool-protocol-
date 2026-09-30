@@ -405,6 +405,8 @@ def _run_mtp(
         api_key = provider_api_key(settings, state.backend)
         base_url = entry.get("base_url")
         provider_options: dict[str, Any] | None = None
+        if state.backend == "groq":
+            provider_options = {"reasoning_effort": entry.get("reasoning_effort")}
         if state.backend == "xiaomi":
             provider_options = {}
             if entry.get("thinking_mode"):

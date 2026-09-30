@@ -21,7 +21,7 @@ class GroqToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "openai/gpt-oss-120b",
         api_key: str | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.0,

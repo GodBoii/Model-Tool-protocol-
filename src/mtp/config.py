@@ -10,7 +10,8 @@ def load_dotenv_if_available(path: str | None = None) -> bool:
     except Exception:
         return False
     if path is not None:
-        return bool(load_dotenv(dotenv_path=path, override=False))
+        load_dotenv(dotenv_path=path, override=False)
+        return True
 
     env_candidates = [Path(".env")]
     loaded = False

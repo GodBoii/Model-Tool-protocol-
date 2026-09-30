@@ -26,6 +26,9 @@ def no_provider_calls(monkeypatch):
     monkeypatch.setattr(tui_app, "run_prompt_blocking", forbidden)
     monkeypatch.setattr(tui_harness_agent, "build_harness_agent", forbidden)
     monkeypatch.setattr(tui_provider_factory, "build_tui_provider", forbidden)
+    from mtp.cli.tui_widgets import model_picker
+    from mtp.cli.tui_model_catalog import ModelCatalog
+    monkeypatch.setattr(model_picker, "discover_provider_models", lambda provider, settings: ModelCatalog((DEFAULT_PROVIDER_MODELS[provider],), "fixture model API", "2026-09-30T00:00:00Z"))
     for name in PROVIDER_KEY_ENV.values():
         monkeypatch.delenv(name, raising=False)
 

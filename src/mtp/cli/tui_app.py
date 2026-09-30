@@ -42,6 +42,7 @@ from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_widgets.provider_setup import ProviderPicker, ProviderSetup
+from .tui_widgets.model_picker import ModelPicker, ModelSelection
 from .tui_codex_backend import CodexRunHandle
 from .tui_conversation import Conversation, LiveTurn, QueuedPrompt
 from .tui_widgets.queue_bar import QueueBar  # mounted inside InputPanel
@@ -398,7 +399,7 @@ class MTPApp(App):
             self._activate(conv)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if self.screen_stack and isinstance(self.screen, (ProviderSetup, ProviderPicker, ThinkingDialog)):
+        if self.screen_stack and isinstance(self.screen, (ProviderSetup, ProviderPicker, ThinkingDialog, ModelPicker)):
             return False
         if action == "interrupt":
             # Without a run, let Ctrl+X fall through to the input (cut).
@@ -477,7 +478,7 @@ class MTPApp(App):
         """The provider selector uses the same command feedback as slash commands."""
         self._write_cmd_log(content)
 
-    def _open_provider_setup(self, provider: str, *, switching: bool = False, owner: Conversation | None = None, refresh_models: bool = False) -> None:
+    def _open_provider_setup(self, provider: str, *, switching: bool = False, owner: Conversation | None = None, refresh_models: bool = False, delete_key: bool = False) -> None:
         from .tui_settings import provider_settings_path
         from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
         if provider not in SUPPORTED_TUI_PROVIDERS:
@@ -500,13 +501,34 @@ class MTPApp(App):
                 self._refresh_status_bar()
                 self._refresh_sidebar()
             self._focus_input()
-        self.push_screen(ProviderSetup(provider, provider_settings_path(owner.state.session_store.file_path), switching=switching, refresh_models=refresh_models), finished)
+        self.push_screen(ProviderSetup(provider, provider_settings_path(owner.state.session_store.file_path), switching=switching, refresh_models=refresh_models, delete_key=delete_key), finished)
 
     def _needs_provider_setup(self, conv: Conversation) -> bool:
         from .tui_settings import is_provider_configured, load_provider_settings, provider_settings_path
         return conv.state.backend != "codex" and not is_provider_configured(
             load_provider_settings(provider_settings_path(conv.state.session_store.file_path)), conv.state.backend,
         )
+
+    def _open_model_picker(self, *, refresh: bool = True) -> None:
+        from .tui_settings import provider_settings_path
+        owner = self._active
+        def selected(selection: ModelSelection | None) -> None:
+            if selection and selection.configure_keys:
+                self.call_later(lambda: self._open_provider_setup(owner.state.backend, owner=owner))
+            elif selection and selection.model and owner in self._conversations:
+                self._handle_model_switch(selection.model)
+            self._focus_input()
+        self.push_screen(ModelPicker(owner.state.backend, provider_settings_path(owner.state.session_store.file_path), refresh=refresh), selected)
+
+    def _model_missing_from_catalog(self, conv: Conversation) -> bool:
+        if conv.state.backend == "codex":
+            return False
+        from .tui_settings import ensure_provider_entry, get_provider_models, load_provider_settings, provider_settings_path
+        settings = load_provider_settings(provider_settings_path(conv.state.session_store.file_path))
+        entry = ensure_provider_entry(settings, conv.state.backend)
+        if conv.state.backend == "groq" and entry.get("model") in {"llama-3.3-70b-versatile", "llama-3.1-8b-instant"} and not entry.get("model_confirmed"):
+            return True
+        return bool(entry.get("catalog_fetched_at")) and active_model_name(conv.state) not in get_provider_models(settings, conv.state.backend)
 
     def _save_session(self, conv: Conversation | None = None) -> None:
         """Snapshot state now; the write happens debounced on a background thread."""
@@ -708,6 +730,10 @@ class MTPApp(App):
         if raw and self._needs_provider_setup(self._active):
             self.query_one("#chat-input", InputArea).text = raw
             self._open_provider_setup(self._state.backend, switching=True)
+            return
+        if raw and self._model_missing_from_catalog(self._active):
+            self.query_one("#chat-input", InputArea).text = raw
+            self._open_model_picker(refresh=False)
             return
         
         if self._pending_attachments:
@@ -921,7 +947,7 @@ class MTPApp(App):
             "/apikey": "Manage API keys",
             "/thinking": "Set thinking mode",
             "/mode": "Set harness mode",
-            "/sandbox": "Cycle sandbox mode",
+            "/sandbox": "Choose sandbox permissions",
             "/load": "Load a session",
             "/open": "Open a session",
             "/new": "Open a new chat (Ctrl+N)",
@@ -954,7 +980,7 @@ class MTPApp(App):
         option_list = self.query_one("#suggestion-list", OptionList)
         option_list.clear_options()
         for m in matches:
-            option_list.add_option(f"{prefix}{m}")
+            option_list.add_option(Text(f"{prefix}{m}"))
         
         option_list.add_class("visible")
 
@@ -1200,9 +1226,12 @@ class MTPApp(App):
     def _run_next_queued(self, conv: Conversation) -> None:
         if conv.running or not conv.queue or conv not in self._conversations:
             return
-        if self._needs_provider_setup(conv):
+        if self._needs_provider_setup(conv) or self._model_missing_from_catalog(conv):
             if conv is self._active:
-                self._open_provider_setup(conv.state.backend, switching=True)
+                if self._needs_provider_setup(conv):
+                    self._open_provider_setup(conv.state.backend, switching=True)
+                else:
+                    self._open_model_picker(refresh=False)
             return
         item = conv.queue.popleft()
         self._refresh_queue_bar()
@@ -1215,6 +1244,11 @@ class MTPApp(App):
             if conv is self._active:
                 self.query_one("#chat-input", InputArea).text = raw
                 self._open_provider_setup(conv.state.backend, switching=True)
+            return
+        if self._model_missing_from_catalog(conv):
+            if conv is self._active:
+                self.query_one("#chat-input", InputArea).text = raw
+                self._open_model_picker(refresh=False)
             return
         self.query_one("#boot-screen", BootScreen).display = False
         self.query_one("#main-container").remove_class("home-view", "command-view")
@@ -1706,10 +1740,8 @@ class MTPApp(App):
                 if s.backend == "codex":
                     self._refresh_codex_models(show=True)
                     return
-                if s.backend in {"ollama", "lmstudio"}:
-                    self._open_provider_setup(s.backend, refresh_models=True)
-                    return
-                chat_log.add_command_result("Cloud providers list saved model names. Add one with /model add <provider> <name>.")
+                self._open_model_picker(refresh=True)
+                return
             chat_log.add_system_message(self._build_models_text())
         elif cmd == "tools":
             chat_log.add_system_message(self._build_tools_text())
@@ -1747,6 +1779,9 @@ class MTPApp(App):
                 self._start_backend_switch(arg, chat_log)
         elif cmd == "model":
             if not arg:
+                if s.backend != "codex":
+                    self._open_model_picker()
+                    return
                 input_area = self.query_one("#chat-input", InputArea)
                 input_area.text = "/model "
                 input_area.cursor_location = (0, 7)
@@ -1989,6 +2024,8 @@ class MTPApp(App):
             self._refresh_status_bar()
             self._refresh_prompt_label()
             self._refresh_sidebar()
+            if switch.backend and switch.backend != "codex" and state is self._state:
+                self.call_later(self._open_model_picker)
 
         self._run_blocking_command(
             "backend switch", lambda: prepare_backend_switch(state, provider_name), done,
@@ -2396,6 +2433,12 @@ class MTPApp(App):
             settings = load_provider_settings(settings_path)
             entry = ensure_provider_entry(settings, s.backend)
             entry["model"] = resolved
+            entry["model_confirmed"] = True
+            # A directly entered ID is an explicit override, including private
+            # models that may not appear in a provider's public catalog.
+            if resolved not in entry.get("discovered_models", []):
+                from .tui_settings import add_custom_model
+                add_custom_model(settings, s.backend, resolved)
             save_provider_settings(settings_path, settings)
             s.agent = None
             self._save_session()
@@ -2447,7 +2490,7 @@ class MTPApp(App):
             return
         if parts[0].lower() in {"delete", "edit"} and len(parts) == 2:
             try:
-                self._open_provider_setup(normalize_tui_provider(parts[1]))
+                self._open_provider_setup(normalize_tui_provider(parts[1]), delete_key=parts[0].lower() == "delete")
             except ValueError as exc:
                 self._write_cmd_log(str(exc))
             return
@@ -2592,7 +2635,11 @@ class MTPApp(App):
         table.add_row("", "/codex repair-config", "Repair known Codex config issues")
         table.add_row("", "/thinking [level]", "Choose thinking / reasoning effort")
         table.add_row("", "/mode", "Set harness mode")
-        table.add_row("", "/sandbox", "Cycle sandbox mode")
+        table.add_row("", "/sandbox", "Choose sandbox permissions")
+        table.add_row("", "/rounds <1-1000>", "Set the round limit")
+        table.add_row("", "/cd <directory>", "Change the workspace directory")
+        table.add_row("", "/autoresearch <on|off>", "Enable or disable auto research")
+        table.add_row("", "/research [instructions]", "Set or clear research instructions")
         table.add_row("", "/codebase memory", "Enable, disable, or inspect project memory")
         
         table.add_row("Chats", "/new [label]", "Open a new chat; others keep running")
@@ -2714,7 +2761,12 @@ class MTPApp(App):
                 table.add_row(active, f"[{i}]", model.model, model.description + "\nReasoning: " + ", ".join(model.efforts))
         else:
             for model in self._model_choices():
-                table.add_row("●" if model == active_model_name(self._state) else "○", "", model, "")
+                table.add_row("●" if model == active_model_name(self._state) else "○", "", Text(model), "")
+            from .tui_settings import ensure_provider_entry, load_provider_settings, provider_settings_path
+            entry = ensure_provider_entry(load_provider_settings(provider_settings_path(self._state.session_store.file_path)), self._state.backend)
+            table.add_row("", "", "Catalog source", str(entry.get("catalog_source") or "Offline suggestions; availability not checked"))
+            if self._model_missing_from_catalog(self._active):
+                table.add_row("!", "", active_model_name(self._state), "Current selection is not in the latest catalog. Use /model to choose another or enter a private ID.")
             
         text = Text("\nReasoning: ", style="bold #c084fc")
         text.append(f"{self._state.reasoning_effort}\n", style="#38bdf8")

@@ -14,7 +14,7 @@ from typing import Any
 
 DEFAULT_PROVIDER_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "openai/gpt-oss-120b",
     "claude": "claude-3-5-sonnet-20241022",
     "gemini": "gemini-2.0-flash-exp",
     "openrouter": "qwen/qwen-2.5-72b-instruct",
@@ -339,6 +339,11 @@ def add_custom_model(payload: dict[str, Any], provider_name: str, model_name: st
 def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str]:
     """Get all models for a provider (default + custom)."""
     entry = ensure_provider_entry(payload, provider_name)
+    if entry.get("catalog_fetched_at"):
+        # A fetched catalog is authoritative. Do not reinsert retired defaults.
+        discovered = entry.get("discovered_models", [])
+        discovered = discovered if isinstance(discovered, list) else []
+        return list(dict.fromkeys([name for name in [*discovered, *entry["models"]] if isinstance(name, str) and name.strip()]))
     default_model = DEFAULT_PROVIDER_MODELS.get(provider_name)
     custom_models = entry.get("models", [])
     
@@ -346,6 +351,8 @@ def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str
     all_models = []
     if default_model:
         all_models.append(default_model)
+    if provider_name == "groq":
+        all_models.extend(["openai/gpt-oss-20b", "qwen/qwen3.8-27b"])
     selected_model = preferred_model_for_provider(payload, provider_name)
     if selected_model and selected_model not in all_models:
         all_models.append(selected_model)

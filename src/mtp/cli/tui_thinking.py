@@ -40,6 +40,15 @@ def xiaomi_model_supports_thinking(model_name: str) -> bool:
     return normalized in _XIAOMI_THINKING_MODELS
 
 
+def groq_thinking_efforts(model_name: str) -> tuple[str, ...]:
+    model = model_name.strip().lower()
+    if model in {"openai/gpt-oss-120b", "openai/gpt-oss-20b"}:
+        return ("low", "medium", "high")
+    if model == "qwen/qwen3.8-27b":
+        return ("none", "default", "low", "medium", "high")
+    return ()
+
+
 def _load_provider_entry_for_state(state: TUIState) -> dict:
     settings_path = provider_settings_path(state.session_store.file_path)
     settings = load_provider_settings(settings_path)
@@ -60,6 +69,16 @@ def get_thinking_capability(state: TUIState) -> ThinkingCapability | None:
             current_value=current,
             current_label=current,
         )
+
+    if state.backend == "groq":
+        efforts = groq_thinking_efforts(active_model_name(state))
+        if not efforts:
+            return None
+        entry = _load_provider_entry_for_state(state)
+        current = str(entry.get("reasoning_effort") or "medium")
+        if current not in efforts:
+            current = "medium"
+        return ThinkingCapability("groq", "thinking", tuple(ThinkingOption(name, name) for name in efforts), current, current)
 
     if state.backend != "xiaomi":
         return None
@@ -97,6 +116,18 @@ def apply_thinking_value(state: TUIState, value: str, *, persist: bool = True) -
 
             save_tui_session(state)
         return f"✓ Reasoning set to {resolved}"
+
+    if state.backend == "groq":
+        capability = get_thinking_capability(state)
+        normalized = value.strip().lower()
+        if capability is None or normalized not in {option.value for option in capability.options}:
+            raise ValueError("Unsupported Groq thinking level")
+        path = provider_settings_path(state.session_store.file_path)
+        settings = load_provider_settings(path)
+        ensure_provider_entry(settings, "groq")["reasoning_effort"] = normalized
+        save_provider_settings(path, settings)
+        state.agent = None
+        return f"Groq thinking set to {normalized}"
 
     if state.backend != "xiaomi":
         raise ValueError(f"Thinking controls are not supported for backend {state.backend!r}")

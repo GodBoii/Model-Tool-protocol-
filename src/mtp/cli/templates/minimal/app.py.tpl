@@ -9,7 +9,7 @@ def main() -> None:
     tools = Agent.ToolRegistry()
     tools.register_toolkit_loader("calculator", CalculatorToolkit())
 
-    provider = Groq(model="llama-3.3-70b-versatile")
+    provider = Groq(model="openai/gpt-oss-120b")
     agent = Agent.MTPAgent(
         provider=provider,
         tools=tools,
