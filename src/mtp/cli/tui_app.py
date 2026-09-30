@@ -156,6 +156,7 @@ class MTPApp(App):
         self._input_history: list[str] = []
         self._codebase_scan_progress: str | None = None
         self._codebase_scan_root: Path | None = None
+        self._codebase_scan_context: tuple[Worker, Conversation, Path] | None = None
         self._memory_refresh_running = False
         self._show_tool_details = False
         self._memory_refresh_queued = False
@@ -1189,12 +1190,7 @@ class MTPApp(App):
             self._show_scan_spinner("Indexing codebase 0%")
             self._codebase_scan_root = self._state.cwd
             self._codebase_scan_progress = "Indexing codebase 0%"
-            self.run_worker(
-                self._run_codebase_scan_worker(self._state.cwd),
-                name="codebase_scan",
-                group=_MEMORY_WORKER_GROUP, exit_on_error=False,
-                exclusive=True,
-            )
+            self._launch_codebase_scan(self._state.cwd)
             return
 
         self._memory_refresh_running = True
@@ -1328,15 +1324,24 @@ class MTPApp(App):
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
 
         if event.worker.name == "codebase_scan":
+            context = self._codebase_scan_context
+            if context is None or event.worker is not context[0]:
+                return
+            _, owner, original_cwd = context
             if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
+                self._codebase_scan_context = None
                 self._release_scan_spinner()
             if event.state == WorkerState.SUCCESS:
                 result: CodebaseScanResult = event.worker.result
-                self._state.cwd = result.root
-                self._state.agent = None
-                self._save_session()
-                self._refresh_prompt_label()
-                self._refresh_status_bar()
+                # A tab switch, close or /cd must not redirect a late result.
+                if owner in self._conversations and owner.state.cwd == original_cwd:
+                    owner.state.cwd = result.root
+                    owner.state.agent = None
+                    self._save_session(owner)
+                    if owner is self._active:
+                        self._refresh_prompt_label()
+                        self._refresh_status_bar()
+                        self._refresh_sidebar()
                 self._append_cmd_log(
                     "Codebase memory scan complete: 100%\n"
                     f"  files={result.files_indexed} changed={result.changed_files} "
@@ -2054,12 +2059,17 @@ class MTPApp(App):
         self._codebase_scan_root = root
         self._codebase_scan_progress = "Indexing codebase 0%"
         chat_log.add_command_result(f"Starting codebase memory scan for {root}")
-        self.run_worker(
+        self._launch_codebase_scan(root)
+
+    def _launch_codebase_scan(self, root: Path) -> None:
+        owner = self._active
+        worker = self.run_worker(
             self._run_codebase_scan_worker(root),
             name="codebase_scan",
             group=_MEMORY_WORKER_GROUP, exit_on_error=False,
             exclusive=True,
         )
+        self._codebase_scan_context = (worker, owner, owner.state.cwd)
 
     def _show_scan_spinner(self, label: str) -> None:
         """Codebase jobs use their own spinner, separate from any chat's run."""

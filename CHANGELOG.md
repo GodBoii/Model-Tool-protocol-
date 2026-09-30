@@ -6,7 +6,7 @@ The previous release notes, 0.1.6 through 0.1.15, are still in git history. Run 
 
 - Baseline commit: `fe251da` "Add MTP docs frontend URL"
 - Work so far: 19 commits on `main`, `ab54098` through `f271e15`
-- Test suite: `python -m pytest -m "not integration and not live"` passes with 487 tests. Before this work it had 400.
+- Test suite: `python -m pytest -m "not integration and not live"` passes with 516 tests, with 11 deselected. Before this work it had 400.
 - Environment used: Windows, Python 3.13.3, Textual 8.2.5, Rich 14.3.3
 
 Contents:
@@ -521,6 +521,8 @@ New or extended test files, with test counts:
 - Completed 4.1.1. MTP agents restore recent user/reply pairs from the transcript before their first request, including agents prepared by `/backend`. Existing agent history is kept. Restoration keeps at most 40 whole turns, respects the agent's message limit, and reserves half the estimated model context for tools and output. System instructions and the current prompt count against the history budget. Old tool calls and reasoning are omitted; failed and cancelled replies keep their status note.
 - Added six tests in `tests/test_tui_history_seed.py`, including the real `/model` command, provider switching, loaded transcripts, duplicate prevention and small-context limits. The targeted suite passed 12 tests. The first full fast-suite run passed 492 tests and failed the existing session-load pilot test; that test passed on an isolated rerun.
 - Completed 4.1.2. Both TUI and Agent OS import `merge_stream_text` from `mtp.streaming`. Repeated tokens, newlines and overlapping suffixes are preserved; long full-payload replays retain the existing behavior. Added 14 shared merge cases and five Agent OS integration checks. The stream tests passed 26 tests, and the full fast suite passed 512 tests with 11 deselected.
+- Completed 4.1.8. Codebase scans capture their worker, initiating conversation and starting cwd. Completion updates and saves that conversation only if it remains open at the starting cwd. Superseded workers cannot clear a newer scan's state. The explicit scan-root behavior is preserved for the initiating chat. Four new pilot cases cover switching chats, closing the owner, changing its cwd and replacing a scan. The final fast suite passed 516 tests with 11 deselected.
+- Live-provider and real-terminal smoke checks remain outstanding. Session storage, restored chats, concurrency limits and the command registry remain planned work.
 
 The detailed entries below retain the original problem descriptions. Completed entries are marked in their headings.
 
@@ -599,7 +601,7 @@ These still run on the UI thread. Each is rare, but it freezes the screen while 
 - **Fix.** Add `max_parallel_runs`, default 3, configurable. `_start_run` checks how many chats are running, and if the limit is reached it queues the message with the note "Waiting for a free slot (3 chats running)". When any run finishes, start the oldest waiting message across all chats.
 - **Tests.** Four chats with a limit of 2: two run and two wait, and they start in order as slots free up.
 
-#### 4.1.8 Codebase scan results apply to the wrong chat
+#### 4.1.8 Codebase scan results apply to the wrong chat. Completed 2026-09-30
 
 - **What happens.** When a scan finishes, the handler sets `self._state.cwd = result.root` and `self._state.agent = None`. That is whichever chat is on screen at that moment, not the chat that started the scan. The agent reset also wipes MTP history; see 4.1.1.
 - **Fix.** Store the conversation that started the scan in `_start_codebase_scan`, and apply the result to that conversation only. Question whether a scan should change the cwd at all; the old code did it because the scan root could be given as an argument.
