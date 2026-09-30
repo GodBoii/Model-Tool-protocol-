@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import copy
 import json
+import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -49,25 +53,91 @@ def _default_payload() -> dict[str, Any]:
     return {"providers": {}}
 
 
-def load_provider_settings(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return _default_payload()
+class _SettingsCache:
+    """Parsed settings keyed by path and file signature.
+
+    The TUI reads settings on every status refresh. A stat is much cheaper
+    than read + parse, and the signature check picks up edits made by other
+    processes. Callers mutate what they get back, so they receive copies.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._entries: dict[Path, tuple[tuple[int, int], dict[str, Any]]] = {}
+
+    @staticmethod
+    def signature(path: Path) -> tuple[int, int] | None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def get(self, path: Path, signature: tuple[int, int]) -> dict[str, Any] | None:
+        with self._lock:
+            entry = self._entries.get(path)
+        if entry is None or entry[0] != signature:
+            return None
+        return copy.deepcopy(entry[1])
+
+    def put(self, path: Path, signature: tuple[int, int] | None, payload: dict[str, Any]) -> None:
+        with self._lock:
+            if signature is None:
+                self._entries.pop(path, None)
+            else:
+                self._entries[path] = (signature, copy.deepcopy(payload))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+_SETTINGS_CACHE = _SettingsCache()
+
+
+def _parse_settings(raw: str) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(raw)
     except Exception:
         return _default_payload()
     if not isinstance(payload, dict):
         return _default_payload()
-    providers = payload.get("providers")
-    if not isinstance(providers, dict):
+    if not isinstance(payload.get("providers"), dict):
         payload["providers"] = {}
-        return payload
     return payload
 
 
+def load_provider_settings(path: Path) -> dict[str, Any]:
+    path = Path(path)
+    signature = _SETTINGS_CACHE.signature(path)
+    if signature is None:
+        return _default_payload()
+    cached = _SETTINGS_CACHE.get(path, signature)
+    if cached is not None:
+        return cached
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return _default_payload()
+    payload = _parse_settings(raw)
+    _SETTINGS_CACHE.put(path, signature, payload)
+    return copy.deepcopy(payload)
+
+
 def save_provider_settings(path: Path, payload: dict[str, Any]) -> None:
+    """Write settings atomically so a crash mid-write cannot truncate the file."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    data = json.dumps(payload, indent=2, ensure_ascii=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(data)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    _SETTINGS_CACHE.put(path, _SETTINGS_CACHE.signature(path), payload)
 
 
 def ensure_provider_entry(payload: dict[str, Any], provider_name: str) -> dict[str, Any]:
