@@ -126,6 +126,9 @@ def test_key_dialog_keyboard_save_and_shortcut_isolation(tmp_path, size):
             await pilot.pause(.1)
             dialog = app.screen
             assert isinstance(dialog, ProviderSetup)
+            actions = dialog.query_one("#setup-actions")
+            assert actions.region.bottom <= size[1]
+            assert actions.region.x >= 0 and actions.region.right <= size[0]
             await pilot.press("ctrl+n")
             assert len(app.conversations) == 1
             key = dialog.query_one("#setup-key", Input)

@@ -94,10 +94,13 @@ class StatusBar(Horizontal):
         thinking_label: str | None = None,
         thinking_value: str | None = None,
         is_running: bool = False,
+        needs_setup: bool = False,
     ) -> None:
         main = Text()
-        main.append(" ● ", style="bold #34d399" if backend != "codex" else "bold #c084fc")
+        main.append(" ● ", style="bold #fbbf24" if needs_setup else "bold #34d399" if backend != "codex" else "bold #c084fc")
         main.append(backend, style="bold #c084fc")
+        if needs_setup:
+            main.append("  setup needed: /apikey", style="bold #fbbf24")
         if model:
             main.append(f"  {model}", style="#fbbf24")
         main.append("  │  ", style="dim #3f3f46")

@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
@@ -64,8 +64,10 @@ class ProviderSetup(ModalScreen[str | None]):
     """Save locally, change provider, or cancel; failed writes keep the form open."""
     DEFAULT_CSS = """
     ProviderSetup { align: center middle; background: rgba(12,12,14,0.85); }
-    #provider-setup { width: 70; max-width: 100%; height: auto; max-height: 95%;
+    #provider-setup { width: 70; max-width: 100%; height: 95%; max-height: 34;
         border: round #38bdf8; background: #18181b; padding: 1 2; }
+    #setup-fields { height: 1fr; min-height: 3; }
+    #setup-actions { height: 3; margin-top: 1; }
     #provider-setup Label { margin-top: 1; height: auto; color: #e4e4e7; }
     #provider-setup Static { height: auto; }
     #setup-title { text-style: bold; color: #f4f4f6; }
@@ -73,6 +75,7 @@ class ProviderSetup(ModalScreen[str | None]):
     #setup-error { color: #fb7185; margin-top: 1; display: none; }
     #setup-error.visible { display: block; }
     #provider-setup Button { width: 100%; margin-top: 1; }
+    #setup-actions Button { width: 1fr; min-width: 0; margin: 0; }
     #key-visibility { height: 1; min-height: 1; border: none; margin-top: 0; }
     """
     BINDINGS = [("escape", "cancel", "Cancel")]
@@ -88,32 +91,34 @@ class ProviderSetup(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         settings = load_provider_settings(self.settings_path)
         entry = ensure_provider_entry(settings, self.provider)
-        with VerticalScroll(id="provider-setup"):
+        with Vertical(id="provider-setup"):
             yield Static(f"Set up {self.provider}", id="setup-title")
-            yield Static(
-                "Set the server endpoint and model. Local servers usually do not need a key."
-                if self.local else f"Add an API key to use {self.provider}, or choose another provider.",
-                id="setup-message",
-            )
             yield Static(provider_setup_status(settings, self.provider), id="setup-key-status")
-            yield Static("Enter saves. Tab moves between fields. Esc cancels.")
-            if self.local:
-                default_url = "http://localhost:11434" if self.provider == "ollama" else "http://localhost:1234/v1"
-                yield Label("Server endpoint", markup=False)
-                yield Input(str(entry.get("base_url") or default_url), id="setup-endpoint")
-            yield Label("API key (optional for local servers)" if self.local else "API key", markup=False)
-            yield Input(password=True, placeholder="Paste a key, or leave empty to keep the existing key", id="setup-key")
-            yield Button("Show key", id="key-visibility")
-            yield Static(f"You can also use {PROVIDER_KEY_ENV[self.provider]} in your environment.")
-            yield Label("Model", markup=False)
-            yield Input(preferred_model_for_provider(settings, self.provider), id="setup-model")
-            yield Static("Keys are saved locally and are never included in chat history.")
-            yield Static("", id="setup-error", markup=False)
-            yield Button(f"Save and use {self.provider}" if self.switching else "Save settings", variant="primary", id="setup-save")
-            if entry.get("api_key"):
-                yield Button("Remove saved key", variant="error", id="setup-delete")
-            yield Button("Choose another provider", id="setup-change")
-            yield Button("Cancel", id="setup-cancel")
+            yield Static("Enter saves. Tab moves fields. Esc cancels.")
+            with VerticalScroll(id="setup-fields"):
+                yield Static(
+                    "Set your server and model. Local servers usually do not need a key."
+                    if self.local else "Paste your API key below, or choose Providers to change provider.",
+                    id="setup-message",
+                )
+                yield Static("", id="setup-error", markup=False)
+                if self.local:
+                    default_url = "http://localhost:11434" if self.provider == "ollama" else "http://localhost:1234/v1"
+                    yield Label("Server endpoint", markup=False)
+                    yield Input(str(entry.get("base_url") or default_url), id="setup-endpoint")
+                yield Label("API key (optional)" if self.local else "API key", markup=False)
+                yield Input(password=True, placeholder="Paste a key; leave empty to keep the existing key", id="setup-key")
+                yield Button("Show key", id="key-visibility")
+                yield Static(f"Environment variable: {PROVIDER_KEY_ENV[self.provider]}")
+                yield Label("Model", markup=False)
+                yield Input(preferred_model_for_provider(settings, self.provider), id="setup-model")
+                yield Static("Keys are saved locally, outside chat history.")
+                if entry.get("api_key"):
+                    yield Button("Remove saved key", variant="error", id="setup-delete")
+            with Horizontal(id="setup-actions"):
+                yield Button("Save & use" if self.switching else "Save", variant="primary", id="setup-save")
+                yield Button("Providers", id="setup-change")
+                yield Button("Cancel", id="setup-cancel")
 
     def on_mount(self) -> None:
         self.query_one("#setup-endpoint" if self.local else "#setup-key", Input).focus()
@@ -122,6 +127,7 @@ class ProviderSetup(ModalScreen[str | None]):
         error = self.query_one("#setup-error", Static)
         error.update(message)
         error.add_class("visible")
+        self.notify(message, severity="error", timeout=5)
         error.scroll_visible()
         if selector:
             self.query_one(selector, Input).focus()

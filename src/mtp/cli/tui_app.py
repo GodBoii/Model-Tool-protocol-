@@ -23,6 +23,7 @@ from textual.message import Message
 from textual.timer import Timer
 from textual.widget import Widget
 from textual.worker import Worker, WorkerState
+from textual import events
 
 from .tui_state import (
     TURN_CANCELLED, TURN_COMPLETED, TURN_FAILED,
@@ -72,6 +73,19 @@ _MEMORY_WORKER_GROUP = "memory"
 _COMMAND_WORKER_GROUP = "command"
 
 T = TypeVar("T")
+
+
+class CommandOutput(RichLog):
+    """Reflow saved command results after this panel receives its new size."""
+    def __init__(self, reflow: Callable[[], None], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._reflow = reflow
+        self._last_width = 0
+
+    def on_resize(self, event: events.Resize) -> None:
+        if event.size.width != self._last_width:
+            self._last_width = event.size.width
+            self.call_after_refresh(self._reflow)
 
 
 class LiveEventBatch(Message):
@@ -405,7 +419,7 @@ class MTPApp(App):
                     yield first.view
                 # App-level jobs (codebase indexing); run spinners live in each view.
                 yield SpinnerWidget(id="task-spinner")
-                yield RichLog(id="cmd-log", min_width=1, markup=False, highlight=False, wrap=True)
+                yield CommandOutput(self._render_command_results, id="cmd-log", min_width=1, markup=False, highlight=False, wrap=True)
                 # InputPanel is docked to the bottom and holds the queue bar,
                 # so queued messages sit right above where you type.
                 yield InputPanel(id="input-panel")
@@ -607,6 +621,7 @@ class MTPApp(App):
                 thinking_label=thinking.label if thinking else None,
                 thinking_value=thinking.current_label if thinking else None,
                 is_running=self._active.running,
+                needs_setup=self._needs_provider_setup(self._active),
             )
         except Exception:
             pass
@@ -1866,18 +1881,21 @@ class MTPApp(App):
         log = self.query_one("#cmd-log", RichLog)
         log.clear()
         for content in self._command_results:
-            log.write(content, width=max(1, log.content_size.width), scroll_end=False)
+            log.write(content, width=max(1, log.scrollable_content_region.width - 1), scroll_end=False)
+        self.query_one("#input-hints").update("  Esc back   Ctrl+O read output   PageUp/Down scroll   Ctrl+P commands")
 
     def _dismiss_command_output(self) -> None:
+        from .tui_shortcuts import hint_bar_text
         self.query_one("#main-container").remove_class("command-view")
         home = not self._state.transcript and self._active.live is None
         self.query_one("#main-container").set_class(home, "home-view")
         self.query_one("#boot-screen").display = home
         self.query_one("#cmd-log").remove_class("visible")
+        self.query_one("#input-hints").update(hint_bar_text())
         self._focus_input()
 
-    def on_resize(self) -> None:
-        width = self.size.width
+    def on_resize(self, event: events.Resize) -> None:
+        width = event.size.width
         if width < 80 and self.query("#sidebar"):
             self.query_one("#sidebar").remove_class("visible")
         if self.query("#status-hints"):
@@ -2592,6 +2610,9 @@ class MTPApp(App):
         table.add_row("label", s.session_label or "(none)")
         table.add_row("backend", s.backend)
         table.add_row("model", active_model_name(s))
+        if s.backend != "codex":
+            from .tui_settings import load_provider_settings, provider_settings_path, provider_setup_status
+            table.add_row("provider_setup", provider_setup_status(load_provider_settings(provider_settings_path(s.session_store.file_path)), s.backend))
         table.add_row("mode", s.harness_mode)
         if thinking:
             table.add_row(thinking.label, thinking.current_label)

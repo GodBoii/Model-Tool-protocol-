@@ -31,6 +31,7 @@ def test_home_commands_fit_between_tabs_and_composer(tmp_path, size):
             assert status.region.y < size[1]
             assert status.region.bottom <= size[1]
             assert log.lines
+            assert log.virtual_size.width <= log.scrollable_content_region.width
             await pilot.press("ctrl+o")
             assert app.focused is log
             await pilot.press("pagedown", "escape")
@@ -40,6 +41,7 @@ def test_home_commands_fit_between_tabs_and_composer(tmp_path, size):
             await pilot.resize_terminal(80, 24)
             await pilot.pause(.05)
             assert log.region.bottom <= panel.region.y
+            assert log.virtual_size.width <= log.scrollable_content_region.width
     asyncio.run(scenario())
 
 
