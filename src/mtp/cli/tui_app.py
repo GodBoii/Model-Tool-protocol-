@@ -49,7 +49,7 @@ from .tui_indexes import (
     file_signature, load_session_summaries, scan_workspace_files,
 )
 from .tui_live_events import LiveEvent, LiveEventBatcher
-from .tui_commands import MTPCommandProvider, parse_slash_command
+from .tui_commands import MTPCommandProvider, SLASH_COMMANDS, parse_slash_command
 from .tui_persistence import SessionSaver
 from .tui_workers import (
     BackendSwitch, apply_backend_switch, prepare_backend_switch,
@@ -703,15 +703,13 @@ class MTPApp(App):
         current_line = lines[cursor_row][:cursor_col]
         words = current_line.split()
         
-        words = current_line.split()
-        
         # Check for command arguments
         if current_line.startswith("/"):
             parts = current_line.split()
             if len(parts) > 1 or (len(parts) == 1 and current_line.endswith(" ")):
                 cmd = parts[0][1:].lower()
-                partial = parts[1].lower() if len(parts) > 1 else ""
-                if len(parts) <= 2:
+                partial = current_line.split(maxsplit=1)[1].lower() if len(parts) > 1 else ""
+                if len(parts) <= 2 or cmd == "codebase":
                     self._show_command_argument_suggestions(cmd, partial)
                 else:
                     try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
@@ -909,6 +907,9 @@ class MTPApp(App):
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_list = event.option_list
+        if option_list.id != "suggestion-list":
+            return
+        event.stop()
         option_list.remove_class("visible")
         selected = str(event.option.prompt)
         
@@ -923,18 +924,25 @@ class MTPApp(App):
         if selected.startswith(_ARG_SUGGESTION_PREFIX):
             val = selected[len(_ARG_SUGGESTION_PREFIX):].split()[0]
             parts = current_line.split()
-            if current_line.endswith(" "):
-                new_line = current_line + val + " "
-                start_idx = len(current_line)
-            else:
-                last_len = len(parts[-1])
-                start_idx = len(current_line) - last_len
-                new_line = current_line[:start_idx] + val + " "
-            
+            if not parts:
+                return
+            cmd = parts[0][1:].lower()
+            needs_more = cmd == "codebase" and val == "memory"
+            # Replace the current argument. Only codebase memory has a second
+            # picker slot; a completed single argument must never be appended.
+            base = parts[0] + " "
+            if cmd == "codebase" and len(parts) >= 2 and parts[1] == "memory" and val != "memory":
+                base += "memory "
+            new_line = base + val
+            if needs_more:
+                new_line += " "
             lines[cursor_row] = new_line + lines[cursor_row][cursor_col:]
             input_area.text = "\n".join(lines)
-            input_area.cursor_location = (cursor_row, start_idx + len(val) + 1)
-            self._show_next_command_suggestions(input_area)
+            input_area.cursor_location = (cursor_row, len(new_line))
+            if needs_more:
+                self._show_next_command_suggestions(input_area)
+            else:
+                self._submit_completed_command(input_area)
             return
 
         if not words:
@@ -965,6 +973,14 @@ class MTPApp(App):
             input_area.text = "\n".join(lines)
             input_area.cursor_location = (cursor_row, start_idx + len(selected) + 1)
             self._show_next_command_suggestions(input_area)
+            if selected.startswith("/") and selected in SLASH_COMMANDS and selected != "/thinking":
+                self._submit_completed_command(input_area)
+
+    def _submit_completed_command(self, input_area: InputArea) -> None:
+        value = input_area.text.strip()
+        input_area.text = ""
+        self.query_one("#suggestion-list", OptionList).remove_class("visible")
+        input_area.post_message(InputArea.Submitted(value))
 
     def _send_prompt(self, raw: str) -> None:
         """Run ``raw`` in the active conversation, or queue it if that one is running."""

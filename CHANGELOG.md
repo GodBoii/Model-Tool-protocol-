@@ -524,6 +524,8 @@ New or extended test files, with test counts:
 
 ### Implementation update, 2026-09-30
 
+- Fixed the slash-command selection loop. Selecting a final argument executes the command once and clears the input. Multi-step `/codebase memory` selections advance to the next argument. Completed typed arguments no longer reopen the same picker, and unrelated OptionLists are ignored by the command handler. Eight new keyboard pilot cases pass; the fast suite passed 524 tests with 11 deselected.
+
 - Completed 4.1.1. MTP agents restore recent user/reply pairs from the transcript before their first request, including agents prepared by `/backend`. Existing agent history is kept. Restoration keeps at most 40 whole turns, respects the agent's message limit, and reserves half the estimated model context for tools and output. System instructions and the current prompt count against the history budget. Old tool calls and reasoning are omitted; failed and cancelled replies keep their status note.
 - Added six tests in `tests/test_tui_history_seed.py`, including the real `/model` command, provider switching, loaded transcripts, duplicate prevention and small-context limits. The targeted suite passed 12 tests. The first full fast-suite run passed 492 tests and failed the existing session-load pilot test; that test passed on an isolated rerun.
 - Completed 4.1.2. Both TUI and Agent OS import `merge_stream_text` from `mtp.streaming`. Repeated tokens, newlines and overlapping suffixes are preserved; long full-payload replays retain the existing behavior. Added 14 shared merge cases and five Agent OS integration checks. The stream tests passed 26 tests, and the full fast suite passed 512 tests with 11 deselected.
