@@ -16,6 +16,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import OptionList, RichLog
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.timer import Timer
 from textual.widget import Widget
 from textual.worker import Worker, WorkerState
@@ -35,6 +36,7 @@ from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_codex_backend import CodexRunHandle
+from .tui_live_events import LiveEvent, LiveEventBatcher
 from .tui_commands import MTPCommandProvider, parse_slash_command
 from .tui_workers import (
     save_tui_session, record_turn, collect_prompt_attachments,
@@ -52,6 +54,15 @@ _LIVE_RENDER_INTERVAL = 0.10
 # group, so LLM runs and codebase-memory jobs must not share one.
 _LLM_WORKER_GROUP = "llm"
 _MEMORY_WORKER_GROUP = "memory"
+
+
+class LiveEventBatch(Message):
+    """Live events from one run, posted from the worker thread."""
+
+    def __init__(self, run_id: str | None, events: list[LiveEvent]) -> None:
+        super().__init__()
+        self.run_id = run_id
+        self.events = events
 
 
 @dataclass(slots=True)
@@ -790,18 +801,25 @@ class MTPApp(App):
 
         run_id = self._current_run_id
         codex_handle = self._codex_run_handle
+        # post_message is thread-safe and non-blocking, so the model stream
+        # never waits on the UI; the batcher merges token chunks.
+        batcher = LiveEventBatcher(lambda batch: self.post_message(LiveEventBatch(run_id, batch)))
+        state = self._state
 
-        def emit_live(kind: str, message: Any) -> None:
-            self.call_from_thread(self._handle_run_event, run_id, kind, message)
+        def run() -> ChatResult:
+            try:
+                return run_prompt_blocking(
+                    state,
+                    expanded_prompt,
+                    emit_callback=batcher.emit,
+                    run_id=run_id,
+                    codex_handle=codex_handle,
+                )
+            finally:
+                # Flushed before the worker result, so the UI sees every chunk first.
+                batcher.close()
 
-        result = await asyncio.to_thread(
-            run_prompt_blocking,
-            self._state,
-            expanded_prompt,
-            emit_callback=emit_live,
-            run_id=run_id,
-            codex_handle=codex_handle,
-        )
+        result = await asyncio.to_thread(run)
         result.attachments = attachments
         result.warnings = [*att_warnings, *result.warnings]
         return result
@@ -1027,15 +1045,16 @@ class MTPApp(App):
             return
         self.query_one("#chat-log", ChatLog).set_live_assistant_message(self._live_message())
 
-    def _handle_run_event(self, run_id: str | None, kind: str, message: Any) -> None:
-        """Route a live event to the UI only if it belongs to the active run.
+    def on_live_event_batch(self, message: LiveEventBatch) -> None:
+        """Apply a batch of live events if it belongs to the active run.
 
         Worker threads outlive cancellation of their asyncio wrapper, so a
         previous run can keep emitting after a new one has started.
         """
-        if run_id is None or run_id != self._current_run_id:
+        if message.run_id is None or message.run_id != self._current_run_id:
             return
-        self._handle_live_event(kind, message)
+        for kind, payload in message.events:
+            self._handle_live_event(kind, payload)
 
     def _handle_live_event(self, kind: str, message: Any) -> None:
         spinner = self.query_one("#spinner", SpinnerWidget)

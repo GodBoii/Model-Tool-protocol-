@@ -119,9 +119,12 @@ def test_throttled_live_events_are_flushed(
             emit = run["emit"]
 
             def burst() -> None:
-                # Back-to-back events land inside one throttle window.
+                # Non-text events flush immediately, so these arrive as several
+                # events inside one throttle window.
                 emit("text", "Hello")
+                emit("warn", "w1")
                 emit("text", " world")
+                emit("warn", "w2")
 
             await asyncio.to_thread(burst)
             await pilot.pause(0.3)
