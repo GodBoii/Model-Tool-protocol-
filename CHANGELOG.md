@@ -12,7 +12,7 @@ The previous release notes, 0.1.6 through 0.1.15, are still in git history. Run 
 
 - Baseline commit: `fe251da` "Add MTP docs frontend URL"
 - Work so far: 19 commits on `main`, `ab54098` through `f271e15`
-- Test suite: `python -m pytest -m "not integration and not live"` passes with 516 tests, with 11 deselected. Before this work it had 400.
+- Test suite: `python -m pytest -m "not integration and not live"` passes with 546 tests, with 11 deselected. Before this work it had 400.
 - Environment used: Windows, Python 3.13.3, Textual 8.2.5, Rich 14.3.3
 
 Contents:
@@ -525,12 +525,16 @@ New or extended test files, with test counts:
 ### Implementation update, 2026-09-30
 
 - Fixed the slash-command selection loop. Selecting a final argument executes the command once and clears the input. Multi-step `/codebase memory` selections advance to the next argument. Completed typed arguments no longer reopen the same picker, and unrelated OptionLists are ignored by the command handler. Eight new keyboard pilot cases pass; the fast suite passed 524 tests with 11 deselected.
+- Updated Codex integration to discover models through `model/list`, including per-model reasoning levels and defaults. `/codex models` refreshes the catalog. Startup respects the configured Codex model, instead of pinning GPT-5.5. Numeric shortcuts follow the returned catalog; MTP provider completions use that provider's model list.
+- `/codex account` and `/codex status` fetch the reported ChatGPT plan and live subscription windows through `account/read` and `account/rateLimits/read`. Missing limits remain unknown. Local profile data is labelled when live reads fail. Tokens and raw authentication errors are not displayed.
+- Fixed the Codex reasoning override to use `model_reasoning_effort`, including supported `max` and `ultra` values. Thinking controls use the selected model's capabilities. Codex text delta and completed-message events now reach the live chat renderer without duplicating the completed answer.
+- Upgraded the local npm Codex CLI from 0.128.0 to 0.159.2. Live metadata returned GPT-6.1 Sol and the current GPT-6 model family, the account plan and rate limits. Fresh and resumed GPT-6.1 Sol turns passed against the real CLI, with live text delivery. Sixteen metadata tests cover protocol handshake, timeout cleanup, catalog parsing, offline fallback, supported effort validation, safe account rendering and text delivery. Further keyboard cases cover first-press Enter and Tab selection, `/thinking`, current models, mixed-case codebase arguments and `/sessions` selection. The fast suite passed 546 tests with 11 deselected.
 
 - Completed 4.1.1. MTP agents restore recent user/reply pairs from the transcript before their first request, including agents prepared by `/backend`. Existing agent history is kept. Restoration keeps at most 40 whole turns, respects the agent's message limit, and reserves half the estimated model context for tools and output. System instructions and the current prompt count against the history budget. Old tool calls and reasoning are omitted; failed and cancelled replies keep their status note.
 - Added six tests in `tests/test_tui_history_seed.py`, including the real `/model` command, provider switching, loaded transcripts, duplicate prevention and small-context limits. The targeted suite passed 12 tests. The first full fast-suite run passed 492 tests and failed the existing session-load pilot test; that test passed on an isolated rerun.
 - Completed 4.1.2. Both TUI and Agent OS import `merge_stream_text` from `mtp.streaming`. Repeated tokens, newlines and overlapping suffixes are preserved; long full-payload replays retain the existing behavior. Added 14 shared merge cases and five Agent OS integration checks. The stream tests passed 26 tests, and the full fast suite passed 512 tests with 11 deselected.
 - Completed 4.1.8. Codebase scans capture their worker, initiating conversation and starting cwd. Completion updates and saves that conversation only if it remains open at the starting cwd. Superseded workers cannot clear a newer scan's state. The explicit scan-root behavior is preserved for the initiating chat. Four new pilot cases cover switching chats, closing the owner, changing its cwd and replacing a scan. The final fast suite passed 516 tests with 11 deselected.
-- Live-provider and real-terminal smoke checks remain outstanding. Session storage, restored chats, concurrency limits and the command registry remain planned work.
+- MTP-provider and real-terminal smoke checks remain outstanding. Codex metadata, fresh turns and resume have been checked against the real CLI. Session storage, restored chats, concurrency limits and the command registry remain planned work.
 
 The detailed entries below retain the original problem descriptions. Completed entries are marked in their headings.
 
@@ -588,7 +592,7 @@ These still run on the UI thread. Each is rare, but it freezes the screen while 
 - `/codex repair-config` edits a TOML file synchronously. Acceptable.
 - `collect_prompt_attachments` still stats and opens up to 8 files on the UI thread, reading at most 16k characters each. To move it off completely, resolve paths on the UI thread for display and do the reads inside `_run_llm_worker` before calling the backend.
 
-#### 4.1.5 Codex text is not streamed
+#### 4.1.5 Codex text is not streamed. Completed 2026-09-30 for available CLI events
 
 - **What happens.** `_emit_codex_live_line` sees `response.output_text.delta` events but emits only a one-time status message ("assistant is drafting the response"). The reply text appears only when the process exits.
 - **Fix.** Emit `("text", delta)` for delta events. Take the delta from the event payload, which needs checking against real Codex JSON output. At the end, reconcile with `--output-last-message`, the same way MTP runs reconcile `final_text`.

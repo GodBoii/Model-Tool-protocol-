@@ -274,7 +274,7 @@ Codex continuity behavior:
 - If a saved Codex thread is no longer resumable, TUI falls back to a fresh Codex session and records a warning.
 
 Default TUI model settings:
-- codex backend model: `gpt-5.5`
+- Codex backend model: the model configured in Codex, or its current default. `--codex-model` overrides it.
 - MTP providers: Each has a default model (e.g., `gpt-4o` for OpenAI, `llama-3.3-70b-versatile` for Groq)
 - default reasoning effort: `medium` (Codex only)
 - default autoresearch: `off` (MTP providers only)
@@ -307,7 +307,7 @@ Inside TUI:
 **Backend & Model Management:**
 - `/backend` - List all available providers with configuration status
 - `/backend <provider>` - Switch to provider (codex, openai, groq, claude, gemini, openrouter, mistral, cohere, sambanova, cerebras, deepseek, togetherai, fireworksai)
-- `/models` - Show all models for all providers
+- `/models` - Show models for the active backend. Codex models and supported reasoning levels come from the installed CLI's app-server catalog, refreshed after startup. If discovery fails, MTP uses Codex's local catalog cache or a labelled fallback.
 - `/model <name>` - Switch to model for current provider
 - `/model add <provider> <name>` - Add custom model to any provider
 
@@ -318,7 +318,7 @@ Inside TUI:
 - `/apikey show <provider>` - Show full API key (use with caution)
 
 **Configuration:**
-- `/reasoning <none|low|medium|high|xhigh>` - Set reasoning effort (Codex only)
+- `/reasoning <level>` or `/thinking <level>` - Set a level supported by the selected Codex model. Current models can expose `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; the picker uses each model's returned levels. Unsupported levels are rejected. Switching to a model that does not support the current level selects that model's default.
 - `/rounds <n>` - Set max_rounds (MTP providers)
 - `/autoresearch on|off` - Toggle autoresearch (MTP providers)
 - `/research <text>` - Set research instructions
@@ -329,22 +329,19 @@ Inside TUI:
 - `/status` - Show current session status
 - `/codex login` - Run official Codex ChatGPT login flow
 - `/codex logout` - Remove stored Codex credentials
-- `/codex status` - Show Codex login status
-- `/codex account` - Show Codex login email, profile metadata, config, and last captured usage/rate lines
+- `/codex status` or `/codex account` - Show login, reported subscription plan, CLI version, config, and live subscription limits. Each available limit window includes its remaining percentage, duration and reset time. API-key and signed-out accounts show unavailable subscription limits explicitly. Offline results are labelled as cached profile data. This reads the account without logging in or consuming a quota reset.
+- `/codex models` - Refresh the model catalog and display model-specific reasoning levels. A catalog entry describes a model; completing a request verifies access for that account and request.
 - `/codex doctor` - Run Codex diagnostics
 - `/codex repair-config` - Repair known Codex config issues
 - `/codex-login` - Compatibility alias for `/codex login`
 - `/exit` - Exit TUI
 
-Model shortcuts (Codex only):
-- `1 -> gpt-5.5`
-- `2 -> gpt-5.4`
-- `3 -> gpt-5.4-mini`
-- `4 -> gpt-5.3-codex`
+Model shortcuts are the row numbers in `/models`, in Codex's returned order. Use `/model 1`, `/model 2`, or the full model name. The catalog can include GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, GPT-6 Luna and earlier models, depending on the installed CLI and account.
 
 For MTP providers, use full model names or add custom models with `/model add <provider> <name>`.
 
 Prompt UX:
+- Type `/` and navigate the command picker with arrows. Enter or Tab selects a suggestion. Selecting a final argument runs the command once and clears the input. Multi-step choices such as `/codebase memory` continue to the next argument picker.
 - Use `@path/to/file.py` directly in your prompt to inject file context into the request.
 - Example: `debug this @src/mtp/cli/tui.py and suggest a fix`
 
