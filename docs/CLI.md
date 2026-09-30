@@ -145,10 +145,36 @@ Recommended launch command:
 
 **Session Commands:**
 - `/sessions` - List all saved sessions (grouped by directory)
-- `/new [label]` - Start a new session (optional custom label)
-- `/load <session_id>` - Load a saved session
+- `/new [label]` - Open a new chat next to the current one (optional custom label)
+- `/load <session_id>` - Open a saved session in its own chat, or switch to it if it is already open
 - `/open <session_id>` - View a session (read-only)
 - `/history [n]` - Show recent turns in current session
+
+**Chats and multitasking:**
+
+Several chats can be open at once, shown as tabs above the log. Each chat has its own session, backend, model, working directory and run. A chat keeps running and streaming while you look at another one. When a background chat finishes, its tab gets a green dot, or a red `!` if the run failed.
+
+- `Ctrl+N` or `/new [label]` - open a new chat. It starts with the current chat's backend and settings.
+- `Alt+1`..`Alt+9`, `Alt+Left`/`Alt+Right` (or `Ctrl+PageUp`/`Ctrl+PageDown`), `/switch <n>` - switch chats
+- `/tabs` - list open chats with their state
+- `/close [n]` - close a chat. A running chat has to be stopped first.
+- Changing `/backend`, `/model`, `/cd` or `/mode` while a chat is running applies to its next message. The running reply keeps the settings it started with.
+
+**Sending while a reply is running:**
+
+- `Enter` queues the message. It runs as soon as the current reply finishes, and the queue shows above the input.
+- For MTP provider backends you can steer instead. `Ctrl+G` sends the newest queued message into the running reply, and so does "steer now" in the queue bar or `/steer <text>`. The model sees it at its next step. If the reply finishes before that step, the message runs next instead. Codex chats can only queue.
+- `/queue` lists queued messages; `/queue clear` drops them.
+
+**Stopping and failures:**
+
+- `Ctrl+X` stops the running reply. When nothing is running, `Ctrl+X` cuts as usual, and `Ctrl+C` is always copy.
+- `Esc` closes an open suggestion list first; press it again to stop the reply.
+- A stopped or failed reply is saved with whatever it had produced so far, marked "Interrupted" or "Run failed: <error>". You can keep sending messages in the same chat.
+
+**Keyboard shortcuts:** `Ctrl+P` commands, `Ctrl+B` sidebar, `Ctrl+Y` copy last reply, `Ctrl+L` clear screen, plus the chat keys above. `/help` shows the full list.
+
+**Settings recovery:** if `tui_provider_settings.json` cannot be parsed, the TUI saves a copy as `tui_provider_settings.json.corrupt-<timestamp>`, starts with empty settings, and shows a warning. Your keys stay in the copy.
 
 **Session Features:**
 - **Auto-Generated Titles**: Session titles are automatically created from your first message
