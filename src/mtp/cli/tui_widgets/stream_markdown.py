@@ -49,6 +49,35 @@ def _markdown(text: str) -> RichMarkdown:
     return RichMarkdown(text, code_theme="monokai")
 
 
+class MarkdownBlock(Static):
+    """Single-widget Markdown for finished text.
+
+    ``StreamingMarkdown`` splits text into one widget per paragraph so that
+    streaming stays cheap; finished turns never change, so one widget is
+    faster to mount and lay out.
+    """
+
+    DEFAULT_CSS = """
+    MarkdownBlock {
+        height: auto;
+    }
+    """
+
+    def __init__(self, text: str = "", **kwargs: object) -> None:
+        super().__init__(_markdown(text), **kwargs)  # type: ignore[arg-type]
+        self._text = text
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    def update_text(self, text: str) -> None:
+        if text == self._text:
+            return
+        self._text = text
+        self.update(_markdown(text))
+
+
 class StreamingMarkdown(Vertical):
     """Markdown view that only re-renders the unfinished tail on update."""
 

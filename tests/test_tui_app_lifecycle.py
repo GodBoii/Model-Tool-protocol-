@@ -215,7 +215,7 @@ def test_escape_cancels_codex_run(tmp_path: Path, fake_runner: FakeRunner) -> No
     async def scenario() -> None:
         app = MTPApp(state=_make_state(tmp_path))
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.6)  # input focus is applied on a startup timer
+            await pilot.pause()
             app._send_prompt("hi")
             run = await fake_runner.wait_started()
             handle = run["codex_handle"]
@@ -325,3 +325,15 @@ def test_backend_switch_runs_off_the_ui_thread(
     asyncio.run(scenario())
     assert len(threads) == 2
     assert threading.main_thread().name not in threads
+
+
+def test_input_is_focused_on_first_frame(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    async def scenario() -> None:
+        from mtp.cli.tui_widgets.input_area import InputArea
+
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert isinstance(app.focused, InputArea)
+
+    asyncio.run(scenario())

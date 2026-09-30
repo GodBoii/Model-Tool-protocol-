@@ -194,8 +194,12 @@ class MTPApp(App):
         self._refresh_prompt_label()
         self._rebuild_chat_log()
         self._show_boot_info()
-        self.set_timer(0.5, self._focus_input)
-        self._request_background_memory_refresh(reason="startup", prefer_full_scan=True)
+        # Typing works as soon as the first frame is up; no fixed delay.
+        self.call_after_refresh(self._focus_input)
+        # Memory status touches sqlite; start it after the first paint.
+        self.call_after_refresh(
+            lambda: self._request_background_memory_refresh(reason="startup", prefer_full_scan=True)
+        )
 
     def _save_session(self) -> None:
         """Snapshot state now; the write happens debounced on a background thread."""

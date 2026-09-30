@@ -17,7 +17,7 @@ from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Static
 
-from .stream_markdown import StreamingMarkdown
+from .stream_markdown import MarkdownBlock, StreamingMarkdown
 
 
 _TOOL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -431,7 +431,7 @@ class AssistantMessageWidget(Vertical):
             if index < keep:
                 self._update_block_widget(block_type, self._block_widgets[index][1], block, finalized, collapse_now)
                 continue
-            widget = self._create_block_widget(block_type, block, collapse_now)
+            widget = self._create_block_widget(block_type, block, collapse_now, live=msg.is_live)
             if widget is None:
                 continue
             self._block_widgets.append((block_type, widget))
@@ -457,13 +457,16 @@ class AssistantMessageWidget(Vertical):
         self.query_one(".assistant-header", Static).update(header)
 
     @staticmethod
-    def _create_block_widget(block_type: str, block: dict[str, Any], collapsed: bool) -> Widget | None:
+    def _create_block_widget(
+        block_type: str, block: dict[str, Any], collapsed: bool, *, live: bool,
+    ) -> Widget | None:
         if block_type == "thinking":
             return ThinkingBlockWidget(str(block.get("text") or ""), collapsed=collapsed)
         if block_type == "tool_group":
             return ToolGroupWidget(block)
         if block_type == "text":
-            return StreamingMarkdown(str(block.get("text") or ""))
+            text = str(block.get("text") or "")
+            return StreamingMarkdown(text) if live else MarkdownBlock(text)
         return None
 
     @staticmethod
@@ -475,7 +478,7 @@ class AssistantMessageWidget(Vertical):
             widget.update_block(str(block.get("text") or ""), collapsed=collapse_now if finalized else None)
         elif block_type == "tool_group" and isinstance(widget, ToolGroupWidget):
             widget.update_group(block)
-        elif block_type == "text" and isinstance(widget, StreamingMarkdown):
+        elif block_type == "text" and isinstance(widget, (StreamingMarkdown, MarkdownBlock)):
             widget.update_text(str(block.get("text") or ""))
 
     def _update_footer(self) -> None:
@@ -547,8 +550,10 @@ class SystemMessageWidget(Static):
         super().__init__(renderable)
 
 
-# Turns mounted when a transcript loads. Older turns mount on demand.
-HISTORY_WINDOW = 30
+# Turns mounted when a transcript loads; each costs Markdown layout on the
+# first paint. Older turns mount HISTORY_PAGE at a time on demand.
+HISTORY_WINDOW = 12
+HISTORY_PAGE = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -654,7 +659,7 @@ class ChatLog(VerticalScroll):
             body.mount_all(widgets)
         self.scroll_end(animate=False)
 
-    def show_earlier(self, count: int = HISTORY_WINDOW) -> None:
+    def show_earlier(self, count: int = HISTORY_PAGE) -> None:
         """Mount up to ``count`` more of the hidden older turns."""
         if not self._hidden_turns or self._earlier_button is None:
             return

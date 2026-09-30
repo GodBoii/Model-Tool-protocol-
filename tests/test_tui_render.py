@@ -12,6 +12,8 @@ pytest.importorskip("textual")
 from mtp.cli.tui_app import MTPApp
 from mtp.cli.tui_state import TranscriptTurn, now_label
 from mtp.cli.tui_widgets.chat_log import (
+    HISTORY_PAGE,
+    HISTORY_WINDOW,
     AssistantMessageWidget,
     ChatLog,
     ToolCallWidget,
@@ -104,16 +106,17 @@ def test_long_history_mounts_a_window_and_loads_more(tmp_path: Path, fake_runner
             def mounted_prompts() -> list[str]:
                 return [w._text for w in chat_log.query(UserMessageWidget)]
 
-            assert len(mounted_prompts()) == 30
+            assert len(mounted_prompts()) == HISTORY_WINDOW
             assert mounted_prompts()[-1] == "question 69"
-            assert chat_log.hidden_turn_count == 40
+            assert chat_log.hidden_turn_count == 70 - HISTORY_WINDOW
 
             chat_log.show_earlier()
             await pilot.pause()
-            assert len(mounted_prompts()) == 60
-            assert mounted_prompts()[0] == "question 10"
+            assert len(mounted_prompts()) == HISTORY_WINDOW + HISTORY_PAGE
+            assert mounted_prompts()[0] == f"question {70 - HISTORY_WINDOW - HISTORY_PAGE}"
 
-            chat_log.show_earlier()
+            while chat_log.hidden_turn_count:
+                chat_log.show_earlier()
             await pilot.pause()
             prompts = mounted_prompts()
             assert prompts == [f"question {i}" for i in range(70)]
