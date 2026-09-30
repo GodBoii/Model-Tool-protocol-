@@ -271,3 +271,26 @@ def test_pending_save_is_flushed_on_exit(tmp_path: Path, fake_runner: FakeRunner
     stored = state.session_store.get_session(session_id=state.session_id, user_id=state.user_id)
     assert stored is not None
     assert stored.metadata["tui"]["max_rounds"] == 9
+
+
+def test_file_suggestions_come_from_background_index(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "widget_target.py").write_text("x", encoding="utf-8")
+
+    async def scenario() -> None:
+        from textual.widgets import OptionList
+
+        from mtp.cli.tui_widgets.input_area import InputArea
+
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            input_area = app.query_one("#chat-input", InputArea)
+            input_area.focus()
+            input_area.insert("look at @widget_t")
+            await pilot.pause(0.3)
+            options = app.query_one("#suggestion-list", OptionList)
+            assert options.has_class("visible")
+            labels = [str(options.get_option_at_index(i).prompt) for i in range(options.option_count)]
+            assert labels == ["@src/widget_target.py"]
+
+    asyncio.run(scenario())

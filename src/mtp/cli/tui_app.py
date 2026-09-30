@@ -36,6 +36,10 @@ from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_codex_backend import CodexRunHandle
+from .tui_indexes import (
+    FILE_INDEX_MAX_AGE, BackgroundIndex, FileList, FileSignature, SessionSummary,
+    file_signature, load_session_summaries, scan_workspace_files,
+)
 from .tui_live_events import LiveEvent, LiveEventBatcher
 from .tui_commands import MTPCommandProvider, parse_slash_command
 from .tui_persistence import SessionSaver
@@ -64,6 +68,10 @@ class LiveEventBatch(Message):
         super().__init__()
         self.run_id = run_id
         self.events = events
+
+
+class IndexReady(Message):
+    """An autocomplete index finished building. Posted from its loader thread."""
 
 
 class SessionSaveFailed(Message):
@@ -142,6 +150,17 @@ class MTPApp(App):
         self._live_model_name: str = ""
         self.session_saver = SessionSaver(
             on_error=lambda exc: self.post_message(SessionSaveFailed(exc)),
+        )
+        self._file_index: BackgroundIndex[Path, FileList] = BackgroundIndex(
+            scan_workspace_files,
+            on_ready=lambda: self.post_message(IndexReady()),
+            max_age=FILE_INDEX_MAX_AGE,
+            name="mtp-file-index",
+        )
+        self._session_index: BackgroundIndex[FileSignature, list[SessionSummary]] = BackgroundIndex(
+            load_session_summaries,
+            on_ready=lambda: self.post_message(IndexReady()),
+            name="mtp-session-index",
         )
         self._live_flush_timer: Timer | None = None
 
@@ -475,8 +494,27 @@ class MTPApp(App):
             lines = input_area.text.split("\n")
             input_area.cursor_location = (len(lines) - 1, len(lines[-1]))
 
-    def on_input_area_changed(self, event: InputArea.Changed) -> None:
-        input_area = event.text_area
+    def on_text_area_changed(self, event: InputArea.Changed) -> None:
+        # TextArea.Changed dispatches to on_text_area_changed, even from the
+        # InputArea subclass; the old on_input_area_changed name never ran.
+        if isinstance(event.text_area, InputArea):
+            self._update_suggestions(event.text_area)
+
+    def on_index_ready(self, message: IndexReady) -> None:
+        """An autocomplete index finished building; refresh suggestions that use it."""
+        input_area = self.query_one("#chat-input", InputArea)
+        row, col = input_area.cursor_location
+        lines = input_area.text.split("\n")
+        if row >= len(lines):
+            return
+        line = lines[row][:col]
+        words = line.split()
+        wants_files = bool(words) and words[-1].startswith("@") and line.endswith(words[-1])
+        wants_sessions = line.split(" ", 1)[0].lower() in {"/load", "/open", "/sessions"}
+        if wants_files or wants_sessions:
+            self._update_suggestions(input_area)
+
+    def _update_suggestions(self, input_area: InputArea) -> None:
         cursor_row, cursor_col = input_area.cursor_location
         lines = input_area.text.split("\n")
         if cursor_row >= len(lines):
@@ -544,28 +582,10 @@ class MTPApp(App):
             self._show_command_suggestions(partial)
 
     def _show_file_suggestions(self, partial: str) -> None:
-        import os
-        from pathlib import Path
-        cwd = self._state.cwd
-        matches = []
-        try:
-            for root, dirs, files in os.walk(cwd):
-                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in {"__pycache__", "node_modules", "venv", ".venv", ".git"}]
-                rel_root = Path(root).relative_to(cwd)
-                if str(rel_root) == ".":
-                    rel_root = Path("")
-                for f in files:
-                    if f.startswith("."): continue
-                    rel_path = (rel_root / f).as_posix()
-                    if partial.lower() in rel_path.lower():
-                        matches.append(rel_path)
-                if len(rel_root.parts) >= 2:
-                    dirs.clear()
-        except Exception:
-            pass
-            
-        matches.sort()
-        matches = matches[:20]
+        # Served from memory; while the first build runs this is empty and
+        # on_index_ready fills it in.
+        files = self._file_index.get(self._state.cwd)
+        matches = files.matching(partial) if files is not None else []
         if not matches:
             try: self.query_one("#suggestion-list", OptionList).remove_class("visible")
             except Exception: pass
@@ -633,29 +653,15 @@ class MTPApp(App):
             options = [m for m, d in MODEL_PRESETS]
             matches = [m for m in options if partial in m.lower()]
         elif cmd in ("load", "sessions", "open"):
-            import json
-            from mtp import SessionRecord
-            try:
-                sessions = []
-                if self._state.session_store.file_path.exists():
-                    rows = json.loads(self._state.session_store.file_path.read_text(encoding="utf-8"))
-                    for row in rows:
-                        sessions.append(SessionRecord.from_dict(row))
-                sessions.sort(key=lambda x: x.updated_at, reverse=True)
-                for s in sessions[:30]:
-                    sid = s.session_id.split("-")[-1][:8]
-                    tui = s.metadata.get("tui", {}) if isinstance(s.metadata, dict) else {}
-                    label = tui.get("session_label", "")
-                    turns = tui.get("turn_count", 0)
-                    search_str = f"{sid} {label}".lower()
-                    if partial in search_str:
-                        display = f"{sid}"
-                        if label:
-                            display += f"{_SUGGESTION_SEPARATOR}{label}"
-                        display += f"  ({turns} turns)"
-                        matches.append(display)
-            except Exception:
-                pass
+            signature = file_signature(self._state.session_store.file_path)
+            summaries = (self._session_index.get(signature) if signature is not None else None) or []
+            for summary in summaries:
+                if partial in summary.search_text():
+                    display = summary.short_id
+                    if summary.label:
+                        display += f"{_SUGGESTION_SEPARATOR}{summary.label}"
+                    display += f"  ({summary.turns} turns)"
+                    matches.append(display)
         elif cmd == "mode":
             from .tui_harness_policy import HARNESS_MODES
             matches = [m for m in HARNESS_MODES if partial in m.lower()]
@@ -1106,6 +1112,7 @@ class MTPApp(App):
                 and self._tool_mutates_workspace(str(detail.get("tool_name") or ""))
             ):
                 self._memory_refresh_dirty = True
+                self._file_index.invalidate()  # the tool may have created or removed files
         elif kind == "warn":
             self._live_warnings.append(message)
         elif kind == "reasoning":
