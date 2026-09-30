@@ -1,5 +1,11 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.36, 2026-09-30
+
+- Execute completed slash-command selections without repeating the selection loop.
+- Discover current Codex models, reasoning options and subscription limits.
+- Update CLI documentation for command selection and Codex capabilities.
+
 ## Release 0.1.35, 2026-09-30
 
 - Publish the current SDK, CLI and TUI code as `mtpx` 0.1.35.
