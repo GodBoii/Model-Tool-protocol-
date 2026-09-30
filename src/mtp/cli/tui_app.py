@@ -17,16 +17,17 @@ from textual.widgets import OptionList, RichLog
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.timer import Timer
+from textual.widget import Widget
 from textual.worker import Worker, WorkerState
 
 from .tui_state import (
-    TUIState, ChatResult, active_model_name,
+    TUIState, ChatResult, TranscriptTurn, active_model_name,
     new_session_id, generate_session_title_from_prompt,
     resolve_model,
     MODEL_PRESETS, REASONING_SHORTCUTS,
 )
 from .tui_thinking import apply_thinking_value, get_thinking_capability
-from .tui_widgets.chat_log import ChatLog, ChatMessage
+from .tui_widgets.chat_log import ChatLog, ChatMessage, HistoryTurn
 from .tui_widgets.input_area import InputPanel, InputArea, PromptLabel, AttachmentBadge
 from .tui_widgets.status_bar import StatusBar, ThinkingBadge
 from .tui_widgets.sidebar import Sidebar, SessionInfo, ToolEventLog, RunMetrics, ShortcutHints, WorkspaceTree
@@ -117,6 +118,8 @@ class MTPApp(App):
         self._current_run_id: str | None = None
         self._llm_worker: Worker[ChatResult] | None = None
         self._codex_run_handle: CodexRunHandle | None = None
+        self._pending_turn_widgets: list[Widget] = []
+        self._live_model_name: str = ""
         self._live_flush_timer: Timer | None = None
 
     @property
@@ -189,46 +192,71 @@ class MTPApp(App):
 
     def _rebuild_chat_log(self) -> None:
         chat_log = self.query_one("#chat-log", ChatLog)
-        chat_log.clear()
-
-        for turn in self._state.transcript:
-            chat_log.add_user_message(turn.prompt, turn.attachments)
-            chat_log.add_assistant_message(
-                ChatMessage(
-                    role="assistant",
-                    text=turn.response,
-                    model=turn.model,
-                    backend=turn.backend,
-                    warnings=turn.warnings,
-                    usage_lines=turn.usage_lines,
-                    thinking=turn.thinking_text,
-                    tool_details=list(turn.tool_details),
-                    show_tool_details=self._show_tool_details,
-                    assistant_blocks=list(turn.assistant_blocks),
-                    collapse_thinking=True,
-                )
-            )
+        chat_log.load_history([
+            HistoryTurn(prompt=turn.prompt, attachments=list(turn.attachments), reply=self._turn_message(turn))
+            for turn in self._state.transcript
+        ])
+        self._pending_turn_widgets = []
 
         if self._pending_display_prompt:
-            chat_log.add_user_message(self._pending_display_prompt, self._pending_display_attachments)
-            chat_log.add_system_message(self._current_turn_banner())
+            self._mount_pending_turn(chat_log)
             if self._live_message_active():
-                chat_log.set_live_assistant_message(
-                    ChatMessage(
-                        role="assistant",
-                        text="",
-                        model=active_model_name(self._state),
-                        backend=self._state.backend,
-                        tool_events=list(self._live_tool_events),
-                        tool_details=list(self._live_tool_details),
-                        warnings=list(self._live_warnings),
-                        thinking=self._live_thinking_text.strip(),
-                        show_tool_details=self._show_tool_details,
-                        assistant_blocks=list(self._live_blocks),
-                        collapse_thinking=False,
-                        is_live=True,
-                    )
-                )
+                chat_log.set_live_assistant_message(self._live_message())
+
+    def _turn_message(self, turn: TranscriptTurn) -> ChatMessage:
+        return ChatMessage(
+            role="assistant",
+            text=turn.response,
+            model=turn.model,
+            backend=turn.backend,
+            warnings=turn.warnings,
+            usage_lines=turn.usage_lines,
+            thinking=turn.thinking_text,
+            tool_details=list(turn.tool_details),
+            show_tool_details=self._show_tool_details,
+            assistant_blocks=list(turn.assistant_blocks),
+            collapse_thinking=True,
+        )
+
+    def _live_message(self) -> ChatMessage:
+        return ChatMessage(
+            role="assistant",
+            text="",
+            model=self._live_model_name,
+            backend=self._state.backend,
+            tool_events=list(self._live_tool_events),
+            tool_details=list(self._live_tool_details),
+            warnings=list(self._live_warnings),
+            thinking=self._live_thinking_text.strip(),
+            show_tool_details=self._show_tool_details,
+            assistant_blocks=list(self._live_blocks),
+            collapse_thinking=False,
+            is_live=True,
+        )
+
+    def _mount_pending_turn(self, chat_log: ChatLog) -> None:
+        """Show the prompt being run plus its banner, without a full rebuild."""
+        self._pending_turn_widgets = [
+            chat_log.add_user_message(self._pending_display_prompt, self._pending_display_attachments),
+            chat_log.add_system_message(self._current_turn_banner()),
+        ]
+
+    def _complete_pending_turn(self, turn: TranscriptTurn) -> None:
+        """Replace the live preview with the finished turn in place."""
+        chat_log = self.query_one("#chat-log", ChatLog)
+        # The banner only describes an in-flight run; saved turns don't show it.
+        for widget in self._pending_turn_widgets[1:]:
+            widget.remove()
+        self._pending_turn_widgets = []
+        chat_log.finalize_live_assistant_message(self._turn_message(turn))
+
+    def _discard_pending_turn(self) -> None:
+        """Drop the in-flight prompt display after a failed or cancelled run."""
+        chat_log = self.query_one("#chat-log", ChatLog)
+        chat_log.clear_live_assistant_message()
+        for widget in self._pending_turn_widgets:
+            widget.remove()
+        self._pending_turn_widgets = []
 
     def _refresh_status_bar(self) -> None:
         try:
@@ -735,7 +763,9 @@ class MTPApp(App):
         self._reset_live_preview()
         self._pending_display_prompt = raw
         self._pending_display_attachments = list(attachments)
-        self._rebuild_chat_log()
+        # Resolved once per run; live frames must not read settings from disk.
+        self._live_model_name = active_model_name(self._state)
+        self._mount_pending_turn(self.query_one("#chat-log", ChatLog))
         spinner.start("Thinking")
 
         self._turn_start_time = time.monotonic()
@@ -995,22 +1025,7 @@ class MTPApp(App):
         self._last_live_render_at = now
         if not self._pending_display_prompt:
             return
-        self.query_one("#chat-log", ChatLog).set_live_assistant_message(
-            ChatMessage(
-                role="assistant",
-                text="",
-                model=active_model_name(self._state),
-                backend=self._state.backend,
-                tool_events=list(self._live_tool_events),
-                tool_details=list(self._live_tool_details),
-                warnings=list(self._live_warnings),
-                thinking=self._live_thinking_text.strip(),
-                show_tool_details=self._show_tool_details,
-                assistant_blocks=list(self._live_blocks),
-                collapse_thinking=False,
-                is_live=True,
-            )
-        )
+        self.query_one("#chat-log", ChatLog).set_live_assistant_message(self._live_message())
 
     def _handle_run_event(self, run_id: str | None, kind: str, message: Any) -> None:
         """Route a live event to the UI only if it belongs to the active run.
@@ -1033,7 +1048,8 @@ class MTPApp(App):
         elif kind in {"tool", "tool_end"}:
             self._live_tool_events.append(message)
             self._state.last_tool_events = list(self._live_tool_events)
-            self._refresh_sidebar()
+            # Only the tool list changed; a full sidebar refresh reads settings from disk.
+            self.query_one("#tool-event-log", ToolEventLog).update_events(self._state.last_tool_events)
         elif kind == "tool_detail":
             try:
                 detail = dict(message)  # type: ignore[arg-type]
@@ -1149,17 +1165,18 @@ class MTPApp(App):
             self._state.last_tool_events = list(result.tool_events)
             self._state.last_tool_details = list(result.tool_details)
             self._state.last_warnings = list(result.warnings)
+            self._cancel_live_flush()
+            self._complete_pending_turn(self._state.transcript[-1])
             self._clear_pending_turn_display()
             self._reset_live_preview()
-            self._rebuild_chat_log()
             self._refresh_status_bar()
             self._refresh_sidebar()
 
         elif event.state == WorkerState.ERROR:
             spinner.stop()
+            self._discard_pending_turn()
             self._clear_pending_turn_display()
             self._reset_live_preview()
-            self._rebuild_chat_log()
             self.query_one("#chat-log", ChatLog).add_system_message(
                 f"Error: {event.worker.error}", style="bold #f43f5e"
             )
@@ -1167,9 +1184,9 @@ class MTPApp(App):
 
         elif event.state == WorkerState.CANCELLED:
             spinner.stop()
+            self._discard_pending_turn()
             self._clear_pending_turn_display()
             self._reset_live_preview()
-            self._rebuild_chat_log()
             self.query_one("#chat-log", ChatLog).add_system_message(
                 "Request cancelled.", style="#fbbf24"
             )
@@ -2043,8 +2060,12 @@ class MTPApp(App):
     # ── Action bindings ──────────────────────────────────────────────────
 
     def action_toggle_sidebar(self) -> None:
-        self.query_one("#sidebar", Sidebar).toggle()
+        sidebar = self.query_one("#sidebar", Sidebar)
+        sidebar.toggle()
         self._refresh_sidebar()
+        if sidebar.is_open:
+            # Files may have changed since the tree was last listed.
+            self.query_one("#workspace-tree", WorkspaceTree).refresh_tree(self._state.cwd, force=True)
 
     def action_clear_chat(self) -> None:
         self._clear_pending_turn_display()

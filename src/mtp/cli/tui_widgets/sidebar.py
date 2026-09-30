@@ -48,7 +48,10 @@ class WorkspaceTree(Tree):
         except Exception as exc:
             self.root.add(f"⚠ {exc}", allow_expand=False)
 
-    def refresh_tree(self, cwd: Path) -> None:
+    def refresh_tree(self, cwd: Path, *, force: bool = False) -> None:
+        """Re-list ``cwd``. Skips the directory scan when nothing changed."""
+        if cwd == self._cwd and not force:
+            return
         self._cwd = cwd
         self.root.set_label(str(cwd.name or cwd))
         self._populate()
@@ -198,3 +201,7 @@ class Sidebar(VerticalScroll):
 
     def toggle(self) -> None:
         self.toggle_class("visible")
+
+    @property
+    def is_open(self) -> bool:
+        return self.has_class("visible")
