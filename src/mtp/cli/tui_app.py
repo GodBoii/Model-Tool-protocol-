@@ -33,6 +33,7 @@ from .tui_widgets.sidebar import Sidebar, SessionInfo, ToolEventLog, RunMetrics,
 from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
+from .tui_codex_backend import CodexRunHandle
 from .tui_commands import MTPCommandProvider, parse_slash_command
 from .tui_workers import (
     save_tui_session, record_turn, collect_prompt_attachments,
@@ -115,6 +116,7 @@ class MTPApp(App):
         self._memory_launch_scan_done = False
         self._current_run_id: str | None = None
         self._llm_worker: Worker[ChatResult] | None = None
+        self._codex_run_handle: CodexRunHandle | None = None
         self._live_flush_timer: Timer | None = None
 
     @property
@@ -354,10 +356,20 @@ class MTPApp(App):
             if not self._pending_attachments:
                 self.query_one("#attachment-container").remove_class("visible")
 
+    def _request_interrupt(self) -> bool:
+        """Ask the active run to stop. Returns True if a cancel was issued."""
+        if not self._llm_worker_running or not self._current_run_id:
+            return False
+        if self._codex_run_handle is not None:
+            return self._codex_run_handle.cancel()
+        agent = self._state.agent
+        if agent is None:
+            return False
+        return bool(agent.cancel_run(self._current_run_id))
+
     def action_hide_suggestions(self) -> None:
-        if self._llm_worker_running and self._current_run_id and self._state.backend != "codex" and self._state.agent is not None:
-            cancelled = self._state.agent.cancel_run(self._current_run_id)
-            if cancelled:
+        if self._llm_worker_running:
+            if self._request_interrupt():
                 self.query_one("#chat-log", ChatLog).add_system_message("  Interrupt requested...", style="#fbbf24")
             return
         try:
@@ -733,6 +745,7 @@ class MTPApp(App):
         self._llm_worker_running = True
         self._memory_refresh_dirty = False
         self._current_run_id = f"run-{uuid4().hex[:12]}"
+        self._codex_run_handle = CodexRunHandle() if self._state.backend == "codex" else None
 
         self._llm_worker = self.run_worker(
             self._run_llm_worker(expanded, attachments, att_warnings),
@@ -746,6 +759,7 @@ class MTPApp(App):
         import asyncio
 
         run_id = self._current_run_id
+        codex_handle = self._codex_run_handle
 
         def emit_live(kind: str, message: Any) -> None:
             self.call_from_thread(self._handle_run_event, run_id, kind, message)
@@ -756,6 +770,7 @@ class MTPApp(App):
             expanded_prompt,
             emit_callback=emit_live,
             run_id=run_id,
+            codex_handle=codex_handle,
         )
         result.attachments = attachments
         result.warnings = [*att_warnings, *result.warnings]
@@ -1110,6 +1125,7 @@ class MTPApp(App):
             self._llm_worker_running = False
             self._current_run_id = None
             self._llm_worker = None
+            self._codex_run_handle = None
 
         if event.state == WorkerState.SUCCESS:
             spinner.stop()

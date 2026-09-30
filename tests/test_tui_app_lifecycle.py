@@ -31,10 +31,19 @@ class FakeRunner:
         self._started = threading.Semaphore(0)
 
     def __call__(
-        self, state: TUIState, prompt: str, *, emit_callback: Callable[[str, Any], None], run_id: str | None
+        self,
+        state: TUIState,
+        prompt: str,
+        *,
+        emit_callback: Callable[[str, Any], None],
+        run_id: str | None,
+        codex_handle: Any = None,
     ) -> ChatResult:
         release = threading.Event()
-        self.calls.append({"prompt": prompt, "emit": emit_callback, "run_id": run_id, "release": release})
+        self.calls.append({
+            "prompt": prompt, "emit": emit_callback, "run_id": run_id,
+            "release": release, "codex_handle": codex_handle,
+        })
         self._started.release()
         release.wait(timeout=10)
         return ChatResult(text=f"answer to {prompt}", tool_events=[], attachments=[], warnings=[], usage_lines=[])
@@ -195,5 +204,23 @@ def test_load_command_renders_loaded_transcript(tmp_path: Path, fake_runner: Fak
             await pilot.pause(0.2)
             assert app.state.session_id == "chat-saved00001"
             assert len(list(chat_log.query(UserMessageWidget))) == 1
+
+    asyncio.run(scenario())
+
+
+def test_escape_cancels_codex_run(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    async def scenario() -> None:
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.6)  # input focus is applied on a startup timer
+            app._send_prompt("hi")
+            run = await fake_runner.wait_started()
+            handle = run["codex_handle"]
+            assert handle is not None and not handle.cancelled
+            await pilot.press("escape")
+            await pilot.pause(0.1)
+            assert handle.cancelled
+            run["release"].set()
+            await pilot.pause(0.3)
 
     asyncio.run(scenario())

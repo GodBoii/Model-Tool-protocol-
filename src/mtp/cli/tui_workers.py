@@ -23,6 +23,7 @@ from .tui_state import (
 
 if TYPE_CHECKING:
     from .tui_app import MTPApp
+    from .tui_codex_backend import CodexRunHandle
 
 
 # ── Session persistence ──────────────────────────────────────────────────────
@@ -164,18 +165,27 @@ def run_prompt_blocking(
     *,
     emit_callback: Any = None,
     run_id: str | None = None,
+    codex_handle: CodexRunHandle | None = None,
 ) -> ChatResult:
     """Execute an LLM prompt synchronously (called from Worker thread).
 
     This function blocks and should ONLY be called from a Textual Worker.
+    ``codex_handle`` lets the UI cancel a codex run; MTP runs are cancelled
+    through ``agent.cancel_run(run_id)`` instead.
     """
     if state.backend == "codex":
-        return _run_codex(state, prompt)
+        return _run_codex(state, prompt, emit_callback=emit_callback, handle=codex_handle)
     else:
         return _run_mtp(state, prompt, emit_callback=emit_callback, run_id=run_id)
 
 
-def _run_codex(state: TUIState, prompt: str) -> ChatResult:
+def _run_codex(
+    state: TUIState,
+    prompt: str,
+    *,
+    emit_callback: Any = None,
+    handle: CodexRunHandle | None = None,
+) -> ChatResult:
     """Run prompt through Codex CLI backend."""
     from . import tui_codex_backend as codex_backend
 
@@ -197,6 +207,8 @@ def _run_codex(state: TUIState, prompt: str) -> ChatResult:
         previous_session_id=state.codex_session_id,
         sandbox_mode=state.codex_sandbox_mode,
         conversation_history=conversation_history,
+        emit_live=emit_callback,
+        handle=handle,
     )
     state.codex_session_id = codex_result.session_id
     return ChatResult(

@@ -9,8 +9,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
+import threading
 import tomllib
 from typing import Any, Callable
 
@@ -983,11 +986,76 @@ def _build_codex_exec_command(
     return cmd
 
 
+CODEX_CANCELLED_TEXT = "Run cancelled."
+
+
+def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
+    """Stop ``proc`` and its children.
+
+    On Windows ``codex`` is usually ``codex.cmd``, a shim that starts node.
+    Killing only the shim leaves node running and holding the stdout pipe,
+    so the whole tree has to go.
+    """
+    if proc.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+            )
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
+    except OSError:
+        proc.kill()
+
+
+class CodexRunHandle:
+    """Lets the UI thread stop a codex run that a worker thread is executing."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._proc: subprocess.Popen[str] | None = None
+        self._cancelled = False
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def attach(self, proc: subprocess.Popen[str]) -> None:
+        with self._lock:
+            self._proc = proc
+            cancel_now = self._cancelled
+        if cancel_now:
+            _kill_process_tree(proc)
+
+    def detach(self) -> None:
+        with self._lock:
+            self._proc = None
+
+    def cancel(self) -> bool:
+        """Request cancellation. Returns False if it was already requested."""
+        with self._lock:
+            if self._cancelled:
+                return False
+            self._cancelled = True
+            proc = self._proc
+        if proc is not None:
+            _kill_process_tree(proc)
+        return True
+
+
 def _run_codex_command(
     *,
     cmd: list[str],
     emit: Callable[[str], None] | None,
+    handle: CodexRunHandle | None = None,
 ) -> tuple[int, str]:
+    popen_kwargs: dict[str, Any] = {}
+    if sys.platform != "win32":
+        # Own process group so cancellation can signal codex and its children.
+        popen_kwargs["start_new_session"] = True
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -996,19 +1064,26 @@ def _run_codex_command(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        **popen_kwargs,
     )
+    if handle is not None:
+        handle.attach(proc)
     stdout_lines: list[str] = []
     emitted: dict[str, Any] = {}
-    if proc.stdout is not None:
-        for line in proc.stdout:
-            stdout_lines.append(line)
-            if emit is not None:
-                _emit_codex_live_line(
-                    line,
-                    emitted,
-                    emit=lambda kind, message: emit(f"{kind}:{message}"),
-                )
-    return proc.wait(), "".join(stdout_lines)
+    try:
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                stdout_lines.append(line)
+                if emit is not None:
+                    _emit_codex_live_line(
+                        line,
+                        emitted,
+                        emit=lambda kind, message: emit(f"{kind}:{message}"),
+                    )
+        return proc.wait(), "".join(stdout_lines)
+    finally:
+        if handle is not None:
+            handle.detach()
 
 
 def run_codex_prompt(
@@ -1022,6 +1097,7 @@ def run_codex_prompt(
     sandbox_mode: str = "workspace-write",
     conversation_history: list[tuple[str, str]] | None = None,
     emit_live: Callable[[str, str], None] | None = None,
+    handle: CodexRunHandle | None = None,
 ) -> CodexRunResult:
     """
     Run a Codex prompt with optional conversation history injection.
@@ -1036,6 +1112,7 @@ def run_codex_prompt(
         sandbox_mode: Sandbox mode ("read-only", "workspace-write", "danger-full-access")
         conversation_history: List of (user_prompt, assistant_response) tuples for manual history injection
         emit_live: Optional callback for live event streaming
+        handle: Optional handle the caller can use to cancel the subprocess
     
     Returns:
         CodexRunResult with response text, tool events, warnings, usage, and session ID
@@ -1066,7 +1143,9 @@ def run_codex_prompt(
             session_id=previous_session_id,
             sandbox_mode=sandbox_mode,
         )
-        return_code, stdout_text = _run_codex_command(cmd=cmd, emit=_emit_adapter if emit_live else None)
+        return_code, stdout_text = _run_codex_command(
+            cmd=cmd, emit=_emit_adapter if emit_live else None, handle=handle,
+        )
         text = output_path.read_text(encoding="utf-8", errors="replace").strip() if output_path.exists() else ""
 
         parsed_text, tool_events, parse_warnings, usage_lines, detected_session_id = _parse_codex_json_events(
@@ -1074,6 +1153,17 @@ def run_codex_prompt(
             model,
         )
         effective_session_id = detected_session_id or previous_session_id
+
+        if handle is not None and handle.cancelled:
+            # A killed process exits non-zero; that is not a resume failure to retry.
+            return CodexRunResult(
+                text=CODEX_CANCELLED_TEXT,
+                tool_events=tool_events,
+                warnings=parse_warnings,
+                usage_lines=usage_lines,
+                session_id=effective_session_id,
+                return_code=return_code,
+            )
 
         if return_code != 0 and previous_session_id:
             # Session/thread can expire or become invalid. Retry once as a fresh run WITH history injection.
@@ -1100,7 +1190,17 @@ def run_codex_prompt(
             fresh_return_code, fresh_stdout_text = _run_codex_command(
                 cmd=fresh_cmd,
                 emit=_emit_adapter if emit_live else None,
+                handle=handle,
             )
+            if handle is not None and handle.cancelled:
+                return CodexRunResult(
+                    text=CODEX_CANCELLED_TEXT,
+                    tool_events=tool_events,
+                    warnings=parse_warnings,
+                    usage_lines=usage_lines,
+                    session_id=effective_session_id,
+                    return_code=fresh_return_code,
+                )
             fresh_text = output_path.read_text(encoding="utf-8", errors="replace").strip() if output_path.exists() else ""
             (
                 fresh_parsed_text,
