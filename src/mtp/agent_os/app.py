@@ -12,6 +12,7 @@ from uuid import uuid4
 import streamlit as st
 
 from mtp import Agent
+from mtp.streaming import merge_stream_text as _merge_stream_text
 from mtp.cli.providers import get_provider, list_providers
 from mtp.cli.tui_provider_factory import ProviderSelection, build_tui_provider, normalize_tui_provider
 from mtp.cli.tui_settings import DEFAULT_PROVIDER_MODELS
@@ -127,23 +128,6 @@ def _short(value: Any, limit: int = 220) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3] + "..."
-
-
-def _merge_stream_text(existing: str, incoming: str) -> str:
-    if not incoming:
-        return existing
-    if not existing:
-        return incoming
-    if incoming in existing:
-        return existing
-    if existing in incoming:
-        return incoming
-
-    max_overlap = min(len(existing), len(incoming), 4000)
-    for size in range(max_overlap, 0, -1):
-        if existing.endswith(incoming[:size]):
-            return existing + incoming[size:]
-    return existing + incoming
 
 
 def _set_merged_chunks(chunks: list[str], incoming: str) -> None:

@@ -13,6 +13,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from mtp import Agent
+from mtp.streaming import merge_stream_text as _merge_stream_text
 
 from .tui_model_context import format_context_usage, get_context_window
 from .tui_theme import SYM_ERR, SYM_OK
@@ -33,32 +34,6 @@ class MTPRunResult:
     error: str | None = None
     # Steering messages the run accepted but never used; the caller runs them next.
     unapplied_steering: list[str] = field(default_factory=list)
-
-
-# Below this length a repeated payload is treated as a real repeated token
-# ("ha" + "ha"), not as a provider resending its whole answer.
-_REPLAY_MIN_CHARS = 32
-
-
-def _merge_stream_text(existing: str, incoming: str) -> str:
-    """Append a streamed delta to ``existing``.
-
-    Streams send deltas, so the default is plain concatenation. The only
-    exception is a provider replaying the full accumulated payload: an exact
-    repeat, or a cumulative snapshot that starts with everything seen so far.
-    Both are only recognised once ``existing`` is long enough that a false
-    match on ordinary tokens is implausible.
-    """
-    if not incoming:
-        return existing
-    if not existing:
-        return incoming
-    if len(existing) >= _REPLAY_MIN_CHARS:
-        if incoming == existing:
-            return existing
-        if incoming.startswith(existing):
-            return incoming
-    return existing + incoming
 
 
 def _append_unique_text(chunks: list[str], chunk: str) -> None:

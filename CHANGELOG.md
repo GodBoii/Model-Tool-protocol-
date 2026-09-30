@@ -520,6 +520,7 @@ New or extended test files, with test counts:
 
 - Completed 4.1.1. MTP agents restore recent user/reply pairs from the transcript before their first request, including agents prepared by `/backend`. Existing agent history is kept. Restoration keeps at most 40 whole turns, respects the agent's message limit, and reserves half the estimated model context for tools and output. System instructions and the current prompt count against the history budget. Old tool calls and reasoning are omitted; failed and cancelled replies keep their status note.
 - Added six tests in `tests/test_tui_history_seed.py`, including the real `/model` command, provider switching, loaded transcripts, duplicate prevention and small-context limits. The targeted suite passed 12 tests. The first full fast-suite run passed 492 tests and failed the existing session-load pilot test; that test passed on an isolated rerun.
+- Completed 4.1.2. Both TUI and Agent OS import `merge_stream_text` from `mtp.streaming`. Repeated tokens, newlines and overlapping suffixes are preserved; long full-payload replays retain the existing behavior. Added 14 shared merge cases and five Agent OS integration checks. The stream tests passed 26 tests, and the full fast suite passed 512 tests with 11 deselected.
 
 The detailed entries below retain the original problem descriptions. Completed entries are marked in their headings.
 
@@ -545,7 +546,7 @@ The list is ordered by how much each item affects users. Each item says what is 
   4. Remember which provider built the agent, so history is not reseeded into an agent that already has it.
 - **Tests.** A fake provider that records `messages`. Run turn one, switch the model, run turn two, and check that turn two's request contains turn one's prompt and reply.
 
-#### 4.1.2 Agent OS still has the token-dropping merge bug
+#### 4.1.2 Agent OS still has the token-dropping merge bug. Completed 2026-09-30
 
 - **What happens.** `src/mtp/agent_os/app.py` has its own copy of `_merge_stream_text` with the old "drop if already present" logic, around lines 482 to 492 at the baseline. The Streamlit Agent OS app therefore still loses repeated tokens.
 - **Fix.** Move the corrected merge into one shared module, for example `mtp/streaming.py`, and import it in both places.
