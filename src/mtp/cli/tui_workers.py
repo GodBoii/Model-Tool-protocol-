@@ -24,6 +24,8 @@ from .tui_state import (
 )
 
 if TYPE_CHECKING:
+    from mtp.simple_agent import MTPAgent
+
     from .tui_app import MTPApp
     from .tui_codex_backend import CodexRunHandle
 
@@ -306,6 +308,61 @@ def _run_codex(
     )
 
 
+def seed_history(
+    agent: MTPAgent,
+    transcript: list[TranscriptTurn],
+    *,
+    provider_name: str,
+    model_name: str,
+    prompt: str = "",
+) -> None:
+    """Restore recent plain-text turns into an unused agent, once.
+
+    Keep whole user/reply pairs and reserve half the estimated context for
+    tools and output. Old tool calls and reasoning are provider-specific and
+    deliberately stay out of the new agent's messages.
+    """
+    from .tui_model_context import get_context_window
+
+    if not transcript:
+        return
+    history = agent._agent
+    if any(message.get("role") != "system" for message in history.messages):
+        return
+    history._seed_system_messages_if_needed()
+    context_window, _ = get_context_window(provider_name, model_name)
+
+    def estimated_tokens(text: str) -> int:
+        return (len(text.encode("utf-8")) + 3) // 4 + 8
+
+    budget = max(
+        context_window // 2
+        - sum(estimated_tokens(str(message.get("content") or "")) for message in history.messages)
+        - estimated_tokens(prompt),
+        0,
+    )
+    # Leave space for the current prompt and reply in the agent's own limit.
+    message_limit = history.max_history_messages
+    pair_limit = 40
+    if message_limit > 0:
+        pair_limit = min(pair_limit, max((message_limit - len(history.messages) - 2) // 2, 0))
+    pairs: list[tuple[str, str]] = []
+    for turn in reversed(transcript):
+        if len(pairs) >= pair_limit:
+            break
+        reply = turn.history_reply()
+        cost = estimated_tokens(turn.prompt) + estimated_tokens(reply)
+        if cost > budget:
+            break
+        budget -= cost
+        pairs.append((turn.prompt, reply))
+    for user_text, reply in reversed(pairs):
+        history.messages.extend([
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": reply},
+        ])
+
+
 def _run_mtp(
     state: TUIState, prompt: str, *, emit_callback: Any = None, run_id: str | None = None,
 ) -> ChatResult:
@@ -373,6 +430,10 @@ def _run_mtp(
     model_name = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(state.backend, "unknown")
 
     try:
+        seed_history(
+            state.agent, state.transcript,
+            provider_name=state.backend, model_name=model_name, prompt=prompt,
+        )
         mtp_result = mtp_backend.run_mtp_prompt(
             agent=state.agent,
             prompt=prompt,

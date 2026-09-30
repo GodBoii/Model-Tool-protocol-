@@ -516,11 +516,18 @@ New or extended test files, with test counts:
 
 ## 4. What is remaining
 
+### Implementation update, 2026-09-30
+
+- Completed 4.1.1. MTP agents restore recent user/reply pairs from the transcript before their first request, including agents prepared by `/backend`. Existing agent history is kept. Restoration keeps at most 40 whole turns, respects the agent's message limit, and reserves half the estimated model context for tools and output. System instructions and the current prompt count against the history budget. Old tool calls and reasoning are omitted; failed and cancelled replies keep their status note.
+- Added six tests in `tests/test_tui_history_seed.py`, including the real `/model` command, provider switching, loaded transcripts, duplicate prevention and small-context limits. The targeted suite passed 12 tests. The first full fast-suite run passed 492 tests and failed the existing session-load pilot test; that test passed on an isolated rerun.
+
+The detailed entries below retain the original problem descriptions. Completed entries are marked in their headings.
+
 The list is ordered by how much each item affects users. Each item says what is wrong or missing, why it matters, where the code is, how to fix it, and how to test it.
 
 ### 4.1 Important gaps in finished phases
 
-#### 4.1.1 MTP chats lose their memory when the agent is rebuilt
+#### 4.1.1 MTP chats lose their memory when the agent is rebuilt. Completed 2026-09-30
 
 - **What happens.** For MTP backends, the conversation history lives only in `state.agent.messages`. Many commands set `state.agent = None`:
   - `/model`, `/mode`, `/cd`, `/autoresearch`, `/research`, and `/thinking` on Xiaomi
