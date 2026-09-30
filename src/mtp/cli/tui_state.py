@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from mtp import Agent, JsonSessionStore, SessionRecord
+from typing import TYPE_CHECKING
+
+from mtp import JsonSessionStore, SessionRecord
+
+if TYPE_CHECKING:
+    # Only for annotations; importing Agent loads the whole agent loop.
+    from mtp import Agent
 
 
 # ── Constants ────────────────────────────────────────────────────────────────

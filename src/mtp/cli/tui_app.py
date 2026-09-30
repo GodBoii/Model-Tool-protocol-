@@ -392,7 +392,11 @@ class MTPApp(App):
         self.notify(f"Could not save session: {message.error}", title="Save failed", severity="error")
 
     def on_unmount(self) -> None:
-        # Nothing queued may be lost when the app exits.
+        # Ask every running chat to stop so worker threads and Codex
+        # subprocesses do not outlive the app, then save what is queued.
+        for conv in self._conversations:
+            conv.queue.clear()
+            self._request_interrupt(conv)
         self.session_saver.close()
 
     def _focus_input(self) -> None:
@@ -1548,7 +1552,8 @@ class MTPApp(App):
             chat_log.add_command_result(
                 f"Tool details {'enabled' if self._show_tool_details else 'disabled'}."
             )
-            self._rebuild_chat_log()
+            for conv in self._conversations:
+                self._rebuild_chat_log(conv)
             self._refresh_status_bar()
             self._refresh_sidebar()
             return

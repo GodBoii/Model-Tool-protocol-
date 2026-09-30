@@ -2714,3 +2714,59 @@ class Agent:
             raise
         finally:
             self._complete_run(resolved_run_id)
+
+
+class _LazyAgentAlias:
+    """Class attribute that imports its target on first use.
+
+    ``Agent.MTPAgent``, ``Agent.ToolRegistry`` and friends are convenience
+    aliases. Importing their targets here would be circular (simple_agent
+    imports this module), and importing them in ``mtp/__init__`` would make
+    every ``import mtp`` load the whole SDK. Resolving on first access and
+    then replacing the descriptor keeps both working, whichever way
+    ``Agent`` was imported.
+    """
+
+    def __init__(self, module: str, name: str, *, static: bool = False) -> None:
+        self._module = module
+        self._name = name
+        self._static = static
+        self._attr = name
+
+    def __set_name__(self, owner: type, attr: str) -> None:
+        self._attr = attr
+
+    def __get__(self, instance: Any, owner: type) -> Any:
+        import importlib
+
+        value = getattr(importlib.import_module(self._module), self._name)
+        # Replace the descriptor so later lookups are plain attribute reads.
+        setattr(owner, self._attr, staticmethod(value) if self._static else value)
+        return value
+
+
+_AGENT_ALIASES: dict[str, tuple[str, bool]] = {
+    "MTPAgent": ("mtp.simple_agent", False),
+    "ToolRegistry": ("mtp.runtime", False),
+    "ToolkitLoader": ("mtp.runtime", False),
+    "ToolSpec": ("mtp.protocol", False),
+    "ToolRiskLevel": ("mtp.protocol", False),
+    "Audio": ("mtp.media", False),
+    "Image": ("mtp.media", False),
+    "Video": ("mtp.media", False),
+    "File": ("mtp.media", False),
+    "mtp_tool": ("mtp.tools", True),
+    "tool_spec_from_callable": ("mtp.tools", True),
+    "FunctionToolkit": ("mtp.tools", False),
+    "toolkit_from_functions": ("mtp.tools", True),
+    "RetryAgentRun": ("mtp.exceptions", False),
+    "StopAgentRun": ("mtp.exceptions", False),
+    "register_local_toolkits": ("mtp.toolkits", True),
+    "load_dotenv_if_available": ("mtp.config", True),
+    "CodebaseMemory": ("mtp.codebase", False),
+}
+
+for _alias, (_module, _static) in _AGENT_ALIASES.items():
+    if _alias not in Agent.__dict__:
+        setattr(Agent, _alias, _LazyAgentAlias(_module, _alias, static=_static))
+del _alias, _module, _static
