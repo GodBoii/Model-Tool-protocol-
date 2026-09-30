@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Protocol
 
+from . import __version__
 from .protocol import ToolCall, ToolRiskLevel, ToolSpec
 from .runtime import ToolRegistry
 
@@ -73,7 +74,7 @@ class MCPPrompt:
 @dataclass(slots=True)
 class MCPServerInfo:
     name: str = "mtp-mcp-adapter"
-    version: str = "0.1.0"
+    version: str = __version__
 
 
 class MCPJsonRpcServer:
