@@ -3,8 +3,11 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import tempfile
 import threading
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +67,7 @@ class _SettingsCache:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._entries: dict[Path, tuple[tuple[int, int], dict[str, Any]]] = {}
+        self._recoveries: list[SettingsRecovery] = []
 
     @staticmethod
     def signature(path: Path) -> tuple[int, int] | None:
@@ -90,21 +94,75 @@ class _SettingsCache:
     def clear(self) -> None:
         with self._lock:
             self._entries.clear()
+            self._recoveries.clear()
+
+    def add_recovery(self, recovery: SettingsRecovery) -> None:
+        with self._lock:
+            self._recoveries.append(recovery)
+
+    def pop_recoveries(self) -> list[SettingsRecovery]:
+        with self._lock:
+            recoveries, self._recoveries = self._recoveries, []
+        return recoveries
+
+
+@dataclass(frozen=True, slots=True)
+class SettingsRecovery:
+    """A settings file that could not be parsed and was backed up."""
+
+    path: Path
+    backup_path: Path | None
+    reason: str
+
+    def message(self) -> str:
+        if self.backup_path is None:
+            return f"{self.path.name} is unreadable ({self.reason}) and could not be backed up. Starting with empty settings."
+        return (
+            f"{self.path.name} was unreadable ({self.reason}). "
+            f"Saved a copy as {self.backup_path.name}; starting with empty settings."
+        )
+
+
+class _CorruptSettings(ValueError):
+    pass
 
 
 _SETTINGS_CACHE = _SettingsCache()
 
 
 def _parse_settings(raw: str) -> dict[str, Any]:
+    """Parse settings JSON. Raises ``_CorruptSettings`` if it is not usable."""
     try:
         payload = json.loads(raw)
-    except Exception:
-        return _default_payload()
+    except json.JSONDecodeError as exc:
+        raise _CorruptSettings(f"invalid JSON at line {exc.lineno}") from exc
     if not isinstance(payload, dict):
-        return _default_payload()
-    if not isinstance(payload.get("providers"), dict):
+        raise _CorruptSettings("top level is not an object")
+    if "providers" not in payload:
         payload["providers"] = {}
+    elif not isinstance(payload["providers"], dict):
+        raise _CorruptSettings("'providers' is not an object")
     return payload
+
+
+def _back_up_corrupt_file(path: Path) -> Path | None:
+    """Copy ``path`` next to itself so the user's keys can be recovered by hand."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = path.with_name(f"{path.name}.corrupt-{stamp}")
+    suffix = 1
+    while backup.exists():
+        backup = path.with_name(f"{path.name}.corrupt-{stamp}-{suffix}")
+        suffix += 1
+    try:
+        shutil.copy2(path, backup)
+    except OSError:
+        return None
+    return backup
+
+
+def pop_settings_recoveries() -> list[SettingsRecovery]:
+    """Return and clear notices about corrupt settings files that were backed up."""
+    return _SETTINGS_CACHE.pop_recoveries()
 
 
 def load_provider_settings(path: Path) -> dict[str, Any]:
@@ -119,7 +177,13 @@ def load_provider_settings(path: Path) -> dict[str, Any]:
         raw = path.read_text(encoding="utf-8")
     except OSError:
         return _default_payload()
-    payload = _parse_settings(raw)
+    try:
+        payload = _parse_settings(raw)
+    except _CorruptSettings as exc:
+        # Keep a copy before anything can overwrite the file, and cache the
+        # empty result under this signature so the backup happens once.
+        _SETTINGS_CACHE.add_recovery(SettingsRecovery(path, _back_up_corrupt_file(path), str(exc)))
+        payload = _default_payload()
     _SETTINGS_CACHE.put(path, signature, payload)
     return copy.deepcopy(payload)
 

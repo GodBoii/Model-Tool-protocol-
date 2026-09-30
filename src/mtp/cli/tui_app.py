@@ -27,6 +27,7 @@ from .tui_state import (
     resolve_model,
     MODEL_PRESETS, REASONING_SHORTCUTS,
 )
+from .tui_settings import pop_settings_recoveries
 from .tui_thinking import apply_thinking_value, get_thinking_capability
 from .tui_widgets.chat_log import ChatLog, ChatMessage, HistoryTurn
 from .tui_widgets.input_area import InputPanel, InputArea, PromptLabel, AttachmentBadge
@@ -320,7 +321,12 @@ class MTPApp(App):
             widget.remove()
         self._pending_turn_widgets = []
 
+    def _report_settings_recoveries(self) -> None:
+        for recovery in pop_settings_recoveries():
+            self.notify(recovery.message(), title="Settings file was corrupt", severity="warning", timeout=20)
+
     def _refresh_status_bar(self) -> None:
+        self._report_settings_recoveries()
         try:
             thinking = get_thinking_capability(self._state)
             self.query_one("#status-bar", StatusBar).update_status(

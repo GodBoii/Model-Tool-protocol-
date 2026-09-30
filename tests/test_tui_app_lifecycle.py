@@ -337,3 +337,23 @@ def test_input_is_focused_on_first_frame(tmp_path: Path, fake_runner: FakeRunner
             assert isinstance(app.focused, InputArea)
 
     asyncio.run(scenario())
+
+
+def test_corrupt_settings_warning_is_shown(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    from mtp.cli import tui_settings
+
+    tui_settings._SETTINGS_CACHE.clear()
+    state = _make_state(tmp_path)
+    settings_path = tui_settings.provider_settings_path(state.session_store.file_path)
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text("{not json", encoding="utf-8")
+    tui_settings.load_provider_settings(settings_path)  # what run_tui does before the app starts
+
+    async def scenario() -> None:
+        app = MTPApp(state=state)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            messages = [n.message for n in app._notifications]
+            assert any("corrupt-" in message for message in messages)
+
+    asyncio.run(scenario())

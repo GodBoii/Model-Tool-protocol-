@@ -59,3 +59,47 @@ def test_save_is_atomic_and_updates_cache(tmp_path: Path) -> None:
 
 def test_missing_file_returns_default(tmp_path: Path) -> None:
     assert load_provider_settings(tmp_path / "absent.json") == {"providers": {}}
+
+
+def test_corrupt_file_is_backed_up_once_and_reported(tmp_path: Path) -> None:
+    from mtp.cli.tui_settings import pop_settings_recoveries
+
+    tui_settings._SETTINGS_CACHE.clear()
+    path = tmp_path / "tui_provider_settings.json"
+    original = '{"providers": {"groq": {"api_key": "sk-keep-me"'  # truncated JSON
+    path.write_text(original, encoding="utf-8")
+
+    assert load_provider_settings(path) == {"providers": {}}
+    assert load_provider_settings(path) == {"providers": {}}
+    recoveries = pop_settings_recoveries()
+    assert len(recoveries) == 1
+    backup = recoveries[0].backup_path
+    assert backup is not None and backup.read_text(encoding="utf-8") == original
+    assert "invalid JSON" in recoveries[0].message()
+    assert pop_settings_recoveries() == []
+
+    # Saving afterwards writes a fresh file; the backup keeps the old content.
+    save_provider_settings(path, {"providers": {"groq": {"model": "m"}}})
+    assert backup.read_text(encoding="utf-8") == original
+    assert len(list(tmp_path.glob("*.corrupt-*"))) == 1
+
+
+def test_wrong_shape_is_treated_as_corrupt(tmp_path: Path) -> None:
+    from mtp.cli.tui_settings import pop_settings_recoveries
+
+    tui_settings._SETTINGS_CACHE.clear()
+    path = tmp_path / "tui_provider_settings.json"
+    _write(path, {"providers": ["not", "a", "dict"]})
+    assert load_provider_settings(path) == {"providers": {}}
+    [recovery] = pop_settings_recoveries()
+    assert "'providers' is not an object" in recovery.reason
+
+
+def test_missing_providers_key_is_filled_in(tmp_path: Path) -> None:
+    from mtp.cli.tui_settings import pop_settings_recoveries
+
+    tui_settings._SETTINGS_CACHE.clear()
+    path = tmp_path / "tui_provider_settings.json"
+    _write(path, {"other": 1})
+    assert load_provider_settings(path) == {"other": 1, "providers": {}}
+    assert pop_settings_recoveries() == []
