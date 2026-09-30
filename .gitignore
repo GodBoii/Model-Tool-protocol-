@@ -153,3 +153,36 @@ cython_debug/
 
 # VS Code
 .vscode/
+
+# Local test workspaces, sessions and credentials
+/.pytest_*/
+/tmp/
+.mtp/
+.codex/
+.env.*
+!.env.example
+.pypirc
+auth.json
+tui_provider_settings.json*
+mtp_sessions.json*
+
+# Extracted releases and comparison experiments
+/mtpx-*/
+/agno_library/
+
+# Agent run logs and scratch outputs
+/*_agent_logs.txt
+/agno_agent_run_logs.txt
+/calculator.py
+/hello.html
+/hello.txt
+/html_page.html
+/index.html
+/js_script.js
+/my_thoughts.txt
+/TUI-analysis.txt
+
+# Frontend build output
+node_modules/
+.next/
+.vercel/
