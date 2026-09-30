@@ -4,7 +4,7 @@ Audited on 30 September 2026, on `main` at `2fdf190`. MTP 0.1.36, Python 3.13, T
 
 The TUI starts and many individual commands work, but ordinary navigation exposes several problems that the current tests miss. Fix the screen layout, the palette's New Chat crash, multiline input, and per-chat composer state first.
 
-This audit changes documentation and evidence only. The application defects below remain unfixed.
+This section records the initial audit before fixes. The subsequent changes and verification are in the [follow-up](TUI_UX_VERIFICATION.md); the operating instructions are in the [TUI guide](TUI_OPERATING_GUIDE.md).
 
 ## How I tested
 
