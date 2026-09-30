@@ -1,5 +1,11 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.35, 2026-09-30
+
+- Publish the current SDK, CLI and TUI code as `mtpx` 0.1.35.
+- Keep the package metadata, Python version and default MCP server version aligned.
+- Include the latest fixes for chat-specific codebase scans, lossless streaming in Agent OS and transcript context when rebuilding agents.
+
 This file records the plan for improving the `mtp tui` terminal app, what has shipped so far, and what is left. It covers UI, UX, motion, features, shortcuts, multitasking, speed, latency and robustness.
 
 The previous release notes, 0.1.6 through 0.1.15, are still in git history. Run `git show fe251da:CHANGELOG.md` to read them.
