@@ -158,15 +158,11 @@ class ShortcutHints(Static):
     def update_hints(self) -> None:
         text = Text()
         text.append("  Shortcuts\n", style="bold #38bdf8")
-        rows = [
-            ("Ctrl+B", "Sidebar"),
-            ("Ctrl+P", "Commands"),
-            ("Ctrl+Y", "Copy output"),
-            ("Esc", "Interrupt / hide"),
-        ]
-        for key, label in rows:
-            text.append(f"  {key:<8}", style="#818cf8")
-            text.append(f"{label}\n", style="#f4f4f6")
+        from ..tui_shortcuts import SHORTCUTS
+
+        for shortcut in SHORTCUTS:
+            text.append(f"  {shortcut.keys:<15}", style="#818cf8")
+            text.append(f"{shortcut.label[:18]}\n", style="#f4f4f6")
         self.update(text)
 
 

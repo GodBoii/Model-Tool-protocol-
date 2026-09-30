@@ -473,6 +473,8 @@ class AssistantMessageWidget(Vertical):
         if block_type == "text":
             text = str(block.get("text") or "")
             return StreamingMarkdown(text) if live else MarkdownBlock(text)
+        if block_type == "steer":
+            return Static(_steer_note(str(block.get("text") or "")), classes="assistant-steer")
         return None
 
     @staticmethod
@@ -742,6 +744,13 @@ class ChatLog(VerticalScroll):
     def add_command_result(self, text: str) -> None:
         self.query_one("#chat-log-body", Vertical).mount(SystemMessageWidget(f"  {text}", style="#a78bfa"))
         self.scroll_end(animate=False)
+
+
+def _steer_note(text: str) -> Text:
+    """A message the user added while this reply was running."""
+    note = Text("  ↳ You, mid-run: ", style="bold #38bdf8")
+    note.append(text[:400], style="#e0f2fe")
+    return note
 
 
 def _status_line(status: str, error: str | None, *, has_output: bool) -> Text | None:

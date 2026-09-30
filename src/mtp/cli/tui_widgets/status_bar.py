@@ -127,7 +127,7 @@ class StatusBar(Horizontal):
         hints = Text()
         hints.append("│", style="dim #3f3f46")
         if is_running:
-            hints.append("  Esc", style="#38bdf8")
+            hints.append("  Ctrl+X", style="#38bdf8")
             hints.append(" interrupt  ", style="dim #71717a")
         hints.append("Ctrl+P", style="#818cf8")
         hints.append(" commands  ", style="dim #71717a")

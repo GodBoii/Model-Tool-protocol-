@@ -46,6 +46,10 @@ class FakeRunner:
         })
         self._started.release()
         release.wait(timeout=10)
+        if codex_handle is not None and codex_handle.cancelled:
+            # Same outcome _run_codex reports for a killed run.
+            return ChatResult(text="", tool_events=[], attachments=[], warnings=[], usage_lines=[],
+                              status="cancelled")
         return ChatResult(text=f"answer to {prompt}", tool_events=[], attachments=[], warnings=[], usage_lines=[])
 
     async def wait_started(self) -> dict[str, Any]:
@@ -76,7 +80,7 @@ def _make_state(tmp_path: Path) -> TUIState:
 
 
 def _live_text(app: MTPApp) -> str:
-    live = app.query_one("#chat-log", ChatLog)._live_widget
+    live = app.active_chat_log._live_widget
     if live is None:
         return ""
     return "".join(
@@ -176,9 +180,9 @@ def test_memory_scan_does_not_cancel_llm_run(
         async with app.run_test(size=(120, 40)) as pilot:
             app._send_prompt("hi")
             run = await fake_runner.wait_started()
-            app._start_codebase_scan(tmp_path, app.query_one("#chat-log", ChatLog))
+            app._start_codebase_scan(tmp_path, app.active_chat_log)
             await pilot.pause(0.1)
-            assert app._llm_worker is not None and not app._llm_worker.is_cancelled
+            assert app.active_conversation.worker is not None and not app.active_conversation.worker.is_cancelled
             scan_done.set()
             run["release"].set()
             await pilot.pause(0.3)
@@ -201,12 +205,23 @@ def test_load_command_renders_loaded_transcript(tmp_path: Path, fake_runner: Fak
     async def scenario() -> None:
         app = MTPApp(state=_make_state(tmp_path))
         async with app.run_test(size=(120, 40)) as pilot:
-            chat_log = app.query_one("#chat-log", ChatLog)
-            assert not list(chat_log.query(UserMessageWidget))
+            first_log = app.active_chat_log
+            assert not list(first_log.query(UserMessageWidget))
             app._dispatch_command("load", "chat-saved00001")
             await pilot.pause(0.2)
+            # The saved session opens in its own chat; the first one stays open.
+            assert len(app.conversations) == 2
             assert app.state.session_id == "chat-saved00001"
-            assert len(list(chat_log.query(UserMessageWidget))) == 1
+            assert len(list(app.active_chat_log.query(UserMessageWidget))) == 1
+            assert not list(first_log.query(UserMessageWidget))
+
+            app._dispatch_command("switch", "1")
+            await pilot.pause()
+            app._dispatch_command("load", "saved00001")
+            await pilot.pause()
+            # Loading an open session switches to it instead of opening a copy.
+            assert len(app.conversations) == 2
+            assert app.state.session_id == "chat-saved00001"
 
     asyncio.run(scenario())
 

@@ -42,9 +42,15 @@ Screen {
     layout: vertical;
 }
 
-#chat-log {
+/* One view per open chat; only the active one is shown. */
+#conversations {
     width: 1fr;
     height: 1fr;
+}
+
+#conversation-tabs {
+    height: auto;
+    margin: 0 1;
 }
 
 #cmd-log {

@@ -14,6 +14,8 @@ from textual.app import ComposeResult
 from textual import events
 from rich.text import Text
 
+from ..tui_shortcuts import hint_bar_text
+
 
 class PromptLabel(Static):
     """Displays the prompt prefix: cwd mtp:backend:session ❯"""
@@ -196,4 +198,4 @@ class InputPanel(Vertical):
         yield Horizontal(id="attachment-container")
         yield PromptLabel(id="prompt-label")
         yield InputArea(id="chat-input")
-        yield Static("  Ctrl+B sidebar   Ctrl+P commands   Ctrl+Y copy   Esc interrupt/hide", id="input-hints")
+        yield Static(hint_bar_text(), id="input-hints")

@@ -44,7 +44,7 @@ def test_streaming_updates_reuse_widgets(tmp_path: Path, fake_runner: FakeRunner
             await asyncio.to_thread(emit, "text", "First paragraph.\n\n")
             await pilot.pause(0.2)
 
-            chat_log = app.query_one("#chat-log", ChatLog)
+            chat_log = app.active_chat_log
             live = chat_log._live_widget
             assert live is not None
             tool = live.query_one(ToolCallWidget)
@@ -78,7 +78,7 @@ def test_completing_a_turn_does_not_rebuild_history(tmp_path: Path, fake_runner:
         state.transcript = [_turn(0)]
         app = MTPApp(state=state)
         async with app.run_test(size=(120, 40)) as pilot:
-            chat_log = app.query_one("#chat-log", ChatLog)
+            chat_log = app.active_chat_log
             first_user = chat_log.query(UserMessageWidget).first()
             app._send_prompt("next")
             run = await fake_runner.wait_started()
@@ -100,7 +100,7 @@ def test_long_history_mounts_a_window_and_loads_more(tmp_path: Path, fake_runner
         state.transcript = [_turn(i) for i in range(70)]
         app = MTPApp(state=state)
         async with app.run_test(size=(120, 40)) as pilot:
-            chat_log = app.query_one("#chat-log", ChatLog)
+            chat_log = app.active_chat_log
             await pilot.pause()
 
             def mounted_prompts() -> list[str]:

@@ -12,8 +12,11 @@ import time
 from typing import Any, Callable, TypeVar
 from uuid import uuid4
 
+import dataclasses
+
+from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.widgets import OptionList, RichLog
+from textual.widgets import ContentSwitcher, OptionList, RichLog, Tab, Tabs
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
@@ -29,6 +32,7 @@ from .tui_state import (
     MODEL_PRESETS, REASONING_SHORTCUTS,
 )
 from .tui_settings import pop_settings_recoveries
+from .tui_shortcuts import SHORTCUTS
 from .tui_thinking import apply_thinking_value, get_thinking_capability
 from .tui_widgets.chat_log import ChatLog, ChatMessage, HistoryTurn
 from .tui_widgets.input_area import InputPanel, InputArea, PromptLabel, AttachmentBadge
@@ -38,6 +42,8 @@ from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_codex_backend import CodexRunHandle
+from .tui_conversation import Conversation, LiveTurn, QueuedPrompt
+from .tui_widgets.queue_bar import QueueBar
 from .tui_indexes import (
     FILE_INDEX_MAX_AGE, BackgroundIndex, FileList, FileSignature, SessionSummary,
     file_signature, load_session_summaries, scan_workspace_files,
@@ -59,9 +65,10 @@ _SUGGESTION_SEPARATOR = " | "
 _LIVE_RENDER_INTERVAL = 0.10
 
 # Worker groups. Textual's ``exclusive=True`` only cancels workers in the same
-# group, so LLM runs and codebase-memory jobs must not share one.
+# group, so each conversation's runs and the codebase-memory jobs each get one.
 _LLM_WORKER_GROUP = "llm"
 _MEMORY_WORKER_GROUP = "memory"
+
 _COMMAND_WORKER_GROUP = "command"
 
 T = TypeVar("T")
@@ -121,39 +128,38 @@ class MTPApp(App):
         Binding("ctrl+d", "quit", "Quit", show=False, priority=True),
         Binding("ctrl+w", "cycle_sandbox", "Sandbox", show=False, priority=True),
         Binding("ctrl+y", "copy_last", "Copy Output", show=True, priority=True),
+        # Only while the active conversation runs (see check_action); otherwise
+        # Ctrl+X reaches the input and cuts as usual. Ctrl+C stays copy.
+        Binding("ctrl+x", "interrupt", "Stop run", show=False, priority=True),
+        Binding("ctrl+g", "steer_last_queued", "Steer", show=False, priority=True),
+        Binding("ctrl+n", "new_conversation", "New chat", show=False, priority=True),
+        Binding("alt+right,ctrl+pagedown", "next_conversation", "Next chat", show=False, priority=True),
+        Binding("alt+left,ctrl+pageup", "previous_conversation", "Previous chat", show=False, priority=True),
+        *(
+            Binding(f"alt+{n}", f"switch_conversation({n})", f"Chat {n}", show=False, priority=True)
+            for n in range(1, 10)
+        ),
         Binding("escape", "hide_suggestions", "Hide Suggestions", show=False),
     ]
 
     def __init__(self, state: TUIState, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._state = state
-        self._pending_raw_prompt: str = ""
-        self._pending_display_prompt: str = ""
-        self._pending_display_attachments: list[str] = []
+        first = Conversation(state, number=1)
+        self._conversations: list[Conversation] = [first]
+        self._active: Conversation = first
+        self._next_number = 2
+        # run_id -> conversation, for routing events from worker threads.
+        self._runs: dict[str, Conversation] = {}
         self._history_index: int | None = None
         self._history_draft: str = ""
         self._pending_attachments: list[str] = []  # Track the raw prompt for recording
         self._input_history: list[str] = []
         self._codebase_scan_progress: str | None = None
         self._codebase_scan_root: Path | None = None
-        self._llm_worker_running = False
         self._memory_refresh_running = False
-        self._live_status: str = ""
-        self._live_blocks: list[dict[str, Any]] = []
-        self._live_thinking_text: str = ""
-        self._live_tool_events: list[str] = []
-        self._live_tool_details: list[dict[str, Any]] = []
-        self._live_warnings: list[str] = []
-        self._last_live_render_at: float = 0.0
         self._show_tool_details = False
         self._memory_refresh_queued = False
-        self._memory_refresh_dirty = False
         self._memory_launch_scan_done = False
-        self._current_run_id: str | None = None
-        self._llm_worker: Worker[ChatResult] | None = None
-        self._codex_run_handle: CodexRunHandle | None = None
-        self._pending_turn_widgets: list[Widget] = []
-        self._live_model_name: str = ""
         self._backend_switch_seq = 0
         self.session_saver = SessionSaver(
             on_error=lambda exc: self.post_message(SessionSaveFailed(exc)),
@@ -169,21 +175,195 @@ class MTPApp(App):
             on_ready=lambda: self.post_message(IndexReady()),
             name="mtp-session-index",
         )
-        self._live_flush_timer: Timer | None = None
+
+    # ── Conversations ────────────────────────────────────────────────────
+
+    @property
+    def _state(self) -> TUIState:
+        """State of the conversation on screen. Commands act on this one."""
+        return self._active.state
 
     @property
     def state(self) -> TUIState:
-        return self._state
+        return self._active.state
+
+    @property
+    def conversations(self) -> list[Conversation]:
+        return list(self._conversations)
+
+    @property
+    def active_conversation(self) -> Conversation:
+        return self._active
+
+    @property
+    def active_chat_log(self) -> ChatLog:
+        return self._active.view.chat_log
+
+    def _any_running(self) -> bool:
+        return any(conv.running for conv in self._conversations)
+
+    def _conversation_for_worker(self, worker: Worker[Any]) -> Conversation | None:
+        return next((conv for conv in self._conversations if conv.worker is worker), None)
+
+    def _fresh_state(self, *, label: str | None = None) -> TUIState:
+        """A new session that inherits backend and settings from the active one."""
+        return dataclasses.replace(
+            self._active.state,
+            session_id=new_session_id(),
+            session_label=label,
+            transcript=[],
+            last_usage_lines=[],
+            agent=None,
+            codex_session_id=None,
+            last_tool_events=[],
+            last_tool_details=[],
+            last_warnings=[],
+        )
+
+    def _open_conversation(self, state: TUIState, *, activate: bool = True) -> Conversation:
+        conv = Conversation(state, number=self._next_number)
+        self._next_number += 1
+        self._conversations.append(conv)
+        self.query_one("#conversations", ContentSwitcher).mount(conv.view)
+        self.query_one("#conversation-tabs", Tabs).add_tab(Tab(self._tab_label(conv), id=conv.tab_id))
+        # The view composes its chat log after mounting; fill it once it exists.
+        self.call_after_refresh(self._rebuild_chat_log, conv)
+        if activate:
+            self._activate(conv)
+        else:
+            self._refresh_tabs()
+        return conv
+
+    def _activate(self, conv: Conversation) -> None:
+        """Show ``conv``; its run, if any, keeps streaming in the background either way."""
+        if conv not in self._conversations:
+            return
+        self._active = conv
+        conv.unread = False
+        self.query_one("#conversations", ContentSwitcher).current = conv.view.id
+        tabs = self.query_one("#conversation-tabs", Tabs)
+        if tabs.active != conv.tab_id:
+            # add_tab is async; activating a just-added tab has to wait a frame.
+            self.call_after_refresh(self._select_tab, conv)
+        self._refresh_tabs()
+        self._refresh_queue_bar()
+        self._refresh_status_bar()
+        self._refresh_sidebar()
+        self._refresh_prompt_label()
+        self._focus_input()
+
+    def _select_tab(self, conv: Conversation) -> None:
+        tabs = self.query_one("#conversation-tabs", Tabs)
+        if conv in self._conversations and conv is self._active and tabs.active != conv.tab_id:
+            tabs.active = conv.tab_id
+
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
+        if event.tab is None:
+            return
+        conv = next((c for c in self._conversations if c.tab_id == event.tab.id), None)
+        if conv is not None and conv is not self._active:
+            self._activate(conv)
+
+    def _close_conversation(self, conv: Conversation) -> str:
+        if conv.running:
+            return f"Chat {conv.number} is still running. Stop it with Ctrl+X first."
+        if len(self._conversations) == 1:
+            return "This is the only open chat. Use /new to start another one."
+        index = self._conversations.index(conv)
+        self._conversations.remove(conv)
+        self.session_saver.request(snapshot_tui_session(conv.state))
+        self.query_one("#conversation-tabs", Tabs).remove_tab(conv.tab_id)
+        conv.view.remove()
+        if conv is self._active:
+            self._activate(self._conversations[min(index, len(self._conversations) - 1)])
+        else:
+            self._refresh_tabs()
+        return f"Closed chat {conv.number}."
+
+    def _tab_label(self, conv: Conversation) -> Text:
+        label = Text()
+        position = self._conversations.index(conv) + 1 if conv in self._conversations else conv.number
+        label.append(f"{position} ", style="dim")
+        label.append(conv.title)
+        if conv.running:
+            # Static marker: Tabs re-animates its underline on every relabel,
+            # so an animated spinner here would keep the UI busy nonstop.
+            label.append(" ⋯", style="#38bdf8")
+        elif conv.unread:
+            marker, style = ("!", "bold #f43f5e") if conv.last_status == TURN_FAILED else ("●", "#34d399")
+            label.append(f" {marker}", style=style)
+        if conv.queue:
+            label.append(f" +{len(conv.queue)}", style="#fbbf24")
+        return label
+
+    def _refresh_tabs(self) -> None:
+        try:
+            tabs = self.query_one("#conversation-tabs", Tabs)
+        except Exception:
+            return
+        for conv in self._conversations:
+            label = self._tab_label(conv)
+            try:
+                tab = tabs.query_one(f"#{conv.tab_id}", Tab)
+            except Exception:
+                continue  # added this frame; labelled on the next refresh
+            # Relabelling re-animates the underline; skip it when nothing changed.
+            if tab.label.plain != label.plain:
+                tab.label = label
+
+    def _refresh_queue_bar(self) -> None:
+        try:
+            bar = self.query_one("#queue-bar", QueueBar)
+        except Exception:
+            return
+        conv = self._active
+        bar.show_queue(list(conv.queue), can_steer=self._can_steer(conv))
+
+    def _conversation_by_position(self, position: int) -> Conversation | None:
+        if 1 <= position <= len(self._conversations):
+            return self._conversations[position - 1]
+        return None
+
+    def action_new_conversation(self) -> None:
+        conv = self._open_conversation(self._fresh_state())
+        self._save_session(conv)
+        self.query_one("#boot-screen", BootScreen).display = False
+
+    def action_next_conversation(self) -> None:
+        index = self._conversations.index(self._active)
+        self._activate(self._conversations[(index + 1) % len(self._conversations)])
+
+    def action_previous_conversation(self) -> None:
+        index = self._conversations.index(self._active)
+        self._activate(self._conversations[(index - 1) % len(self._conversations)])
+
+    def action_switch_conversation(self, position: int) -> None:
+        conv = self._conversation_by_position(int(position))
+        if conv is not None:
+            self._activate(conv)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "interrupt":
+            # Without a run, let Ctrl+X fall through to the input (cut).
+            return self._active.running
+        if action == "steer_last_queued":
+            return bool(self._active.queue) and self._can_steer(self._active)
+        return True
 
     # ── Compose ──────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
+        first = self._conversations[0]
         with Horizontal():
             with Vertical(id="main-container"):
                 yield BootScreen(id="boot-screen")
-                yield ChatLog(id="chat-log")
-                yield SpinnerWidget(id="spinner")
+                yield Tabs(Tab(self._tab_label(first), id=first.tab_id), id="conversation-tabs")
+                with ContentSwitcher(id="conversations", initial=first.view.id):
+                    yield first.view
+                # App-level jobs (codebase indexing); run spinners live in each view.
+                yield SpinnerWidget(id="task-spinner")
                 yield RichLog(id="cmd-log", markup=True, highlight=True, wrap=True)
+                yield QueueBar(id="queue-bar")
                 yield InputPanel(id="input-panel")
             yield Sidebar(id="sidebar")
         yield StatusBar(id="status-bar")
@@ -194,7 +374,8 @@ class MTPApp(App):
         self._refresh_status_bar()
         self._refresh_sidebar()
         self._refresh_prompt_label()
-        self._rebuild_chat_log()
+        self._rebuild_chat_log(self._active)
+        self._refresh_queue_bar()
         self._show_boot_info()
         # Typing works as soon as the first frame is up; no fixed delay.
         self.call_after_refresh(self._focus_input)
@@ -203,9 +384,9 @@ class MTPApp(App):
             lambda: self._request_background_memory_refresh(reason="startup", prefer_full_scan=True)
         )
 
-    def _save_session(self) -> None:
+    def _save_session(self, conv: Conversation | None = None) -> None:
         """Snapshot state now; the write happens debounced on a background thread."""
-        self.session_saver.request(snapshot_tui_session(self._state))
+        self.session_saver.request(snapshot_tui_session((conv or self._active).state))
 
     def on_session_save_failed(self, message: SessionSaveFailed) -> None:
         self.notify(f"Could not save session: {message.error}", title="Save failed", severity="error")
@@ -239,33 +420,23 @@ class MTPApp(App):
 
     # ── UI refresh helpers ───────────────────────────────────────────────
 
-    def _live_message_active(self) -> bool:
-        return bool(
-            self._live_blocks
-            or self._live_tool_events
-            or self._live_tool_details
-            or self._live_warnings
-        )
+    @staticmethod
+    def _turn_banner(conv: Conversation, live: LiveTurn) -> str:
+        return f"> {live.backend} - {live.model_name} - mode={conv.state.harness_mode}"
 
-    def _current_turn_banner(self) -> str:
-        return f"> {self._state.backend} - {active_model_name(self._state)} - mode={self._state.harness_mode}"
-
-    def _clear_pending_turn_display(self) -> None:
-        self._pending_display_prompt = ""
-        self._pending_display_attachments = []
-
-    def _rebuild_chat_log(self) -> None:
-        chat_log = self.query_one("#chat-log", ChatLog)
+    def _rebuild_chat_log(self, conv: Conversation | None = None) -> None:
+        conv = conv or self._active
+        if conv not in self._conversations:
+            return
+        chat_log = conv.view.chat_log
         chat_log.load_history([
             HistoryTurn(prompt=turn.prompt, attachments=list(turn.attachments), reply=self._turn_message(turn))
-            for turn in self._state.transcript
+            for turn in conv.state.transcript
         ])
-        self._pending_turn_widgets = []
-
-        if self._pending_display_prompt:
-            self._mount_pending_turn(chat_log)
-            if self._live_message_active():
-                chat_log.set_live_assistant_message(self._live_message())
+        if conv.live is not None:
+            self._mount_pending_turn(conv)
+            if conv.live.has_output():
+                chat_log.set_live_assistant_message(conv.live.message(show_tool_details=self._show_tool_details))
 
     def _turn_message(self, turn: TranscriptTurn) -> ChatMessage:
         return ChatMessage(
@@ -284,45 +455,25 @@ class MTPApp(App):
             error=turn.error,
         )
 
-    def _live_message(self) -> ChatMessage:
-        return ChatMessage(
-            role="assistant",
-            text="",
-            model=self._live_model_name,
-            backend=self._state.backend,
-            tool_events=list(self._live_tool_events),
-            tool_details=list(self._live_tool_details),
-            warnings=list(self._live_warnings),
-            thinking=self._live_thinking_text.strip(),
-            show_tool_details=self._show_tool_details,
-            assistant_blocks=list(self._live_blocks),
-            collapse_thinking=False,
-            is_live=True,
-        )
-
-    def _mount_pending_turn(self, chat_log: ChatLog) -> None:
+    def _mount_pending_turn(self, conv: Conversation) -> None:
         """Show the prompt being run plus its banner, without a full rebuild."""
-        self._pending_turn_widgets = [
-            chat_log.add_user_message(self._pending_display_prompt, self._pending_display_attachments),
-            chat_log.add_system_message(self._current_turn_banner()),
+        live = conv.live
+        if live is None:
+            return
+        chat_log = conv.view.chat_log
+        live.widgets = [
+            chat_log.add_user_message(live.display_prompt, live.display_attachments),
+            chat_log.add_system_message(self._turn_banner(conv, live)),
         ]
 
-    def _complete_pending_turn(self, turn: TranscriptTurn) -> None:
+    def _complete_pending_turn(self, conv: Conversation, turn: TranscriptTurn) -> None:
         """Replace the live preview with the finished turn in place."""
-        chat_log = self.query_one("#chat-log", ChatLog)
-        # The banner only describes an in-flight run; saved turns don't show it.
-        for widget in self._pending_turn_widgets[1:]:
-            widget.remove()
-        self._pending_turn_widgets = []
-        chat_log.finalize_live_assistant_message(self._turn_message(turn))
-
-    def _discard_pending_turn(self) -> None:
-        """Drop the in-flight prompt display after a failed or cancelled run."""
-        chat_log = self.query_one("#chat-log", ChatLog)
-        chat_log.clear_live_assistant_message()
-        for widget in self._pending_turn_widgets:
-            widget.remove()
-        self._pending_turn_widgets = []
+        if conv.live is not None:
+            # The banner only describes an in-flight run; saved turns don't show it.
+            for widget in conv.live.widgets[1:]:
+                widget.remove()
+            conv.live.widgets = []
+        conv.view.chat_log.finalize_live_assistant_message(self._turn_message(turn))
 
     def _report_settings_recoveries(self) -> None:
         for recovery in pop_settings_recoveries():
@@ -341,7 +492,7 @@ class MTPApp(App):
                 sandbox_mode=self._state.codex_sandbox_mode,
                 thinking_label=thinking.label if thinking else None,
                 thinking_value=thinking.current_label if thinking else None,
-                is_running=self._llm_worker_running,
+                is_running=self._active.running,
             )
         except Exception:
             pass
@@ -394,7 +545,7 @@ class MTPApp(App):
                 return
             self._refresh_status_bar()
             self._refresh_sidebar()
-            self.query_one("#chat-log", ChatLog).add_command_result(message)
+            self.active_chat_log.add_command_result(message)
 
         self.push_screen(ThinkingDialog(capability), callback=_apply)
 
@@ -456,29 +607,33 @@ class MTPApp(App):
             if not self._pending_attachments:
                 self.query_one("#attachment-container").remove_class("visible")
 
-    def _request_interrupt(self) -> bool:
-        """Ask the active run to stop. Returns True if a cancel was issued."""
-        if not self._llm_worker_running or not self._current_run_id:
+    def _request_interrupt(self, conv: Conversation | None = None) -> bool:
+        """Ask a conversation's run to stop. Returns True if a cancel was issued."""
+        conv = conv or self._active
+        if not conv.running or conv.run_id is None:
             return False
-        if self._codex_run_handle is not None:
-            return self._codex_run_handle.cancel()
-        agent = self._state.agent
+        if conv.codex_handle is not None:
+            return conv.codex_handle.cancel()
+        agent = conv.state.agent
         if agent is None:
             return False
-        return bool(agent.cancel_run(self._current_run_id))
+        return bool(agent.cancel_run(conv.run_id))
+
+    def action_interrupt(self) -> None:
+        conv = self._active
+        if self._request_interrupt(conv):
+            conv.view.spinner.update_label("Stopping")
+            conv.view.chat_log.add_system_message("  Interrupt requested...", style="#fbbf24")
 
     def action_hide_suggestions(self) -> None:
-        if self._llm_worker_running:
-            if self._request_interrupt():
-                self.query_one("#chat-log", ChatLog).add_system_message("  Interrupt requested...", style="#fbbf24")
+        # Esc closes an open suggestion list first; only then does it stop a run.
+        option_list = self.query_one("#suggestion-list", OptionList)
+        if option_list.has_class("visible"):
+            option_list.remove_class("visible")
+            self.query_one("#chat-input", InputArea).focus()
             return
-        try:
-            option_list = self.query_one("#suggestion-list", OptionList)
-            if option_list.has_class("visible"):
-                option_list.remove_class("visible")
-                self.query_one("#chat-input", InputArea).focus()
-        except Exception:
-            pass
+        if self._active.running:
+            self.action_interrupt()
 
     def on_input_area_history_navigate(self, event: InputArea.HistoryNavigate) -> None:
         turns = self._input_history
@@ -632,8 +787,13 @@ class MTPApp(App):
             "/sandbox": "Cycle sandbox mode",
             "/load": "Load a session",
             "/open": "Open a session",
-            "/new": "Start new session",
-            "/reset": "Reset session",
+            "/new": "Open a new chat (Ctrl+N)",
+            "/reset": "Open a new chat",
+            "/tabs": "List open chats",
+            "/switch": "Switch chat (Alt+1..9)",
+            "/close": "Close a chat",
+            "/queue": "Show or clear queued messages",
+            "/steer": "Add a message to the running reply",
             "/rounds": "Set max rounds",
             "/cd": "Change directory",
             "/autoresearch": "Toggle auto-research",
@@ -801,60 +961,145 @@ class MTPApp(App):
             self._show_next_command_suggestions(input_area)
 
     def _send_prompt(self, raw: str) -> None:
-        try:
-            self.query_one("#boot-screen", BootScreen).display = False
-        except Exception:
-            pass
+        """Run ``raw`` in the active conversation, or queue it if that one is running."""
+        conv = self._active
+        if conv.running:
+            self._enqueue(conv, raw)
+            return
+        self._start_run(conv, raw)
 
-        try:
+    # ── Queue and steering ───────────────────────────────────────────────
+
+    @staticmethod
+    def _can_steer(conv: Conversation) -> bool:
+        """Steering needs an MTP agent mid-run; Codex exec cannot take input."""
+        agent = conv.state.agent
+        return (
+            conv.running
+            and conv.state.backend != "codex"
+            and agent is not None
+            and callable(getattr(agent, "steer_run", None))
+        )
+
+    def _enqueue(self, conv: Conversation, raw: str, *, front: bool = False, note: str = "") -> None:
+        item = QueuedPrompt(raw)
+        if front:
+            conv.queue.appendleft(item)
+        else:
+            conv.queue.append(item)
+        if conv is self._active and not note:
+            hint = (
+                "Ctrl+G sends it into the current run instead."
+                if self._can_steer(conv)
+                else "It runs when the current reply finishes."
+            )
+            self.notify(f"Queued ({len(conv.queue)}). {hint}", title=f"Chat {self._position(conv)}", timeout=4)
+        elif note:
+            self.notify(note, title=f"Chat {self._position(conv)}", timeout=6)
+        self._refresh_queue_bar()
+        self._refresh_tabs()
+
+    def _position(self, conv: Conversation) -> int:
+        return self._conversations.index(conv) + 1 if conv in self._conversations else conv.number
+
+    def _steer(self, conv: Conversation, text: str) -> bool:
+        """Hand ``text`` to the running agent. Returns False if it cannot take it."""
+        agent = conv.state.agent
+        if not self._can_steer(conv) or conv.run_id is None or not agent.steer_run(conv.run_id, text):
+            return False
+        if conv.live is not None:
+            conv.live.blocks.append({"type": "steer", "text": text})
+            conv.live.steered.append(text)
+            self._render_live_preview(conv, force=True)
+        return True
+
+    def _steer_queued(self, conv: Conversation, item: QueuedPrompt) -> None:
+        if self._steer(conv, item.text):
+            try:
+                conv.queue.remove(item)
+            except ValueError:
+                pass
+        else:
+            self.notify("This run cannot take new input now; the message stays queued.", severity="warning")
+        self._refresh_queue_bar()
+        self._refresh_tabs()
+
+    def action_steer_last_queued(self) -> None:
+        conv = self._active
+        if conv.queue:
+            self._steer_queued(conv, conv.queue[-1])
+
+    def action_steer_queued(self, item_id: str) -> None:
+        conv = self._active
+        item = next((q for q in conv.queue if q.id == item_id), None)
+        if item is not None:
+            self._steer_queued(conv, item)
+
+    def action_drop_queued(self, item_id: str) -> None:
+        conv = self._active
+        item = next((q for q in conv.queue if q.id == item_id), None)
+        if item is not None:
+            conv.queue.remove(item)
+            self._refresh_queue_bar()
+            self._refresh_tabs()
+
+    def _run_next_queued(self, conv: Conversation) -> None:
+        if conv.running or not conv.queue or conv not in self._conversations:
+            return
+        item = conv.queue.popleft()
+        self._refresh_queue_bar()
+        self._start_run(conv, item.text)
+
+    # ── Runs ─────────────────────────────────────────────────────────────
+
+    def _start_run(self, conv: Conversation, raw: str) -> None:
+        self.query_one("#boot-screen", BootScreen).display = False
+        if conv is self._active:
             cmd_log = self.query_one("#cmd-log", RichLog)
             cmd_log.clear()
             cmd_log.remove_class("visible")
-        except Exception:
-            pass
 
-        spinner = self.query_one("#spinner", SpinnerWidget)
+        expanded, attachments, att_warnings = collect_prompt_attachments(raw, conv.state.cwd)
 
-        expanded, attachments, att_warnings = collect_prompt_attachments(
-            raw, self._state.cwd
+        self._reset_live_preview(conv)
+        conv.live = LiveTurn(
+            raw_prompt=raw,
+            display_prompt=raw,
+            display_attachments=list(attachments),
+            backend=conv.state.backend,
+            # Resolved once per run; live frames must not read settings from disk.
+            model_name=active_model_name(conv.state),
         )
+        self._mount_pending_turn(conv)
+        conv.view.spinner.start("Thinking")
 
-        self._reset_live_preview()
-        self._pending_display_prompt = raw
-        self._pending_display_attachments = list(attachments)
-        # Resolved once per run; live frames must not read settings from disk.
-        self._live_model_name = active_model_name(self._state)
-        self._mount_pending_turn(self.query_one("#chat-log", ChatLog))
-        spinner.start("Thinking")
-
-        self._turn_start_time = time.monotonic()
-
-        # Store raw prompt for turn recording
-        self._pending_raw_prompt = raw
-        self._llm_worker_running = True
-        self._memory_refresh_dirty = False
-        self._current_run_id = f"run-{uuid4().hex[:12]}"
-        self._codex_run_handle = CodexRunHandle() if self._state.backend == "codex" else None
-
-        self._llm_worker = self.run_worker(
-            self._run_llm_worker(expanded, attachments, att_warnings),
-            name="llm_call", group=_LLM_WORKER_GROUP, exclusive=True,
+        conv.run_id = f"run-{uuid4().hex[:12]}"
+        self._runs[conv.run_id] = conv
+        conv.codex_handle = CodexRunHandle() if conv.state.backend == "codex" else None
+        conv.worker = self.run_worker(
+            self._run_llm_worker(conv, expanded, attachments, att_warnings),
+            name="llm_call",
+            # One group per conversation, so exclusive never cancels another chat.
+            group=f"{_LLM_WORKER_GROUP}-{conv.id}",
+            exclusive=True,
             # A crash is recorded as a failed turn; it must not quit the app.
             exit_on_error=False,
         )
+        self._refresh_tabs()
+        self._refresh_status_bar()
 
     async def _run_llm_worker(
-        self, expanded_prompt: str, attachments: list[str], att_warnings: list[str],
+        self, conv: Conversation, expanded_prompt: str, attachments: list[str], att_warnings: list[str],
     ) -> ChatResult:
         """Worker coroutine — runs blocking LLM call in thread."""
         import asyncio
 
-        run_id = self._current_run_id
-        codex_handle = self._codex_run_handle
+        run_id = conv.run_id
+        codex_handle = conv.codex_handle
         # post_message is thread-safe and non-blocking, so the model stream
         # never waits on the UI; the batcher merges token chunks.
         batcher = LiveEventBatcher(lambda batch: self.post_message(LiveEventBatch(run_id, batch)))
-        state = self._state
+        state = conv.state
 
         def run() -> ChatResult:
             try:
@@ -908,10 +1153,7 @@ class MTPApp(App):
 
     def _update_codebase_scan_progress(self, percent: int, files_seen: int, changed_files: int) -> None:
         self._codebase_scan_progress = f"Indexing codebase {percent}%  files={files_seen} changed={changed_files}"
-        if self._llm_worker_running:
-            # The spinner belongs to the active run; keep its label.
-            return
-        self.query_one("#spinner", SpinnerWidget).update_label(self._codebase_scan_progress)
+        self.query_one("#task-spinner", SpinnerWidget).update_label(self._codebase_scan_progress)
 
     def _append_cmd_log(self, message: str, *, style: str = "#a78bfa") -> None:
         from rich.text import Text
@@ -932,7 +1174,7 @@ class MTPApp(App):
         except Exception:
             return
 
-        if self._llm_worker_running or self._memory_refresh_running or self._codebase_scan_progress is not None:
+        if self._any_running() or self._memory_refresh_running or self._codebase_scan_progress is not None:
             self._memory_refresh_queued = True
             return
 
@@ -985,171 +1227,100 @@ class MTPApp(App):
                 lines.append(f"  {item['created_at']} {item['title']}{model}")
         return "\n".join(lines)
 
-    def _append_live_thinking_block(self, text: str) -> None:
-        if not text:
-            return
-        self._live_thinking_text += text
-        if self._live_blocks and self._live_blocks[-1].get("type") == "thinking":
-            self._live_blocks[-1]["text"] = str(self._live_blocks[-1].get("text") or "") + text
-            return
-        self._live_blocks.append({"type": "thinking", "text": text})
-
-    def _append_live_text_block(self, text: str) -> None:
-        if not text:
-            return
-        if self._live_blocks and self._live_blocks[-1].get("type") == "text":
-            self._live_blocks[-1]["text"] = str(self._live_blocks[-1].get("text") or "") + text
-            return
-        self._live_blocks.append({"type": "text", "text": text})
-
-    def _ensure_live_tool_group(self, *, batch_index: Any = None, mode: str | None = None) -> dict[str, Any]:
-        if self._live_blocks and self._live_blocks[-1].get("type") == "tool_group":
-            block = self._live_blocks[-1]
-            if batch_index is None or block.get("batch_index") == batch_index:
-                if mode and not block.get("mode"):
-                    block["mode"] = mode
-                return block
-        block = {"type": "tool_group", "batch_index": batch_index, "mode": mode or "unknown", "items": []}
-        self._live_blocks.append(block)
-        return block
-
-    def _upsert_live_tool_item(self, detail: dict[str, Any]) -> None:
-        dtype = str(detail.get("type") or "")
-        if dtype == "batch_started":
-            self._ensure_live_tool_group(batch_index=detail.get("batch_index"), mode=str(detail.get("mode") or "unknown"))
-            return
-
-        if dtype not in {"tool_started", "tool_finished"}:
-            return
-        call_id = str(detail.get("call_id") or detail.get("tool_name") or "tool")
-        for block in self._live_blocks:
-            if block.get("type") != "tool_group":
-                continue
-            for item in block.get("items") or []:
-                if str(item.get("call_id") or "") == call_id:
-                    item["status"] = "running" if dtype == "tool_started" else ("completed" if detail.get("success") else "failed")
-                    item["reasoning"] = detail.get("reasoning")
-                    item["cached"] = detail.get("cached")
-                    item["error"] = detail.get("error")
-                    if detail.get("result_preview") is not None:
-                        item["result_preview"] = detail.get("result_preview")
-                    if detail.get("started_at_ms") is not None:
-                        item["started_at_ms"] = detail.get("started_at_ms")
-                    if detail.get("finished_at_ms") is not None:
-                        item["finished_at_ms"] = detail.get("finished_at_ms")
-                    return
-
-        block = self._ensure_live_tool_group(batch_index=detail.get("batch_index"))
-        block["items"].append(
-            {
-                "call_id": call_id,
-                "tool_name": str(detail.get("tool_name") or "tool"),
-                "status": "running" if dtype == "tool_started" else ("completed" if detail.get("success") else "failed"),
-                "reasoning": detail.get("reasoning"),
-                "cached": detail.get("cached"),
-                "error": detail.get("error"),
-                "started_at_ms": detail.get("started_at_ms"),
-                "finished_at_ms": detail.get("finished_at_ms"),
-                "result_preview": detail.get("result_preview"),
-            }
-        )
-
     @staticmethod
     def _tool_mutates_workspace(tool_name: str) -> bool:
         return tool_name.startswith(("edit.", "shell.", "test."))
 
-    def _reset_live_preview(self) -> None:
-        self._live_status = ""
-        self._live_blocks = []
-        self._live_thinking_text = ""
-        self._live_tool_events = []
-        self._live_tool_details = []
-        self._live_warnings = []
-        self._last_live_render_at = 0.0
-        self._cancel_live_flush()
-        try:
-            self.query_one("#chat-log", ChatLog).clear_live_assistant_message()
-        except Exception:
-            pass
+    def _reset_live_preview(self, conv: Conversation) -> None:
+        live = conv.live
+        if live is not None and live.flush_timer is not None:
+            live.flush_timer.stop()
+        conv.live = None
+        conv.view.chat_log.clear_live_assistant_message()
 
-    def _cancel_live_flush(self) -> None:
-        if self._live_flush_timer is not None:
-            self._live_flush_timer.stop()
-            self._live_flush_timer = None
-
-    def _flush_live_preview(self) -> None:
-        self._live_flush_timer = None
-        self._render_live_preview(force=True)
-
-    def _render_live_preview(self, *, force: bool = False) -> None:
+    def _render_live_preview(self, conv: Conversation, *, force: bool = False) -> None:
+        live = conv.live
+        if live is None:
+            return
         now = time.monotonic()
-        wait = _LIVE_RENDER_INTERVAL - (now - self._last_live_render_at)
+        wait = _LIVE_RENDER_INTERVAL - (now - live.last_render_at)
         if not force and wait > 0:
             # Throttled: make sure a render still happens once the window ends.
-            if self._live_flush_timer is None:
-                self._live_flush_timer = self.set_timer(wait, self._flush_live_preview)
+            if live.flush_timer is None:
+                live.flush_timer = self.set_timer(wait, lambda: self._flush_live_preview(conv, live))
             return
-        self._cancel_live_flush()
-        self._last_live_render_at = now
-        if not self._pending_display_prompt:
-            return
-        self.query_one("#chat-log", ChatLog).set_live_assistant_message(self._live_message())
+        if live.flush_timer is not None:
+            live.flush_timer.stop()
+            live.flush_timer = None
+        live.last_render_at = now
+        conv.view.chat_log.set_live_assistant_message(live.message(show_tool_details=self._show_tool_details))
+
+    def _flush_live_preview(self, conv: Conversation, live: LiveTurn) -> None:
+        live.flush_timer = None
+        if conv.live is live:
+            self._render_live_preview(conv, force=True)
 
     def on_live_event_batch(self, message: LiveEventBatch) -> None:
-        """Apply a batch of live events if it belongs to the active run.
+        """Apply a batch of live events to the conversation whose run sent it.
 
         Worker threads outlive cancellation of their asyncio wrapper, so a
-        previous run can keep emitting after a new one has started.
+        finished run can still emit; those events are dropped.
         """
-        if message.run_id is None or message.run_id != self._current_run_id:
+        conv = self._runs.get(message.run_id or "")
+        if conv is None or conv.run_id != message.run_id or conv.live is None:
             return
         for kind, payload in message.events:
-            self._handle_live_event(kind, payload)
+            self._handle_live_event(conv, kind, payload)
+        self._render_live_preview(conv)
 
-    def _handle_live_event(self, kind: str, message: Any) -> None:
-        spinner = self.query_one("#spinner", SpinnerWidget)
+    def _handle_live_event(self, conv: Conversation, kind: str, message: Any) -> None:
+        live = conv.live
+        if live is None:
+            return
+        spinner = conv.view.spinner
         if kind == "status":
             if message in {"Sending request to provider...", "Processing response..."}:
-                self._live_status = ""
+                live.status = ""
             else:
-                self._live_status = message
-                spinner.update_label(message or "Thinking")
+                live.status = str(message or "")
+                spinner.update_label(live.status or "Thinking")
         elif kind in {"tool", "tool_end"}:
-            self._live_tool_events.append(message)
-            self._state.last_tool_events = list(self._live_tool_events)
-            # Only the tool list changed; a full sidebar refresh reads settings from disk.
-            self.query_one("#tool-event-log", ToolEventLog).update_events(self._state.last_tool_events)
+            live.tool_events.append(message)
+            conv.state.last_tool_events = list(live.tool_events)
+            if conv is self._active:
+                # Only the tool list changed; a full sidebar refresh reads settings from disk.
+                self.query_one("#tool-event-log", ToolEventLog).update_events(conv.state.last_tool_events)
         elif kind == "tool_detail":
             try:
                 detail = dict(message)  # type: ignore[arg-type]
             except Exception:
                 detail = {"type": "detail", "message": str(message)}
-            self._live_tool_details.append(detail)
-            self._state.last_tool_details = list(self._live_tool_details)
-            self._upsert_live_tool_item(detail)
+            live.tool_details.append(detail)
+            conv.state.last_tool_details = list(live.tool_details)
+            live.upsert_tool_item(detail)
             if (
                 str(detail.get("type") or "") == "tool_finished"
                 and detail.get("success")
                 and self._tool_mutates_workspace(str(detail.get("tool_name") or ""))
             ):
-                self._memory_refresh_dirty = True
+                live.mutated_workspace = True
                 self._file_index.invalidate()  # the tool may have created or removed files
         elif kind == "warn":
-            self._live_warnings.append(message)
+            live.warnings.append(message)
         elif kind == "reasoning":
-            self._append_live_thinking_block(str(message))
-            if not self._live_status:
+            live.append_thinking(str(message))
+            if not live.status:
                 spinner.update_label("Reasoning")
         elif kind == "text":
-            self._append_live_text_block(str(message))
-            if not self._live_status:
+            live.append_text(str(message))
+            if not live.status:
                 spinner.update_label("Streaming response")
+        elif kind == "steer_applied":
+            spinner.update_label("Using your update")
         else:
-            self._live_status = message
-        self._render_live_preview()
+            live.status = str(message or "")
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        spinner = self.query_one("#spinner", SpinnerWidget)
 
         if event.worker.name == "codebase_scan":
             if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
@@ -1202,75 +1373,87 @@ class MTPApp(App):
 
         if event.worker.name != "llm_call":
             return
-
-        if event.worker is not self._llm_worker:
-            # A superseded run finishing late must not reset the active turn.
+        conv = self._conversation_for_worker(event.worker)
+        if conv is None or conv.live is None:
+            # A superseded or closed run finishing late must not touch any chat.
             return
-
-        if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
-            self._llm_worker_running = False
-            self._current_run_id = None
-            self._llm_worker = None
-            self._codex_run_handle = None
-
         if event.state == WorkerState.SUCCESS:
-            self._finish_turn(event.worker.result)
+            self._finish_turn(conv, event.worker.result)
         elif event.state == WorkerState.ERROR:
             error = event.worker.error
             detail = f"{type(error).__name__}: {error}" if error is not None else "unknown error"
-            self._finish_turn(self._partial_result(TURN_FAILED, detail))
+            self._finish_turn(conv, conv.live.partial_result(TURN_FAILED, detail))
         elif event.state == WorkerState.CANCELLED:
-            self._finish_turn(self._partial_result(TURN_CANCELLED, None))
+            self._finish_turn(conv, conv.live.partial_result(TURN_CANCELLED, None))
 
-        self._refresh_status_bar()
-
-    def _partial_result(self, status: str, error: str | None) -> ChatResult:
-        """What the live preview had when a run ended without a result."""
-        text = "".join(str(b.get("text") or "") for b in self._live_blocks if b.get("type") == "text")
-        return ChatResult(
-            text=text, tool_events=list(self._live_tool_events), attachments=[],
-            warnings=list(self._live_warnings), usage_lines=[],
-            tool_details=list(self._live_tool_details),
-            assistant_blocks=list(self._live_blocks),
-            thinking_text=self._live_thinking_text.strip(),
-            status=status, error=error,
-        )
-
-    def _finish_turn(self, result: ChatResult) -> None:
+    def _finish_turn(self, conv: Conversation, result: ChatResult) -> None:
         """Save the turn whatever its outcome and turn the live view into it.
 
         Failed and cancelled turns keep their partial output, and the user can
-        keep talking in the same conversation afterwards.
+        keep talking in the same conversation afterwards. Queued prompts for
+        this conversation start right after.
         """
-        self.query_one("#spinner", SpinnerWidget).stop()
-        if self._live_blocks and not result.assistant_blocks:
-            result.assistant_blocks = list(self._live_blocks)
-        if self._live_thinking_text and not result.thinking_text:
-            result.thinking_text = self._live_thinking_text.strip()
+        live = conv.live
+        assert live is not None
+        if conv.run_id is not None:
+            self._runs.pop(conv.run_id, None)
+        conv.end_run()
+        conv.view.spinner.stop()
+        if live.blocks and not result.assistant_blocks:
+            result.assistant_blocks = list(live.blocks)
+        elif live.steered:
+            # Keep the "you steered here" notes; the backend's blocks lack them.
+            result.assistant_blocks = [*result.assistant_blocks, *(
+                {"type": "steer", "text": text} for text in live.steered
+            )]
+        if live.thinking_text and not result.thinking_text:
+            result.thinking_text = live.thinking_text.strip()
         if not result.attachments:
-            result.attachments = list(self._pending_display_attachments)
+            result.attachments = list(live.display_attachments)
 
-        # Record the turn with the original raw prompt; disk work happens off-thread.
-        record_turn(self._state, self._pending_raw_prompt, result, persist=False)
+        state = conv.state
+        # Recorded with the backend and model the run started with, even if
+        # the user switched either one while it was running.
+        record_turn(state, live.raw_prompt, result, persist=False, backend=live.backend, model=live.model_name)
         if result.status == TURN_COMPLETED:
-            self.session_saver.run_task(summary_for_turn(self._state, self._pending_raw_prompt, result).record)
+            self.session_saver.run_task(summary_for_turn(state, live.raw_prompt, result).record)
         self._request_background_memory_refresh(reason=f"post-run-{result.status}")
 
         # Auto-generate title from first prompt
-        if len(self._state.transcript) == 1 and not self._state.session_label:
-            self._state.session_label = generate_session_title_from_prompt(
-                self._state.transcript[0].prompt
-            )
-        self._save_session()
+        if len(state.transcript) == 1 and not state.session_label:
+            state.session_label = generate_session_title_from_prompt(state.transcript[0].prompt)
+        self._save_session(conv)
 
-        self._state.last_tool_events = list(result.tool_events)
-        self._state.last_tool_details = list(result.tool_details)
-        self._state.last_warnings = list(result.warnings)
-        self._cancel_live_flush()
-        self._complete_pending_turn(self._state.transcript[-1])
-        self._clear_pending_turn_display()
-        self._reset_live_preview()
-        self._refresh_sidebar()
+        state.last_tool_events = list(result.tool_events)
+        state.last_tool_details = list(result.tool_details)
+        state.last_warnings = list(result.warnings)
+        if live.flush_timer is not None:
+            live.flush_timer.stop()
+            live.flush_timer = None
+        self._complete_pending_turn(conv, state.transcript[-1])
+        self._reset_live_preview(conv)
+
+        conv.last_status = result.status
+        conv.unread = conv is not self._active
+        if conv.unread:
+            title = f"Chat {self._position(conv)}: {conv.title}"
+            if result.status == TURN_FAILED:
+                self.notify(result.error or "Run failed", title=title, severity="error", timeout=6)
+            else:
+                self.notify("Reply finished" if result.status == TURN_COMPLETED else "Run stopped", title=title, timeout=4)
+
+        # Steering that arrived after the last model round runs as the next prompt.
+        for text in reversed(result.unapplied_steering):
+            self._enqueue(conv, text, front=True, note="Your update arrived after the reply finished; sending it next.")
+
+        self._refresh_tabs()
+        if conv is self._active:
+            self._refresh_status_bar()
+            self._refresh_sidebar()
+        if conv.queue:
+            self.call_after_refresh(self._run_next_queued, conv)
+        else:
+            self._refresh_queue_bar()
 
     def action_cmd_dispatch(self, cmd: str, arg: str) -> None:
         """Central action handler called by CommandPalette entries."""
@@ -1328,7 +1511,7 @@ class MTPApp(App):
         elif cmd == "exit":
             self.exit()
         elif cmd == "clear":
-            self.query_one("#chat-log", ChatLog).clear()
+            self.active_chat_log.clear()
             cmd_log.remove_class("visible")
             try:
                 self.query_one("#boot-screen", BootScreen).display = True
@@ -1370,21 +1553,13 @@ class MTPApp(App):
             self._refresh_sidebar()
             return
         elif cmd == "new" or cmd == "reset":
-            s.session_id = new_session_id()
-            s.session_label = arg or None
-            s.transcript = []
-            s.last_usage_lines = []
-            s.agent = None
-            s.codex_session_id = None
-            self._save_session()
-            self._clear_pending_turn_display()
-            self._reset_live_preview()
-            self._rebuild_chat_log()
-            chat_log.add_command_result(
-                f"✓ New session {s.session_id}" + (f" ({arg})" if arg else "")
+            # A new chat opens next to the current one, which keeps running.
+            conv = self._open_conversation(self._fresh_state(label=arg or None))
+            self._save_session(conv)
+            self._write_cmd_log(
+                f"? New chat {self._position(conv)} ({conv.state.session_id})"
+                + (f" {arg}" if arg else "")
             )
-            self._refresh_status_bar()
-            self._refresh_prompt_label()
         elif cmd == "backend":
             if not arg:
                 input_area = self.query_one("#chat-input", InputArea)
@@ -1491,19 +1666,13 @@ class MTPApp(App):
                 try: self.query_one("#suggestion-list", OptionList).focus()
                 except Exception: pass
             else:
-                chat_log.add_system_message(f"Loading session: {arg}...")
-                try:
-                    from . import tui as old_tui
-                    result = old_tui._load_session_hierarchical(s, arg)
-                    cleaned = re.sub(r"\033\[[0-9;]*m", "", result or "")
-                    chat_log.add_command_result(cleaned)
-                except Exception as e:
-                    chat_log.add_command_result(f"Load failed: {e}")
-                # Redraw from state so a successfully loaded transcript is visible.
-                self._rebuild_chat_log()
-                self._refresh_status_bar()
-                self._refresh_sidebar()
-                self._refresh_prompt_label()
+                self._write_cmd_log(self._load_session_into_tab(arg))
+        elif cmd in {"close", "tabs", "switch", "chats"}:
+            self._handle_conversation_command(cmd, arg)
+        elif cmd == "queue":
+            self._handle_queue_command(arg)
+        elif cmd == "steer":
+            self._handle_steer_command(arg)
         elif cmd == "open":
             if not arg:
                 chat_log.add_command_result("Usage: /open <session_id>")
@@ -1573,6 +1742,86 @@ class MTPApp(App):
         self._run_blocking_command(
             "backend switch", lambda: prepare_backend_switch(state, provider_name), done,
         )
+
+    def _load_session_into_tab(self, arg: str) -> str:
+        """Open a saved session in its own chat, or switch to it if already open."""
+        from . import tui as old_tui
+
+        probe = self._fresh_state()
+        record = old_tui._load_session_record(probe, arg.strip())
+        if record is None:
+            # Produces the "not found, recent sessions: ..." message.
+            return re.sub(r"\033\[[0-9;]*m", "", old_tui._load_session_hierarchical(probe, arg) or "")
+        already_open = next((c for c in self._conversations if c.state.session_id == record.session_id), None)
+        if already_open is not None:
+            self._activate(already_open)
+            return f"Session {record.session_id} is already open in chat {self._position(already_open)}."
+        old_tui._load_session_into_state(probe, record)
+        conv = self._open_conversation(probe)
+        self._save_session(conv)
+        return f"Loaded session {probe.session_id} into chat {self._position(conv)} with {len(probe.transcript)} turns."
+
+    def _handle_conversation_command(self, cmd: str, arg: str) -> None:
+        arg = arg.strip()
+        if cmd in {"tabs", "chats"}:
+            lines = []
+            for position, conv in enumerate(self._conversations, start=1):
+                flags = []
+                if conv.running:
+                    flags.append("running")
+                if conv.queue:
+                    flags.append(f"{len(conv.queue)} queued")
+                if conv.unread:
+                    flags.append("new reply")
+                marker = "*" if conv is self._active else " "
+                detail = f"  [{', '.join(flags)}]" if flags else ""
+                lines.append(f"{marker}{position}  {conv.title}  ({conv.state.backend}){detail}")
+            lines.append("Alt+1..9 or /switch <n> to switch, Ctrl+N or /new for a new chat, /close [n] to close.")
+            self._write_cmd_log("\n".join(lines))
+            return
+        target = self._active
+        if arg:
+            if not arg.isdigit() or self._conversation_by_position(int(arg)) is None:
+                self._write_cmd_log(f"No chat {arg}. Open chats: 1-{len(self._conversations)}.")
+                return
+            target = self._conversation_by_position(int(arg))  # type: ignore[assignment]
+        if cmd == "switch":
+            if not arg:
+                self._write_cmd_log("Usage: /switch <n>")
+                return
+            self._activate(target)
+            return
+        self._write_cmd_log(self._close_conversation(target))
+
+    def _handle_queue_command(self, arg: str) -> None:
+        conv = self._active
+        if arg.strip().lower() == "clear":
+            dropped = len(conv.queue)
+            conv.queue.clear()
+            self._refresh_queue_bar()
+            self._refresh_tabs()
+            self._write_cmd_log(f"Cleared {dropped} queued message{'s' if dropped != 1 else ''}.")
+            return
+        if not conv.queue:
+            self._write_cmd_log("Nothing queued. Messages sent while a reply is running wait here.")
+            return
+        lines = [f"{index}. {item.text[:120]}" for index, item in enumerate(conv.queue, start=1)]
+        lines.append("/queue clear drops them" + ("; Ctrl+G steers the newest into the run." if self._can_steer(conv) else "."))
+        self._write_cmd_log("\n".join(lines))
+
+    def _handle_steer_command(self, arg: str) -> None:
+        text = arg.strip()
+        conv = self._active
+        if not text:
+            self._write_cmd_log("Usage: /steer <message>  (adds it to the running reply)")
+            return
+        if not conv.running:
+            self._start_run(conv, text)
+            return
+        if self._steer(conv, text):
+            self._write_cmd_log("Sent to the running reply; the model sees it at its next step.")
+            return
+        self._enqueue(conv, text, note="This backend cannot take input mid-run; queued to run next.")
 
     def _handle_codex_auth(self, arg: str, chat_log: Any) -> None:
         import os
@@ -1768,7 +2017,6 @@ class MTPApp(App):
                 f"files={status.file_count} chunks={status.chunk_count} summaries={status.summary_count}\n"
                 f"last_scan_at={status.last_scan_at or '(never)'}"
             )
-            self._reset_live_preview()
             return
 
         if sub != "memory":
@@ -1781,7 +2029,6 @@ class MTPApp(App):
 
         if action == "show":
             chat_log.add_command_result(self._format_codebase_memory_show(root))
-            self._reset_live_preview()
             return
 
         if action == "off":
@@ -1809,20 +2056,11 @@ class MTPApp(App):
         )
 
     def _show_scan_spinner(self, label: str) -> None:
-        """Show scan progress without resetting a spinner owned by an LLM run."""
-        spinner = self.query_one("#spinner", SpinnerWidget)
-        if self._llm_worker_running:
-            spinner.update_label(label)
-        else:
-            spinner.start(label)
+        """Codebase jobs use their own spinner, separate from any chat's run."""
+        self.query_one("#task-spinner", SpinnerWidget).start(label)
 
     def _release_scan_spinner(self) -> None:
-        """Hide the spinner after a scan, unless an LLM run still needs it."""
-        spinner = self.query_one("#spinner", SpinnerWidget)
-        if self._llm_worker_running:
-            spinner.update_label(self._live_status or "Thinking")
-        else:
-            spinner.stop()
+        self.query_one("#task-spinner", SpinnerWidget).stop()
 
     def _open_codebase_memory_picker(self, root: Path, chat_log: Any) -> None:
         from mtp.codebase import CodebaseMemory
@@ -1842,7 +2080,7 @@ class MTPApp(App):
         option_list.highlighted = 0
 
     def _handle_model_switch(self, arg: str) -> None:
-        chat_log = self.query_one("#chat-log", ChatLog)
+        chat_log = self.active_chat_log
         s = self._state
         resolved = resolve_model(arg)
 
@@ -1855,7 +2093,6 @@ class MTPApp(App):
                 provider_settings_path, load_provider_settings,
                 ensure_provider_entry, save_provider_settings,
             )
-            self._reset_live_preview()
             settings_path = provider_settings_path(s.session_store.file_path)
             settings = load_provider_settings(settings_path)
             entry = ensure_provider_entry(settings, s.backend)
@@ -1868,7 +2105,7 @@ class MTPApp(App):
         self._refresh_sidebar()
 
     def _handle_sandbox(self, arg: str) -> None:
-        chat_log = self.query_one("#chat-log", ChatLog)
+        chat_log = self.active_chat_log
         s = self._state
         if not arg:
             modes = ["read-only", "workspace-write", "danger-full-access"]
@@ -1888,7 +2125,7 @@ class MTPApp(App):
         self._refresh_status_bar()
 
     def _handle_apikey(self, arg: str) -> None:
-        chat_log = self.query_one("#chat-log", ChatLog)
+        chat_log = self.active_chat_log
         try:
             from . import tui as old_tui
             result = old_tui._handle_apikey_command(self._state, arg)
@@ -2030,10 +2267,15 @@ class MTPApp(App):
         table.add_row("", "/sandbox", "Cycle sandbox mode")
         table.add_row("", "/codebase memory", "Enable, disable, or inspect project memory")
         
-        table.add_row("Keys", "Ctrl+P", "Command palette")
-        table.add_row("", "Ctrl+B", "Toggle sidebar")
-        table.add_row("", "Ctrl+L", "Clear screen")
-        table.add_row("", "Ctrl+Y", "Copy last response")
+        table.add_row("Chats", "/new [label]", "Open a new chat; others keep running")
+        table.add_row("", "/tabs", "List open chats")
+        table.add_row("", "/switch <n>", "Switch to chat n")
+        table.add_row("", "/close [n]", "Close a chat (not while it runs)")
+        table.add_row("", "/queue [clear]", "Show or drop queued messages")
+        table.add_row("", "/steer <text>", "Add a message to the running reply (MTP backends)")
+
+        for index, shortcut in enumerate(SHORTCUTS):
+            table.add_row("Keys" if index == 0 else "", shortcut.keys, shortcut.label)
         
         return Panel(table, title="[bold #ec4899]Command Reference[/]", border_style="#3f3f46")
 
@@ -2212,9 +2454,8 @@ class MTPApp(App):
             self.query_one("#workspace-tree", WorkspaceTree).refresh_tree(self._state.cwd, force=True)
 
     def action_clear_chat(self) -> None:
-        self._clear_pending_turn_display()
-        self._reset_live_preview()
-        self.query_one("#chat-log", ChatLog).clear()
+        """Clear what is on screen. A running turn keeps streaming into a fresh view."""
+        self.active_chat_log.clear()
 
     def action_cycle_sandbox(self) -> None:
         self._handle_sandbox("")

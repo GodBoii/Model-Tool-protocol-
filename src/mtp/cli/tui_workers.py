@@ -91,17 +91,27 @@ def save_tui_session(state: TUIState) -> None:
     write_session_snapshot(snapshot_tui_session(state))
 
 
-def record_turn(state: TUIState, prompt: str, result: ChatResult, *, persist: bool = True) -> None:
+def record_turn(
+    state: TUIState,
+    prompt: str,
+    result: ChatResult,
+    *,
+    persist: bool = True,
+    backend: str | None = None,
+    model: str | None = None,
+) -> None:
     """Record a conversation turn.
 
     With ``persist=False`` the caller is responsible for saving the session
     and for the codebase summary (the TUI does both off the UI thread).
+    ``backend`` and ``model`` default to the state's current ones; pass the
+    values the run started with if they may have changed since.
     """
     state.transcript.append(TranscriptTurn(
         prompt=prompt,
         response=result.text,
-        backend=state.backend,
-        model=active_model_name(state),
+        backend=backend or state.backend,
+        model=model or active_model_name(state),
         attachments=list(result.attachments),
         warnings=list(result.warnings),
         usage_lines=list(result.usage_lines),

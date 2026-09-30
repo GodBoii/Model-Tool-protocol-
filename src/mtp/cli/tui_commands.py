@@ -19,7 +19,11 @@ if TYPE_CHECKING:
 COMMANDS: list[tuple[str, str, str, str]] = [
     ("Help", "Show command reference", "help", ""),
     ("Exit", "Quit the TUI", "exit", ""),
-    ("New Session", "Start a fresh chat session", "new", ""),
+    ("New Chat", "Open a new chat next to the current one (Ctrl+N)", "new", ""),
+    ("Open Chats", "List open chats and their state", "tabs", ""),
+    ("Close Chat", "Close the current chat", "close", ""),
+    ("Queue", "Show messages waiting for the current reply", "queue", ""),
+    ("Clear Queue", "Drop queued messages", "queue", "clear"),
     ("Clear Screen", "Clear the chat log", "clear", ""),
     ("Status", "Show current session state", "status", ""),
     ("Sessions", "List saved chat sessions", "sessions", ""),
@@ -107,14 +111,14 @@ class MTPCommandProvider(Provider):
 
 SLASH_COMMANDS = {
     "/help", "/exit", "/clear", "/status", "/sessions", "/history",
-    "/models", "/tools", "/compose", "/thinking",
+    "/models", "/tools", "/compose", "/thinking", "/tabs", "/chats",
 }
 
 SLASH_WITH_ARG = {
     "/backend", "/model", "/apikey", "/reasoning", "/mode",
     "/rounds", "/autoresearch", "/research", "/cd", "/load",
-    "/open", "/sandbox", "/new", "/history", "/codebase", "/details",
-    "/codex",
+    "/open", "/sandbox", "/new", "/reset", "/history", "/codebase", "/details",
+    "/codex", "/close", "/switch", "/queue", "/steer",
 }
 
 
@@ -138,6 +142,7 @@ def parse_slash_command(raw: str) -> tuple[str, str] | None:
         "history", "sessions", "load", "backend", "apikey", "models",
         "model", "reasoning", "thinking", "rounds", "codex", "codex-login", "autoresearch",
         "research", "cd", "tools", "details", "sandbox", "codebase", "open",
+        "close", "tabs", "chats", "switch", "queue", "steer",
     }
     head = raw[1:].split(" ", 1)[0].strip().lower()
     if head in command_heads:
