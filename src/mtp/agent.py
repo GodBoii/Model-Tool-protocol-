@@ -6,6 +6,7 @@ from itertools import count
 from datetime import UTC, datetime
 import json
 import re
+import threading
 from time import perf_counter
 from dataclasses import dataclass, field
 from collections.abc import AsyncIterator, Iterator
@@ -150,6 +151,8 @@ class Agent:
         self.messages: list[dict[str, Any]] = []
         self._active_runs: set[str] = set()
         self._cancelled_runs: set[str] = set()
+        self._steering_lock = threading.Lock()
+        self._pending_steering: dict[str, list[str]] = {}
         self._paused_runs: dict[str, RunOutput] = {}
         for name, member in (members or {}).items():
             self.add_member(name, member)
@@ -408,6 +411,84 @@ class Agent:
         self._cancelled_runs.add(run_id)
         return True
 
+    def steer_run(self, run_id: str, text: str) -> bool:
+        """Queue a user message for an active run.
+
+        The message is added to the conversation at the start of the run's
+        next model round, so the model sees it before deciding what to do
+        next. Thread-safe. Returns False if the run is not active. Messages
+        that arrive after the last round can be collected with
+        ``take_unapplied_steering``.
+        """
+        text = text.strip()
+        if not text:
+            return False
+        with self._steering_lock:
+            if run_id not in self._active_runs:
+                return False
+            self._pending_steering.setdefault(run_id, []).append(text)
+        return True
+
+    def take_unapplied_steering(self, run_id: str) -> list[str]:
+        """Return and forget steering messages the run never consumed."""
+        with self._steering_lock:
+            return self._pending_steering.pop(run_id, [])
+
+    def _drain_steering(self, run_id: str) -> list[str]:
+        with self._steering_lock:
+            return self._pending_steering.pop(run_id, [])
+
+    def _apply_steering(self, run_id: str) -> list[str]:
+        """Append pending steering messages to the conversation and return them."""
+        texts = self._drain_steering(run_id)
+        for text in texts:
+            self._append_message({"role": "user", "content": f"[Update from the user while you were working] {text}"})
+        return texts
+
+    def _repair_dangling_tool_calls(self) -> int:
+        """Answer tool calls that never got a result.
+
+        A run that fails or is killed between the assistant's tool-call
+        message and the tool results leaves calls without replies. Most
+        chat APIs reject that history, so the next prompt would fail too.
+        Returns the number of placeholder results inserted.
+        """
+        repaired: list[dict[str, Any]] = []
+        inserted = 0
+        index = 0
+        messages = self.messages
+        while index < len(messages):
+            message = messages[index]
+            repaired.append(message)
+            index += 1
+            calls = message.get("tool_calls") if message.get("role") == "assistant" else None
+            if not isinstance(calls, list) or not calls:
+                continue
+            answered: set[str] = set()
+            while index < len(messages) and messages[index].get("role") == "tool":
+                answered.add(str(messages[index].get("tool_call_id")))
+                repaired.append(messages[index])
+                index += 1
+            for call in calls:
+                call_id = call.get("id") if isinstance(call, dict) else None
+                if call_id is None or str(call_id) in answered:
+                    continue
+                function = call.get("function")
+                name = str(function.get("name") or "") if isinstance(function, dict) else ""
+                name = name or str(call.get("name") or "")
+                repaired.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "tool_name": name,
+                    "content": "Not run: the previous run stopped before this tool call finished.",
+                    "success": False,
+                    "cached": False,
+                })
+                inserted += 1
+        if inserted:
+            self.messages = repaired
+        return inserted
+
     def add_tool(self, tool: RegisteredTool | Callable[..., Any]) -> None:
         if isinstance(tool, RegisteredTool):
             self.registry.add_tool(tool)
@@ -426,11 +507,19 @@ class Agent:
         self.registry.set_tools(registered)
 
     def _register_run(self, run_id: str) -> None:
-        self._active_runs.add(run_id)
+        with self._steering_lock:
+            self._active_runs.add(run_id)
+            self._pending_steering.pop(run_id, None)
         self._cancelled_runs.discard(run_id)
+        # Every entry point registers the run before touching history, so
+        # this is the one place to fix tool calls left open by a crash.
+        self._repair_dangling_tool_calls()
 
     def _complete_run(self, run_id: str) -> None:
-        self._active_runs.discard(run_id)
+        # Under the lock so steer_run cannot add to a run that just ended;
+        # unconsumed messages stay for take_unapplied_steering.
+        with self._steering_lock:
+            self._active_runs.discard(run_id)
 
     def _is_cancelled(self, run_id: str) -> bool:
         return run_id in self._cancelled_runs
@@ -1069,6 +1158,7 @@ class Agent:
             if self._is_cancelled(run_id):
                 cancelled = True
                 break
+            self._apply_steering(run_id)
             self._debug(f"round={round_idx} start")
             self._debug(
                 "llm_request_messages="
@@ -1479,6 +1569,7 @@ class Agent:
             if self._is_cancelled(run_id):
                 cancelled = True
                 break
+            self._apply_steering(run_id)
             action = await self._anext_action(planning_tools)
             self._normalize_plan_reasoning(action.plan, tools)
             if action.response_text and action.plan is None:
@@ -1971,6 +2062,9 @@ class Agent:
                     yield events.emit("run_cancelled", round=round_idx)
                     self._append_message({"role": "assistant", "content": "Run cancelled."})
                     return
+                steered = self._apply_steering(resolved_run_id)
+                if steered:
+                    yield events.emit("steer_applied", round=round_idx, messages=steered)
                 yield events.emit("round_started", round=round_idx)
                 llm_started = perf_counter()
                 action = None
@@ -2343,6 +2437,9 @@ class Agent:
                     yield events.emit("run_cancelled", round=round_idx)
                     self._append_message({"role": "assistant", "content": "Run cancelled."})
                     return
+                steered = self._apply_steering(resolved_run_id)
+                if steered:
+                    yield events.emit("steer_applied", round=round_idx, messages=steered)
                 yield events.emit("round_started", round=round_idx)
                 llm_started = perf_counter()
                 action = None

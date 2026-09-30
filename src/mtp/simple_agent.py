@@ -306,6 +306,14 @@ class MTPAgent:
     def cancel_run(self, run_id: str) -> bool:
         return self._agent.cancel_run(run_id)
 
+    def steer_run(self, run_id: str, text: str) -> bool:
+        """Add a user message to an active run at its next model round."""
+        return self._agent.steer_run(run_id, text)
+
+    def take_unapplied_steering(self, run_id: str) -> list[str]:
+        """Steering messages that arrived too late for the run to use."""
+        return self._agent.take_unapplied_steering(run_id)
+
     def continue_run(
         self,
         *,
