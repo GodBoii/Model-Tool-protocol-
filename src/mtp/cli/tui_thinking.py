@@ -80,15 +80,17 @@ def get_thinking_capability(state: TUIState) -> ThinkingCapability | None:
     )
 
 
-def apply_thinking_value(state: TUIState, value: str) -> str:
+def apply_thinking_value(state: TUIState, value: str, *, persist: bool = True) -> str:
+    """Apply a reasoning/thinking choice. With ``persist=False`` the caller saves."""
     if state.backend == "codex":
         resolved = resolve_reasoning(value)
         if resolved is None:
             raise ValueError("Unsupported reasoning level")
         state.reasoning_effort = resolved
-        from .tui_workers import save_tui_session
+        if persist:
+            from .tui_workers import save_tui_session
 
-        save_tui_session(state)
+            save_tui_session(state)
         return f"✓ Reasoning set to {resolved}"
 
     if state.backend != "xiaomi":
@@ -112,7 +114,8 @@ def apply_thinking_value(state: TUIState, value: str) -> str:
     save_provider_settings(settings_path, settings)
     state.agent = None
 
-    from .tui_workers import save_tui_session
+    if persist:
+        from .tui_workers import save_tui_session
 
-    save_tui_session(state)
+        save_tui_session(state)
     return f"✓ Xiaomi thinking set to {label}"

@@ -294,3 +294,34 @@ def test_file_suggestions_come_from_background_index(tmp_path: Path, fake_runner
             assert labels == ["@src/widget_target.py"]
 
     asyncio.run(scenario())
+
+
+def test_backend_switch_runs_off_the_ui_thread(
+    tmp_path: Path, fake_runner: FakeRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mtp.cli.tui_workers import BackendSwitch
+
+    threads: list[str] = []
+    delays = {"slow": 0.4, "fast": 0.0}
+
+    def fake_prepare(state: TUIState, name: str) -> BackendSwitch:
+        threads.append(threading.current_thread().name)
+        import time as _time
+        _time.sleep(delays[name])
+        return BackendSwitch(f"switched to {name}", backend=name)
+
+    monkeypatch.setattr(tui_app, "prepare_backend_switch", fake_prepare)
+
+    async def scenario() -> None:
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            app._dispatch_command("backend", "slow")
+            assert app.state.backend == "codex"  # not applied synchronously
+            app._dispatch_command("backend", "fast")
+            await pilot.pause(0.7)
+            # The newer request wins even though the older one finished last.
+            assert app.state.backend == "fast"
+
+    asyncio.run(scenario())
+    assert len(threads) == 2
+    assert threading.main_thread().name not in threads

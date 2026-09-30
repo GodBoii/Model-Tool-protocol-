@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import re
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Callable, TypeVar
 from uuid import uuid4
 
 from textual.app import App, ComposeResult
@@ -44,8 +44,9 @@ from .tui_live_events import LiveEvent, LiveEventBatcher
 from .tui_commands import MTPCommandProvider, parse_slash_command
 from .tui_persistence import SessionSaver
 from .tui_workers import (
+    BackendSwitch, apply_backend_switch, prepare_backend_switch,
     record_turn, snapshot_tui_session, summary_for_turn, collect_prompt_attachments,
-    run_prompt_blocking, switch_backend,
+    run_prompt_blocking,
 )
 
 _ARG_SUGGESTION_PREFIX = "-> "
@@ -59,6 +60,9 @@ _LIVE_RENDER_INTERVAL = 0.10
 # group, so LLM runs and codebase-memory jobs must not share one.
 _LLM_WORKER_GROUP = "llm"
 _MEMORY_WORKER_GROUP = "memory"
+_COMMAND_WORKER_GROUP = "command"
+
+T = TypeVar("T")
 
 
 class LiveEventBatch(Message):
@@ -148,6 +152,7 @@ class MTPApp(App):
         self._codex_run_handle: CodexRunHandle | None = None
         self._pending_turn_widgets: list[Widget] = []
         self._live_model_name: str = ""
+        self._backend_switch_seq = 0
         self.session_saver = SessionSaver(
             on_error=lambda exc: self.post_message(SessionSaveFailed(exc)),
         )
@@ -369,7 +374,8 @@ class MTPApp(App):
             if not result:
                 return
             try:
-                message = apply_thinking_value(self._state, result)
+                message = apply_thinking_value(self._state, result, persist=False)
+                self._save_session()
             except ValueError as exc:
                 self.notify(str(exc), title="Thinking", severity="error")
                 return
@@ -1367,11 +1373,7 @@ class MTPApp(App):
                 try: self.query_one("#suggestion-list", OptionList).focus()
                 except Exception: pass
             else:
-                result = switch_backend(s, arg)
-                chat_log.add_command_result(result)
-                self._refresh_status_bar()
-                self._refresh_prompt_label()
-                self._refresh_sidebar()
+                self._start_backend_switch(arg, chat_log)
         elif cmd == "model":
             if not arg:
                 input_area = self.query_one("#chat-input", InputArea)
@@ -1397,7 +1399,8 @@ class MTPApp(App):
                 self._refresh_sidebar()
                 return
             try:
-                message = apply_thinking_value(s, arg)
+                message = apply_thinking_value(s, arg, persist=False)
+                self._save_session()
                 chat_log.add_command_result(message)
             except ValueError:
                 choices = ", ".join(option.label for option in capability.options)
@@ -1497,6 +1500,58 @@ class MTPApp(App):
 
     # ── Model / Sandbox / API key handlers ───────────────────────────────
 
+    def _write_cmd_log(self, content: Any, *, style: str = "#a78bfa") -> None:
+        """Append a string or Rich renderable to the command output panel."""
+        from rich.text import Text
+
+        cmd_log = self.query_one("#cmd-log", RichLog)
+        cmd_log.add_class("visible")
+        if isinstance(content, str):
+            cleaned = re.sub(r"\033\[[0-9;]*m", "", content)
+            cmd_log.write(Text(f"  {cleaned}", style=style))
+        else:
+            cmd_log.write(content)
+
+    def _run_blocking_command(
+        self, label: str, work: Callable[[], T], done: Callable[[T], None],
+    ) -> None:
+        """Run ``work`` on a thread, then ``done(result)`` on the UI thread.
+
+        For slow command I/O (subprocesses, SDK imports, client setup) that
+        used to freeze the UI while it ran.
+        """
+        import asyncio
+
+        async def job() -> None:
+            try:
+                result = await asyncio.to_thread(work)
+            except Exception as exc:
+                self._write_cmd_log(f"{label} failed: {exc}", style="bold #f43f5e")
+                return
+            done(result)
+
+        self.run_worker(job(), name=f"command:{label}", group=_COMMAND_WORKER_GROUP, exclusive=False)
+
+    def _start_backend_switch(self, provider_name: str, chat_log: Any) -> None:
+        self._backend_switch_seq += 1
+        seq = self._backend_switch_seq
+        chat_log.add_command_result(f"Switching to {provider_name.strip().lower()}...")
+        state = self._state
+
+        def done(switch: BackendSwitch) -> None:
+            if seq != self._backend_switch_seq:
+                return  # a newer /backend superseded this one
+            if apply_backend_switch(state, switch):
+                self._save_session()
+            self._write_cmd_log(switch.message)
+            self._refresh_status_bar()
+            self._refresh_prompt_label()
+            self._refresh_sidebar()
+
+        self._run_blocking_command(
+            "backend switch", lambda: prepare_backend_switch(state, provider_name), done,
+        )
+
     def _handle_codex_auth(self, arg: str, chat_log: Any) -> None:
         import os
         import shlex
@@ -1534,12 +1589,18 @@ class MTPApp(App):
 
         try:
             if action == "status":
-                result = codex_backend.run_codex_login_status(codex_bin, extra_args)
-                chat_log.add_command_result(
-                    _format_result(
+                chat_log.add_command_result("Checking Codex login status...")
+
+                def show_status(result: Any) -> None:
+                    self._write_cmd_log(_format_result(
                         result,
                         fallback="Codex is logged in." if result.return_code == 0 else f"Codex status exited: {result.return_code}",
-                    )
+                    ))
+
+                self._run_blocking_command(
+                    "codex status",
+                    lambda: codex_backend.run_codex_login_status(codex_bin, extra_args),
+                    show_status,
                 )
                 return
 
@@ -1554,13 +1615,24 @@ class MTPApp(App):
                 return
 
             if action == "account":
-                status = codex_backend.run_codex_login_status(codex_bin)
-                info = codex_backend.build_codex_account_info(
-                    codex_bin=codex_bin,
-                    last_usage_lines=list(self._state.last_usage_lines),
-                    last_warnings=list(self._state.last_warnings),
-                )
-                chat_log.add_command_result(self._build_codex_account_view(info, status.output))
+                chat_log.add_command_result("Loading Codex account...")
+                usage_lines = list(self._state.last_usage_lines)
+                last_warnings = list(self._state.last_warnings)
+
+                def load_account() -> tuple[Any, Any]:
+                    status = codex_backend.run_codex_login_status(codex_bin)
+                    info = codex_backend.build_codex_account_info(
+                        codex_bin=codex_bin,
+                        last_usage_lines=usage_lines,
+                        last_warnings=last_warnings,
+                    )
+                    return status, info
+
+                def show_account(loaded: tuple[Any, Any]) -> None:
+                    status, info = loaded
+                    self._write_cmd_log(self._build_codex_account_view(info, status.output))
+
+                self._run_blocking_command("codex account", load_account, show_account)
                 return
 
             if action == "repair-config":

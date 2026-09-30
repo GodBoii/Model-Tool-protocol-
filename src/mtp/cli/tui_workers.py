@@ -164,10 +164,23 @@ def _token_looks_like_file_ref(token: str) -> bool:
     return any(ch in path_token for ch in ("/", "\\", ".")) and "@" not in path_token
 
 
+def _read_attachment_text(path: Path, limit: int) -> tuple[str, bool]:
+    """Read at most ``limit`` characters. Returns (text, truncated)."""
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        text = handle.read(limit + 1)
+    if len(text) > limit:
+        return text[:limit], True
+    return text, False
+
+
 def collect_prompt_attachments(
     prompt: str, cwd: Path
 ) -> tuple[str, list[str], list[str]]:
-    """Expand @file references in a prompt."""
+    """Expand @file references in a prompt.
+
+    Reads are bounded to ``MAX_ATTACHMENT_CHARS`` per file, so attaching a
+    huge file costs the same as attaching a small one.
+    """
     from .tui_state import MAX_ATTACHMENTS, MAX_ATTACHMENT_CHARS
     attachments: list[str] = []
     warnings: list[str] = []
@@ -189,12 +202,11 @@ def collect_prompt_attachments(
             warnings.append(f"Not a file: {raw_path}")
             continue
         try:
-            text = resolved.read_text(encoding="utf-8", errors="replace")
+            text, truncated = _read_attachment_text(resolved, MAX_ATTACHMENT_CHARS)
         except Exception as exc:
             warnings.append(f"Read error {raw_path}: {exc}")
             continue
-        if len(text) > MAX_ATTACHMENT_CHARS:
-            text = text[:MAX_ATTACHMENT_CHARS]
+        if truncated:
             warnings.append(f"Truncated: {raw_path}")
         display_path = (
             str(resolved.relative_to(cwd))
@@ -368,15 +380,48 @@ def _run_mtp(
 
 # ── Command execution (for commands that need I/O) ───────────────────────────
 
+@dataclass(slots=True)
+class BackendSwitch:
+    """Outcome of preparing a backend switch; ``apply_backend_switch`` commits it."""
+
+    message: str
+    backend: str | None = None  # None: the switch failed, leave state alone
+    agent: Any = None
+    codex_bin: str | None = None
+
+
 def switch_backend(state: TUIState, provider_name: str) -> str:
-    """Switch the active backend provider. May involve interactive setup."""
+    """Switch the active backend provider synchronously and save the session."""
+    switch = prepare_backend_switch(state, provider_name)
+    if apply_backend_switch(state, switch):
+        save_tui_session(state)
+    return switch.message
+
+
+def apply_backend_switch(state: TUIState, switch: BackendSwitch) -> bool:
+    """Commit a prepared switch to ``state``. Returns True if state changed."""
+    if switch.backend is None:
+        return False
+    if switch.codex_bin:
+        state.codex_bin = switch.codex_bin
+    state.backend = switch.backend
+    state.agent = switch.agent
+    return True
+
+
+def prepare_backend_switch(state: TUIState, provider_name: str) -> BackendSwitch:
+    """Resolve settings and build the provider and agent without touching ``state``.
+
+    This does the slow part of a switch (settings I/O, provider SDK imports,
+    client construction) and is safe to run on a worker thread.
+    """
     from .tui_provider_factory import (
         ProviderSelection, build_tui_provider, SUPPORTED_TUI_PROVIDERS,
     )
     from .tui_settings import (
         provider_settings_path, load_provider_settings,
         ensure_provider_entry, is_provider_configured,
-        DEFAULT_PROVIDER_MODELS, save_provider_settings,
+        DEFAULT_PROVIDER_MODELS,
     )
     from .tui_harness_agent import build_harness_agent
     from . import tui_codex_backend as codex_backend
@@ -386,21 +431,19 @@ def switch_backend(state: TUIState, provider_name: str) -> str:
     if provider_name == "codex":
         codex_bin = state.codex_bin or codex_backend.detect_codex_bin()
         if not codex_bin:
-            return "Codex CLI not found. Install: npm install -g @openai/codex"
-        state.codex_bin = codex_bin
-        state.backend = "codex"
-        state.agent = None
-        save_tui_session(state)
-        return "✓ Switched to Codex backend."
+            return BackendSwitch("Codex CLI not found. Install: npm install -g @openai/codex")
+        return BackendSwitch("✓ Switched to Codex backend.", backend="codex", codex_bin=codex_bin)
 
     if provider_name not in SUPPORTED_TUI_PROVIDERS:
-        return f"Unknown provider: {provider_name}"
+        return BackendSwitch(f"Unknown provider: {provider_name}")
 
     settings_path = provider_settings_path(state.session_store.file_path)
     settings = load_provider_settings(settings_path)
 
     if not is_provider_configured(settings, provider_name):
-        return f"Provider {provider_name} not configured. Set API key first with /apikey set {provider_name} <key>"
+        return BackendSwitch(
+            f"Provider {provider_name} not configured. Set API key first with /apikey set {provider_name} <key>"
+        )
 
     entry = ensure_provider_entry(settings, provider_name)
     model = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(provider_name, "default")
@@ -422,14 +465,12 @@ def switch_backend(state: TUIState, provider_name: str) -> str:
             api_key=api_key, base_url=base_url, provider_options=provider_options,
         )
         provider = build_tui_provider(selection)
-        state.agent = build_harness_agent(
+        agent = build_harness_agent(
             provider=provider, cwd=state.cwd, mode=state.harness_mode,
             autoresearch=state.autoresearch,
             research_instructions=state.research_instructions,
             sandbox_mode=state.codex_sandbox_mode,
         )
-        state.backend = provider_name
-        save_tui_session(state)
-        return f"✓ Switched to {provider_name} with model {model}."
     except Exception as e:
-        return f"Failed: {e}"
+        return BackendSwitch(f"Failed: {e}")
+    return BackendSwitch(f"✓ Switched to {provider_name} with model {model}.", backend=provider_name, agent=agent)
