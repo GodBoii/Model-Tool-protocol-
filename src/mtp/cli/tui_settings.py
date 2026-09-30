@@ -39,14 +39,27 @@ PROVIDER_KEY_ENV: dict[str, str] = {
 }
 
 
+def _complete_api_key(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    key = value.strip()
+    if not key or any(c.isspace() or ord(c) < 32 for c in key):
+        return None
+    if "*" in key or "..." in key or "…" in key or key.startswith("<") and key.endswith(">"):
+        return None
+    if key.lower() in {"your-api-key", "your_api_key", "replace-me"}:
+        return None
+    return key
+
+
 def provider_api_key(payload: dict[str, Any], provider_name: str) -> str | None:
     """Resolve a saved key first, then the provider's environment variable."""
     saved = ensure_provider_entry(payload, provider_name).get("api_key")
-    if isinstance(saved, str) and saved.strip() and not any(c.isspace() or ord(c) < 32 for c in saved.strip()):
-        return saved.strip()
+    saved = _complete_api_key(saved)
+    if saved:
+        return saved
     env_name = PROVIDER_KEY_ENV.get(provider_name)
-    value = os.getenv(env_name, "").strip() if env_name else ""
-    return value if value and not any(c.isspace() or ord(c) < 32 for c in value) else None
+    return _complete_api_key(os.getenv(env_name)) if env_name else None
 
 
 def provider_setup_status(payload: dict[str, Any], provider_name: str) -> str:
@@ -369,9 +382,9 @@ def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str
 def set_provider_api_key(payload: dict[str, Any], provider_name: str, api_key: str) -> None:
     """Set or update API key for a provider."""
     entry = ensure_provider_entry(payload, provider_name)
-    key = api_key.strip()
-    if not key or any(char.isspace() or ord(char) < 32 for char in key):
-        raise ValueError("Enter an API key without spaces or line breaks.")
+    key = _complete_api_key(api_key)
+    if not key:
+        raise ValueError("Enter the complete API key without spaces, masked characters, or placeholders.")
     entry["api_key"] = key
     if not entry.get("model"):
         entry["model"] = DEFAULT_PROVIDER_MODELS.get(provider_name, "default")

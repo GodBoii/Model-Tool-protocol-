@@ -108,6 +108,21 @@ def test_all_nine_direct_chat_shortcuts(tmp_path):
     asyncio.run(scenario())
 
 
+def test_background_memory_notice_does_not_replace_chat_or_home(tmp_path):
+    async def scenario():
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(100, 32)) as pilot:
+            app._append_cmd_log("Background memory refresh complete")
+            await pilot.pause(.05)
+            assert app.query_one("#boot-screen").display
+            assert not app.query_one("#cmd-log").has_class("visible")
+            app._dispatch_command("codebase", "status")
+            app._append_cmd_log("Scan complete")
+            await pilot.pause(.05)
+            assert app.query_one("#cmd-log").has_class("visible")
+    asyncio.run(scenario())
+
+
 def test_thinking_has_one_visible_command_and_opens_picker(tmp_path):
     async def scenario():
         app = MTPApp(state=_make_state(tmp_path))

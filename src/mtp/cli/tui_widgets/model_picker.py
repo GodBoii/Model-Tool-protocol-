@@ -123,7 +123,7 @@ class ModelPicker(ModalScreen[ModelSelection | None]):
             self._read_cache()
             selected = ensure_provider_entry(settings, self.provider).get("model")
             note = "" if selected in result.models else " Current selection is not in this catalog; choose a model or enter a custom ID."
-            self.query_one("#model-source", Static).update(f"{len(result.models)} chat model IDs from {result.source}.{note}")
+            self.query_one("#model-source", Static).update(f"{len(result.models)} model IDs from {result.source}.{note}")
         except OSError:
             if self.is_mounted:
                 self.query_one("#model-source", Static).update("Could not save the catalog. Check the settings directory and retry.")

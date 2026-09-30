@@ -495,7 +495,7 @@ class MTPApp(App):
                     if conv.state.backend == provider:
                         conv.state.agent = None
                 if result == "saved" and switching and owner in self._conversations:
-                    self._start_backend_switch(provider, self)
+                    self._start_backend_switch(provider, self, owner=owner)
                 else:
                     self._write_cmd_log(f"{provider}: {'settings saved' if result == 'saved' else 'saved key removed'}. Credentials have not been checked with the provider.")
                 self._refresh_status_bar()
@@ -1354,11 +1354,10 @@ class MTPApp(App):
         self.query_one("#task-spinner", SpinnerWidget).update_label(self._codebase_scan_progress)
 
     def _append_cmd_log(self, message: str, *, style: str = "#a78bfa") -> None:
-        from rich.text import Text
-
-        cmd_log = self.query_one("#cmd-log", RichLog)
-        cmd_log.add_class("visible")
-        cmd_log.write(Text(f"  {message}", style=style))
+        if self.query_one("#main-container").has_class("command-view"):
+            self._write_cmd_log(message, style=style)
+        else:
+            self.notify(message, title="Codebase memory", severity="error" if "failed" in message.lower() else "information", timeout=5)
 
     def _request_background_memory_refresh(self, *, reason: str, prefer_full_scan: bool = False) -> None:
         try:
@@ -2004,22 +2003,21 @@ class MTPApp(App):
 
         self._run_blocking_command("Codex models", lambda: refresh_codex_models(codex_bin), ready)
 
-    def _start_backend_switch(self, provider_name: str, chat_log: Any) -> None:
+    def _start_backend_switch(self, provider_name: str, chat_log: Any, *, owner: Conversation | None = None) -> None:
         self._backend_switch_seq += 1
         seq = self._backend_switch_seq
         chat_log.add_command_result(f"Switching to {provider_name.strip().lower()}...")
-        state = self._state
+        owner = owner or self._active
+        state = owner.state
 
         def done(switch: BackendSwitch) -> None:
-            if seq != self._backend_switch_seq:
+            if seq != self._backend_switch_seq or owner not in self._conversations:
                 return  # a newer /backend superseded this one
             if switch.setup_provider:
-                self._open_provider_setup(switch.setup_provider, switching=True)
+                self._open_provider_setup(switch.setup_provider, switching=True, owner=owner)
                 return
             if apply_backend_switch(state, switch):
-                owner = next((c for c in self._conversations if c.state is state), None)
-                if owner:
-                    self._save_session(owner)
+                self._save_session(owner)
             self._write_cmd_log(switch.message)
             self._refresh_status_bar()
             self._refresh_prompt_label()
@@ -2439,7 +2437,11 @@ class MTPApp(App):
             if resolved not in entry.get("discovered_models", []):
                 from .tui_settings import add_custom_model
                 add_custom_model(settings, s.backend, resolved)
-            save_provider_settings(settings_path, settings)
+            try:
+                save_provider_settings(settings_path, settings)
+            except OSError:
+                self._write_cmd_log("Could not save the model. Check access to the settings directory, then retry /model.")
+                return
             s.agent = None
             self._save_session()
             chat_log.add_command_result(f"✓ {s.backend} model: {resolved}")

@@ -59,6 +59,14 @@ def test_malformed_saved_or_environment_key_is_not_ready(monkeypatch):
     assert not is_provider_configured(payload, "groq")
 
 
+@pytest.mark.parametrize("key", ["********", "gsk_test...1234", "<key>", "your_api_key", "bad key"])
+def test_masked_or_placeholder_keys_are_rejected(key):
+    settings = {"providers": {}}
+    with pytest.raises(ValueError):
+        set_provider_api_key(settings, "groq", key)
+    assert not is_provider_configured(settings, "groq")
+
+
 def test_missing_provider_save_retry_switch_and_restart(tmp_path, monkeypatch):
     async def scenario():
         state = _make_state(tmp_path)
