@@ -22,6 +22,7 @@ from textual.widget import Widget
 from textual.worker import Worker, WorkerState
 
 from .tui_state import (
+    TURN_CANCELLED, TURN_COMPLETED, TURN_FAILED,
     TUIState, ChatResult, TranscriptTurn, active_model_name,
     new_session_id, generate_session_title_from_prompt,
     resolve_model,
@@ -279,6 +280,8 @@ class MTPApp(App):
             show_tool_details=self._show_tool_details,
             assistant_blocks=list(turn.assistant_blocks),
             collapse_thinking=True,
+            status=turn.status,
+            error=turn.error,
         )
 
     def _live_message(self) -> ChatMessage:
@@ -836,6 +839,8 @@ class MTPApp(App):
         self._llm_worker = self.run_worker(
             self._run_llm_worker(expanded, attachments, att_warnings),
             name="llm_call", group=_LLM_WORKER_GROUP, exclusive=True,
+            # A crash is recorded as a failed turn; it must not quit the app.
+            exit_on_error=False,
         )
 
     async def _run_llm_worker(
@@ -940,7 +945,7 @@ class MTPApp(App):
             self.run_worker(
                 self._run_codebase_scan_worker(self._state.cwd),
                 name="codebase_scan",
-                group=_MEMORY_WORKER_GROUP,
+                group=_MEMORY_WORKER_GROUP, exit_on_error=False,
                 exclusive=True,
             )
             return
@@ -949,7 +954,7 @@ class MTPApp(App):
         self.run_worker(
             self._run_codebase_refresh_worker(self._state.cwd),
             name="codebase_refresh",
-            group=_MEMORY_WORKER_GROUP,
+            group=_MEMORY_WORKER_GROUP, exit_on_error=False,
             exclusive=False,
         )
 
@@ -1209,56 +1214,63 @@ class MTPApp(App):
             self._codex_run_handle = None
 
         if event.state == WorkerState.SUCCESS:
-            spinner.stop()
-            result: ChatResult = event.worker.result
-            if self._live_blocks and not result.assistant_blocks:
-                result.assistant_blocks = list(self._live_blocks)
-            if self._live_thinking_text and not result.thinking_text:
-                result.thinking_text = self._live_thinking_text.strip()
-
-            # Record the turn with the original raw prompt; disk work happens off-thread.
-            record_turn(self._state, self._pending_raw_prompt, result, persist=False)
-            self.session_saver.run_task(summary_for_turn(self._state, self._pending_raw_prompt, result).record)
-            self._request_background_memory_refresh(reason="post-run")
-
-            # Auto-generate title from first prompt
-            if len(self._state.transcript) == 1 and not self._state.session_label:
-                self._state.session_label = generate_session_title_from_prompt(
-                    self._state.transcript[0].prompt
-                )
-            self._save_session()
-
-            self._state.last_tool_events = list(result.tool_events)
-            self._state.last_tool_details = list(result.tool_details)
-            self._state.last_warnings = list(result.warnings)
-            self._cancel_live_flush()
-            self._complete_pending_turn(self._state.transcript[-1])
-            self._clear_pending_turn_display()
-            self._reset_live_preview()
-            self._refresh_status_bar()
-            self._refresh_sidebar()
-
+            self._finish_turn(event.worker.result)
         elif event.state == WorkerState.ERROR:
-            spinner.stop()
-            self._discard_pending_turn()
-            self._clear_pending_turn_display()
-            self._reset_live_preview()
-            self.query_one("#chat-log", ChatLog).add_system_message(
-                f"Error: {event.worker.error}", style="bold #f43f5e"
-            )
-            self._request_background_memory_refresh(reason="post-run-error")
-
+            error = event.worker.error
+            detail = f"{type(error).__name__}: {error}" if error is not None else "unknown error"
+            self._finish_turn(self._partial_result(TURN_FAILED, detail))
         elif event.state == WorkerState.CANCELLED:
-            spinner.stop()
-            self._discard_pending_turn()
-            self._clear_pending_turn_display()
-            self._reset_live_preview()
-            self.query_one("#chat-log", ChatLog).add_system_message(
-                "Request cancelled.", style="#fbbf24"
-            )
-            self._request_background_memory_refresh(reason="post-run-cancelled")
+            self._finish_turn(self._partial_result(TURN_CANCELLED, None))
 
         self._refresh_status_bar()
+
+    def _partial_result(self, status: str, error: str | None) -> ChatResult:
+        """What the live preview had when a run ended without a result."""
+        text = "".join(str(b.get("text") or "") for b in self._live_blocks if b.get("type") == "text")
+        return ChatResult(
+            text=text, tool_events=list(self._live_tool_events), attachments=[],
+            warnings=list(self._live_warnings), usage_lines=[],
+            tool_details=list(self._live_tool_details),
+            assistant_blocks=list(self._live_blocks),
+            thinking_text=self._live_thinking_text.strip(),
+            status=status, error=error,
+        )
+
+    def _finish_turn(self, result: ChatResult) -> None:
+        """Save the turn whatever its outcome and turn the live view into it.
+
+        Failed and cancelled turns keep their partial output, and the user can
+        keep talking in the same conversation afterwards.
+        """
+        self.query_one("#spinner", SpinnerWidget).stop()
+        if self._live_blocks and not result.assistant_blocks:
+            result.assistant_blocks = list(self._live_blocks)
+        if self._live_thinking_text and not result.thinking_text:
+            result.thinking_text = self._live_thinking_text.strip()
+        if not result.attachments:
+            result.attachments = list(self._pending_display_attachments)
+
+        # Record the turn with the original raw prompt; disk work happens off-thread.
+        record_turn(self._state, self._pending_raw_prompt, result, persist=False)
+        if result.status == TURN_COMPLETED:
+            self.session_saver.run_task(summary_for_turn(self._state, self._pending_raw_prompt, result).record)
+        self._request_background_memory_refresh(reason=f"post-run-{result.status}")
+
+        # Auto-generate title from first prompt
+        if len(self._state.transcript) == 1 and not self._state.session_label:
+            self._state.session_label = generate_session_title_from_prompt(
+                self._state.transcript[0].prompt
+            )
+        self._save_session()
+
+        self._state.last_tool_events = list(result.tool_events)
+        self._state.last_tool_details = list(result.tool_details)
+        self._state.last_warnings = list(result.warnings)
+        self._cancel_live_flush()
+        self._complete_pending_turn(self._state.transcript[-1])
+        self._clear_pending_turn_display()
+        self._reset_live_preview()
+        self._refresh_sidebar()
 
     def action_cmd_dispatch(self, cmd: str, arg: str) -> None:
         """Central action handler called by CommandPalette entries."""
@@ -1540,7 +1552,7 @@ class MTPApp(App):
                 return
             done(result)
 
-        self.run_worker(job(), name=f"command:{label}", group=_COMMAND_WORKER_GROUP, exclusive=False)
+        self.run_worker(job(), name=f"command:{label}", group=_COMMAND_WORKER_GROUP, exclusive=False, exit_on_error=False)
 
     def _start_backend_switch(self, provider_name: str, chat_log: Any) -> None:
         self._backend_switch_seq += 1
@@ -1792,7 +1804,7 @@ class MTPApp(App):
         self.run_worker(
             self._run_codebase_scan_worker(root),
             name="codebase_scan",
-            group=_MEMORY_WORKER_GROUP,
+            group=_MEMORY_WORKER_GROUP, exit_on_error=False,
             exclusive=True,
         )
 

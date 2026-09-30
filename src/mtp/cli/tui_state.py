@@ -41,6 +41,18 @@ REASONING_SHORTCUTS = {"0": "none", "1": "low", "2": "medium", "3": "high", "4":
 
 # ── Data Classes ─────────────────────────────────────────────────────────────
 
+# How a turn ended. Failed and cancelled turns keep whatever output they
+# produced, and the conversation can continue from them.
+TURN_COMPLETED = "completed"
+TURN_FAILED = "failed"
+TURN_CANCELLED = "cancelled"
+TURN_STATUSES = (TURN_COMPLETED, TURN_FAILED, TURN_CANCELLED)
+
+
+def normalize_turn_status(value: Any) -> str:
+    return value if value in TURN_STATUSES else TURN_COMPLETED
+
+
 @dataclass
 class ChatResult:
     text: str
@@ -51,6 +63,10 @@ class ChatResult:
     tool_details: list[dict[str, Any]] = field(default_factory=list)
     assistant_blocks: list[dict[str, Any]] = field(default_factory=list)
     thinking_text: str = ""
+    status: str = TURN_COMPLETED
+    error: str | None = None
+    # Steering the backend accepted but never used; the TUI runs these next.
+    unapplied_steering: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -66,6 +82,16 @@ class TranscriptTurn:
     tool_details: list[dict[str, Any]] = field(default_factory=list)
     assistant_blocks: list[dict[str, Any]] = field(default_factory=list)
     thinking_text: str = ""
+    status: str = TURN_COMPLETED
+    error: str | None = None
+
+    def history_reply(self) -> str:
+        """The reply as prior context for a backend, noting how it ended."""
+        if self.status == TURN_COMPLETED:
+            return self.response
+        note = "interrupted by the user" if self.status == TURN_CANCELLED else f"failed: {self.error or 'unknown error'}"
+        partial = self.response.strip() or "(no output)"
+        return f"{partial}\n\n[This reply was {note}.]"
 
 
 @dataclass
@@ -139,6 +165,8 @@ def serialize_transcript(turns: list[TranscriptTurn]) -> list[dict[str, Any]]:
             "tool_details": list(t.tool_details),
             "assistant_blocks": list(t.assistant_blocks),
             "thinking_text": t.thinking_text,
+            "status": t.status,
+            "error": t.error,
         }
         for t in turns
     ]
@@ -169,6 +197,8 @@ def deserialize_transcript(payload: Any) -> list[TranscriptTurn]:
                 if isinstance(block, dict)
             ],
             thinking_text=str(item.get("thinking_text") or ""),
+            status=normalize_turn_status(item.get("status")),
+            error=str(item["error"]) if item.get("error") else None,
         ))
     return transcript
 

@@ -6,7 +6,7 @@ This module handles chat execution for MTP SDK providers (non-Codex backends).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from time import perf_counter
@@ -29,6 +29,10 @@ class MTPRunResult:
     tool_details: list[dict[str, Any]]
     assistant_blocks: list[dict[str, Any]]
     thinking_text: str
+    status: str = "completed"  # "completed" | "failed" | "cancelled"
+    error: str | None = None
+    # Steering messages the run accepted but never used; the caller runs them next.
+    unapplied_steering: list[str] = field(default_factory=list)
 
 
 # Below this length a repeated payload is treated as a real repeated token
@@ -275,19 +279,23 @@ def run_mtp_prompt(
     last_token_time = None
     generation_start_time = None
 
+    # How the run ended: "completed", "cancelled" (run_cancelled event) or
+    # "failed" (the event stream raised; the exception is kept in "error").
+    outcome: dict[str, Any] = {"status": "completed", "error": None}
+
     try:
         if emit_live:
             emit_live("status", "Sending request to provider...")
 
         # Use run_events to get streaming events (MTPAgent wrapper method)
-        for event in agent.run_events(
+        for event in _stream_until_failure(agent.run_events(
             prompt=prompt,
             max_rounds=max_rounds,
             stream_final=True,
             stream_tool_events=True,
             stream_tool_results=True,
             run_id=run_id,
-        ):
+        ), outcome):
             event_type = event.get("type")
 
             # Handle LLM response events to capture metrics
@@ -470,6 +478,14 @@ def run_mtp_prompt(
             elif event_type == "round_started":
                 memory_waited = False
 
+            elif event_type == "run_cancelled":
+                outcome["status"] = "cancelled"
+
+            elif event_type == "steer_applied":
+                steered = [str(text) for text in event.get("messages") or []]
+                if emit_live and steered:
+                    emit_live("steer_applied", steered)
+
         if emit_live:
             emit_live("status", "Processing response...")
 
@@ -522,6 +538,14 @@ def run_mtp_prompt(
         else:
             usage_lines.append("tokens(in/out/total/reasoning)=unknown/unknown/unknown/unknown")
 
+        failure = outcome.get("error")
+        if isinstance(failure, BaseException):
+            outcome["status"] = "failed"
+            warnings.append(f"Execution error: {failure}")
+        if not result_text:
+            # A failed or cancelled run may never reach run_completed; keep what streamed.
+            result_text = "".join(str(b.get("text") or "") for b in assistant_blocks if b.get("type") == "text")
+
         return MTPRunResult(
             text=result_text,
             tool_events=tool_events,
@@ -530,21 +554,46 @@ def run_mtp_prompt(
             tool_details=tool_details,
             assistant_blocks=assistant_blocks,
             thinking_text=thinking_text.strip(),
+            status=str(outcome["status"]),
+            error=_describe_error(failure) if isinstance(failure, BaseException) else None,
+            unapplied_steering=_take_unapplied_steering(agent, run_id),
         )
 
     except Exception as exc:
-        error_msg = str(exc)
-        warnings.append(f"Execution error: {error_msg}")
-
+        # A bug in this module, not in the provider: still keep partial output.
+        warnings.append(f"Execution error: {exc}")
         return MTPRunResult(
-            text=f"Error: {error_msg}",
-            tool_events=[],
+            text="".join(str(b.get("text") or "") for b in assistant_blocks if b.get("type") == "text"),
+            tool_events=tool_events,
             warnings=warnings,
-            usage_lines=["tokens(in/out/total/reasoning)=error/error/error/error"],
-            tool_details=[],
-            assistant_blocks=[],
-            thinking_text="",
+            usage_lines=[],
+            tool_details=tool_details,
+            assistant_blocks=assistant_blocks,
+            thinking_text=thinking_text.strip(),
+            status="failed",
+            error=_describe_error(exc),
+            unapplied_steering=_take_unapplied_steering(agent, run_id),
         )
+
+
+def _describe_error(exc: BaseException) -> str:
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
+def _stream_until_failure(events: Any, outcome: dict[str, Any]) -> Any:
+    """Yield agent events; a provider exception ends the stream and is recorded."""
+    try:
+        yield from events
+    except Exception as exc:
+        outcome["error"] = exc
+
+
+def _take_unapplied_steering(agent: Any, run_id: str | None) -> list[str]:
+    take = getattr(agent, "take_unapplied_steering", None)
+    if run_id is None or not callable(take):
+        return []
+    return list(take(run_id))
 
 
 def build_mtp_agent(

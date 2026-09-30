@@ -79,6 +79,8 @@ class ChatMessage:
         "assistant_blocks",
         "collapse_thinking",
         "is_live",
+        "status",
+        "error",
     )
 
     def __init__(
@@ -99,6 +101,8 @@ class ChatMessage:
         assistant_blocks: list[dict[str, Any]] | None = None,
         collapse_thinking: bool = True,
         is_live: bool = False,
+        status: str = "completed",
+        error: str | None = None,
     ) -> None:
         self.role = role
         self.text = text
@@ -115,6 +119,8 @@ class ChatMessage:
         self.assistant_blocks = assistant_blocks or []
         self.collapse_thinking = collapse_thinking
         self.is_live = is_live
+        self.status = status
+        self.error = error
 
 
 class ClickableHeader(Static):
@@ -486,7 +492,8 @@ class AssistantMessageWidget(Vertical):
         details: tuple[str, ...] = ()
         if self._msg.show_tool_details:
             details = tuple(_format_tool_detail_line(detail) for detail in self._msg.tool_details[:12])
-        key = (warnings, details)
+        status = "" if self._msg.is_live else self._msg.status
+        key = (warnings, details, status, self._msg.error)
         if key == self._footer_key:
             return
         self._footer_key = key
@@ -494,6 +501,9 @@ class AssistantMessageWidget(Vertical):
             widget.remove()
         self._footer_widgets = [Static(f"  ! {warning}") for warning in warnings]
         self._footer_widgets += [Static(f"  detail: {line}", classes="assistant-detail") for line in details]
+        status_line = _status_line(status, self._msg.error, has_output=bool(self._block_widgets))
+        if status_line is not None:
+            self._footer_widgets.append(Static(status_line, classes="assistant-status"))
         if self._footer_widgets:
             self.mount_all(self._footer_widgets)
 
@@ -732,6 +742,22 @@ class ChatLog(VerticalScroll):
     def add_command_result(self, text: str) -> None:
         self.query_one("#chat-log-body", Vertical).mount(SystemMessageWidget(f"  {text}", style="#a78bfa"))
         self.scroll_end(animate=False)
+
+
+def _status_line(status: str, error: str | None, *, has_output: bool) -> Text | None:
+    """Marker under a turn that did not complete. None for completed turns."""
+    if status == "failed":
+        text = Text("  x Run failed", style="bold #f43f5e")
+        if error:
+            text.append(f": {error[:300]}", style="#fda4af")
+        text.append("  Send a message to continue.", style="dim #71717a")
+        return text
+    if status == "cancelled":
+        label = "  - Interrupted" + ("; output above is partial." if has_output else " before any output.")
+        text = Text(label, style="bold #fbbf24")
+        text.append("  Send a message to continue.", style="dim #71717a")
+        return text
+    return None
 
 
 def _format_tool_detail_line(detail: dict[str, Any]) -> str:

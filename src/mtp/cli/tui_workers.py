@@ -14,6 +14,7 @@ from typing import Any, TYPE_CHECKING
 from textual.worker import Worker, get_current_worker
 
 from .tui_state import (
+    TURN_CANCELLED, TURN_COMPLETED, TURN_FAILED,
     TUIState, ChatResult, TranscriptTurn,
     active_model_name, now_label, serialize_transcript,
     generate_session_title_from_prompt, new_session_id,
@@ -108,6 +109,8 @@ def record_turn(state: TUIState, prompt: str, result: ChatResult, *, persist: bo
         tool_details=list(result.tool_details),
         assistant_blocks=list(result.assistant_blocks),
         thinking_text=result.thinking_text,
+        status=result.status,
+        error=result.error,
     ))
     state.last_usage_lines = list(result.usage_lines)
     state.last_tool_details = list(result.tool_details)
@@ -256,12 +259,13 @@ def _run_codex(
     codex_bin = state.codex_bin or codex_backend.detect_codex_bin()
     state.codex_bin = codex_bin
     if not codex_bin:
+        message = "Codex CLI not found. Install: npm install -g @openai/codex"
         return ChatResult(
-            text="Codex CLI not found. Install: npm install -g @openai/codex",
-            tool_events=[], attachments=[], warnings=[], usage_lines=[],
+            text="", tool_events=[], attachments=[], warnings=[], usage_lines=[],
+            status=TURN_FAILED, error=message,
         )
 
-    conversation_history = [(t.prompt, t.response) for t in state.transcript]
+    conversation_history = [(t.prompt, t.history_reply()) for t in state.transcript]
     codex_result = codex_backend.run_codex_prompt(
         codex_bin=codex_bin,
         cwd=state.cwd,
@@ -275,13 +279,20 @@ def _run_codex(
         handle=handle,
     )
     state.codex_session_id = codex_result.session_id
+    status, error, text = TURN_COMPLETED, None, codex_result.text
+    if handle is not None and handle.cancelled:
+        status, text = TURN_CANCELLED, ""
+    elif codex_result.return_code not in (0, None):
+        status, error, text = TURN_FAILED, codex_result.text, ""
     return ChatResult(
-        text=codex_result.text,
+        text=text,
         tool_events=codex_result.tool_events,
         attachments=[],
         warnings=codex_result.warnings,
         usage_lines=codex_result.usage_lines,
         thinking_text="",
+        status=status,
+        error=error,
     )
 
 
@@ -305,9 +316,10 @@ def _run_mtp(
 
         if not is_provider_configured(settings, state.backend):
             return ChatResult(
-                text=f"Provider {state.backend} is not configured. Use /backend {state.backend} to set up.",
-                tool_events=[], attachments=[],
+                text="", tool_events=[], attachments=[],
                 warnings=["Provider not configured"], usage_lines=[],
+                status=TURN_FAILED,
+                error=f"Provider {state.backend} is not configured. Use /apikey set {state.backend} <key>.",
             )
 
         entry = ensure_provider_entry(settings, state.backend)
@@ -339,9 +351,9 @@ def _run_mtp(
             )
         except Exception as exc:
             return ChatResult(
-                text=f"Failed to initialize provider: {exc}",
-                tool_events=[], attachments=[],
+                text="", tool_events=[], attachments=[],
                 warnings=[str(exc)], usage_lines=[],
+                status=TURN_FAILED, error=f"Failed to initialize provider: {exc}",
             )
 
     # Get model name for metrics
@@ -369,12 +381,15 @@ def _run_mtp(
             tool_details=mtp_result.tool_details,
             assistant_blocks=mtp_result.assistant_blocks,
             thinking_text=mtp_result.thinking_text,
+            status=mtp_result.status,
+            error=mtp_result.error,
+            unapplied_steering=list(mtp_result.unapplied_steering),
         )
     except Exception as exc:
         return ChatResult(
-            text=f"Error: {exc}",
-            tool_events=[], attachments=[],
+            text="", tool_events=[], attachments=[],
             warnings=[str(exc)], usage_lines=[],
+            status=TURN_FAILED, error=f"{type(exc).__name__}: {exc}",
         )
 
 
