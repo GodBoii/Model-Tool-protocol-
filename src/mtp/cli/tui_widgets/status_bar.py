@@ -57,7 +57,7 @@ class StatusBar(Horizontal):
         background: #18181b;
         color: #71717a;
         padding: 0 2;
-        border-top: tall #3f3f46;
+        border-top: none;
         layout: horizontal;
     }
     #status-main {

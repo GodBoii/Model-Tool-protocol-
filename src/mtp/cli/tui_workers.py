@@ -201,13 +201,15 @@ def collect_prompt_attachments(
     warnings: list[str] = []
     appended: list[str] = []
 
-    for token in re.findall(r"(?<!\S)@[^\s]+", prompt):
+    for token in re.findall(r'''(?<!\S)@(?:"[^"]+"|'[^']+'|[^\s]+)''', prompt):
         if not _token_looks_like_file_ref(token):
             continue
         if len(attachments) >= MAX_ATTACHMENTS:
             warnings.append(f"Attachment limit ({MAX_ATTACHMENTS}); skipping.")
             break
         raw_path = token[1:]
+        if len(raw_path) >= 2 and raw_path[0] in {'"', "'"} and raw_path[-1] == raw_path[0]:
+            raw_path = raw_path[1:-1]
         path = Path(raw_path)
         resolved = (cwd / path).resolve() if not path.is_absolute() else path.resolve()
         if not resolved.exists():
@@ -382,7 +384,7 @@ def _run_mtp(
     from .tui_settings import (
         provider_settings_path, load_provider_settings,
         ensure_provider_entry, DEFAULT_PROVIDER_MODELS,
-        is_provider_configured,
+        is_provider_configured, provider_api_key,
     )
 
     # Initialize agent if needed
@@ -395,12 +397,12 @@ def _run_mtp(
                 text="", tool_events=[], attachments=[],
                 warnings=["Provider not configured"], usage_lines=[],
                 status=TURN_FAILED,
-                error=f"Provider {state.backend} is not configured. Use /apikey set {state.backend} <key>.",
+                error=f"Provider {state.backend} is not configured. Use /apikey {state.backend} to open setup.",
             )
 
         entry = ensure_provider_entry(settings, state.backend)
         model = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(state.backend, "default")
-        api_key = entry.get("api_key")
+        api_key = provider_api_key(settings, state.backend)
         base_url = entry.get("base_url")
         provider_options: dict[str, Any] | None = None
         if state.backend == "xiaomi":
@@ -483,6 +485,7 @@ class BackendSwitch:
     backend: str | None = None  # None: the switch failed, leave state alone
     agent: Any = None
     codex_bin: str | None = None
+    setup_provider: str | None = None
 
 
 def switch_backend(state: TUIState, provider_name: str) -> str:
@@ -505,20 +508,13 @@ def apply_backend_switch(state: TUIState, switch: BackendSwitch) -> bool:
 
 
 def prepare_backend_switch(state: TUIState, provider_name: str) -> BackendSwitch:
-    """Resolve settings and build the provider and agent without touching ``state``.
-
-    This does the slow part of a switch (settings I/O, provider SDK imports,
-    client construction) and is safe to run on a worker thread.
-    """
-    from .tui_provider_factory import (
-        ProviderSelection, build_tui_provider, SUPPORTED_TUI_PROVIDERS,
-    )
+    """Select a configured backend; create its provider and agent only on a run."""
+    from .tui_provider_factory import normalize_tui_provider
     from .tui_settings import (
         provider_settings_path, load_provider_settings,
         ensure_provider_entry, is_provider_configured,
         DEFAULT_PROVIDER_MODELS,
     )
-    from .tui_harness_agent import build_harness_agent
     from . import tui_codex_backend as codex_backend
 
     provider_name = provider_name.lower().strip()
@@ -529,7 +525,9 @@ def prepare_backend_switch(state: TUIState, provider_name: str) -> BackendSwitch
             return BackendSwitch("Codex CLI not found. Install: npm install -g @openai/codex")
         return BackendSwitch("✓ Switched to Codex backend.", backend="codex", codex_bin=codex_bin)
 
-    if provider_name not in SUPPORTED_TUI_PROVIDERS:
+    try:
+        provider_name = normalize_tui_provider(provider_name)
+    except ValueError:
         return BackendSwitch(f"Unknown provider: {provider_name}")
 
     settings_path = provider_settings_path(state.session_store.file_path)
@@ -537,35 +535,10 @@ def prepare_backend_switch(state: TUIState, provider_name: str) -> BackendSwitch
 
     if not is_provider_configured(settings, provider_name):
         return BackendSwitch(
-            f"Provider {provider_name} not configured. Set API key first with /apikey set {provider_name} <key>"
+            f"{provider_name} needs setup. Use /apikey {provider_name} or choose another provider.",
+            setup_provider=provider_name,
         )
 
     entry = ensure_provider_entry(settings, provider_name)
     model = entry.get("model") or DEFAULT_PROVIDER_MODELS.get(provider_name, "default")
-    api_key = entry.get("api_key")
-    base_url = entry.get("base_url")
-    provider_options: dict[str, Any] | None = None
-    if provider_name == "xiaomi":
-        provider_options = {}
-        if entry.get("thinking_mode"):
-            provider_options["thinking_mode"] = entry["thinking_mode"]
-        if entry.get("final_thinking_mode"):
-            provider_options["final_thinking_mode"] = entry["final_thinking_mode"]
-        if not provider_options:
-            provider_options = None
-
-    try:
-        selection = ProviderSelection(
-            provider_name=provider_name, model_name=model,
-            api_key=api_key, base_url=base_url, provider_options=provider_options,
-        )
-        provider = build_tui_provider(selection)
-        agent = build_harness_agent(
-            provider=provider, cwd=state.cwd, mode=state.harness_mode,
-            autoresearch=state.autoresearch,
-            research_instructions=state.research_instructions,
-            sandbox_mode=state.codex_sandbox_mode,
-        )
-    except Exception as e:
-        return BackendSwitch(f"Failed: {e}")
-    return BackendSwitch(f"✓ Switched to {provider_name} with model {model}.", backend=provider_name, agent=agent)
+    return BackendSwitch(f"Selected {provider_name} with model {model}.", backend=provider_name)

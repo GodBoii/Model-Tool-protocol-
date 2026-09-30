@@ -30,18 +30,14 @@ COMMANDS: list[tuple[str, str, str, str]] = [
     ("History", "Show recent turns in this chat", "history", ""),
     ("Toggle Sidebar", "Show/hide workspace sidebar", "sidebar", ""),
     ("Models", "Show all available models", "models", ""),
+    ("Choose Provider", "Select a provider and configure its credentials", "backend", ""),
+    ("API Keys", "Open masked API-key setup", "apikey", ""),
+    ("Choose Model", "Select a model for this provider", "model", ""),
     ("Tools", "Show tool events from last turn", "tools", ""),
     ("Tool Details", "Toggle expanded tool metadata", "details", "toggle"),
     ("Open Session", "Open a saved session transcript", "open", ""),
     ("Codebase Memory", "Enable or inspect project memory", "codebase", "memory"),
     # Reasoning
-    ("Reasoning: None", "Set reasoning effort to none", "reasoning", "none"),
-    ("Reasoning: Low", "Set reasoning effort to low", "reasoning", "low"),
-    ("Reasoning: Medium", "Set reasoning effort to medium", "reasoning", "medium"),
-    ("Reasoning: High", "Set reasoning effort to high", "reasoning", "high"),
-    ("Reasoning: XHigh", "Set reasoning effort to extra high", "reasoning", "xhigh"),
-    ("Reasoning: Max", "Set maximum reasoning when supported", "reasoning", "max"),
-    ("Reasoning: Ultra", "Set ultra reasoning when supported", "reasoning", "ultra"),
     ("Thinking", "Open the thinking/reasoning control", "thinking", ""),
     # Mode
     ("Mode: Plan", "Set harness mode to plan", "mode", "plan"),
@@ -115,6 +111,7 @@ class MTPCommandProvider(Provider):
 SLASH_COMMANDS = {
     "/help", "/exit", "/clear", "/status", "/sessions", "/history",
     "/models", "/tools", "/compose", "/thinking", "/tabs", "/chats",
+    "/apikey", "/backend",
 }
 
 SLASH_WITH_ARG = {
@@ -130,7 +127,7 @@ def parse_slash_command(raw: str) -> tuple[str, str] | None:
     if not raw.startswith("/"):
         return None
 
-    parts = raw.strip().split(" ", 1)
+    parts = raw.strip().split(None, 1)
     cmd = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
 

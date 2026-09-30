@@ -201,6 +201,10 @@ class Conversation:
         # Set when a background run finishes; cleared when the tab is shown.
         self.unread = False
         self.last_status = TURN_COMPLETED
+        self.draft_text = ""
+        self.draft_cursor = (0, 0)
+        self.pending_attachments: list[str] = []
+        self.input_history: list[str] = []
 
     @property
     def tab_id(self) -> str:

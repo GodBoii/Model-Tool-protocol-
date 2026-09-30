@@ -21,19 +21,23 @@ SHORTCUTS: tuple[Shortcut, ...] = (
     Shortcut("Ctrl+X", "Stop the running reply", in_hint_bar=True),
     Shortcut("Ctrl+G", "Send the newest queued message into the running reply"),
     Shortcut("Ctrl+N", "New chat", in_hint_bar=True),
-    Shortcut("Alt+1..9", "Switch chat", in_hint_bar=True),
+    Shortcut("F1..F9", "Switch chat", in_hint_bar=True),
     Shortcut("Alt+Left/Right", "Previous / next chat"),
     Shortcut("Ctrl+P", "Commands", in_hint_bar=True),
     Shortcut("Ctrl+B", "Sidebar", in_hint_bar=True),
     Shortcut("Ctrl+Y", "Copy last reply"),
     Shortcut("Ctrl+L", "Clear the screen"),
-    Shortcut("Esc", "Close suggestions, then stop the reply"),
+    Shortcut("Ctrl+O", "Read output; PageUp/Down scroll"),
+    Shortcut("Shift+Enter", "Insert a newline"),
+    Shortcut("Ctrl+D", "Quit"),
+    Shortcut("Ctrl+Shift+S", "Choose sandbox permissions"),
+    Shortcut("Esc", "Close suggestions or command output, then stop the reply"),
 )
 
 _SHORT_LABELS = {
     "Ctrl+X": "stop",
     "Ctrl+N": "new chat",
-    "Alt+1..9": "switch",
+    "F1..F9": "switch chat",
     "Ctrl+P": "commands",
     "Ctrl+B": "sidebar",
 }

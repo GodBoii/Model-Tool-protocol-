@@ -119,15 +119,10 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
     parts = arg.split(None, 2)
 
     if not parts:
+        from .tui_settings import provider_setup_status
         configured = []
         for provider_name in sorted(SUPPORTED_TUI_PROVIDERS):
-            entry = ensure_provider_entry(settings, provider_name)
-            key = entry.get("api_key")
-            if isinstance(key, str) and key:
-                masked = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "*" * len(key)
-            else:
-                masked = "(not set)"
-            configured.append(f"{provider_name}: {masked}")
+            configured.append(f"{provider_name}: {provider_setup_status(settings, provider_name)}")
         return "\n".join(configured)
 
     command = parts[0].lower()
@@ -165,9 +160,10 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
         provider_name = parts[1].lower()
         if provider_name not in SUPPORTED_TUI_PROVIDERS:
             return f"Unknown provider: {provider_name}"
-        entry = ensure_provider_entry(settings, provider_name)
-        api_key = entry.get("api_key")
-        return f"{provider_name}: {api_key}" if api_key else f"No API key set for {provider_name}"
+        from .tui_settings import provider_api_key
+        api_key = provider_api_key(settings, provider_name)
+        from .tui_provider_factory import mask_api_key
+        return f"{provider_name}: {mask_api_key(api_key)}" if api_key else f"No API key set for {provider_name}. Use /apikey {provider_name} to open setup."
 
     return "Unknown subcommand. Available: set, delete, show"
 

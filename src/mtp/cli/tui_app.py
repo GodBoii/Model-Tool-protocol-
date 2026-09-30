@@ -40,6 +40,7 @@ from .tui_widgets.sidebar import Sidebar, SessionInfo, ToolEventLog, RunMetrics,
 from .tui_widgets.spinner_widget import SpinnerWidget
 from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
+from .tui_widgets.provider_setup import ProviderPicker, ProviderSetup
 from .tui_codex_backend import CodexRunHandle
 from .tui_conversation import Conversation, LiveTurn, QueuedPrompt
 from .tui_widgets.queue_bar import QueueBar  # mounted inside InputPanel
@@ -125,8 +126,9 @@ class MTPApp(App):
         Binding("ctrl+b", "toggle_sidebar", "Sidebar", show=False, priority=True),
         Binding("ctrl+l", "clear_chat", "Clear", show=False, priority=True),
         Binding("ctrl+d", "quit", "Quit", show=False, priority=True),
-        Binding("ctrl+w", "cycle_sandbox", "Sandbox", show=False, priority=True),
+        Binding("ctrl+shift+s", "open_sandbox", "Sandbox", show=False, priority=True),
         Binding("ctrl+y", "copy_last", "Copy Output", show=True, priority=True),
+        Binding("ctrl+o", "focus_output", "Read output", show=False, priority=True),
         # Only while the active conversation runs (see check_action); otherwise
         # Ctrl+X reaches the input and cuts as usual. Ctrl+C stays copy.
         Binding("ctrl+x", "interrupt", "Stop run", show=False, priority=True),
@@ -136,6 +138,10 @@ class MTPApp(App):
         Binding("alt+left,ctrl+pageup", "previous_conversation", "Previous chat", show=False, priority=True),
         *(
             Binding(f"alt+{n}", f"switch_conversation({n})", f"Chat {n}", show=False, priority=True)
+            for n in range(1, 10)
+        ),
+        *(
+            Binding(f"f{n}", f"switch_conversation({n})", f"Chat {n}", show=False, priority=True)
             for n in range(1, 10)
         ),
         Binding("escape", "hide_suggestions", "Hide Suggestions", show=False),
@@ -162,6 +168,7 @@ class MTPApp(App):
         self._memory_launch_scan_done = False
         self._backend_switch_seq = 0
         self._codex_catalog_source = "Fallback catalog; discovery pending"
+        self._command_results: list[Any] = []
         self.session_saver = SessionSaver(
             on_error=lambda exc: self.post_message(SessionSaveFailed(exc)),
         )
@@ -183,6 +190,22 @@ class MTPApp(App):
     def _state(self) -> TUIState:
         """State of the conversation on screen. Commands act on this one."""
         return self._active.state
+
+    @property
+    def _pending_attachments(self) -> list[str]:
+        return self._active.pending_attachments
+
+    @_pending_attachments.setter
+    def _pending_attachments(self, value: list[str]) -> None:
+        self._active.pending_attachments = value
+
+    @property
+    def _input_history(self) -> list[str]:
+        return self._active.input_history
+
+    @_input_history.setter
+    def _input_history(self, value: list[str]) -> None:
+        self._active.input_history = value
 
     @property
     def state(self) -> TUIState:
@@ -228,7 +251,7 @@ class MTPApp(App):
         self.query_one("#conversations", ContentSwitcher).mount(conv.view)
         self.query_one("#conversation-tabs", Tabs).add_tab(Tab(self._tab_label(conv), id=conv.tab_id))
         # The view composes its chat log after mounting; fill it once it exists.
-        self.call_after_refresh(self._rebuild_chat_log, conv)
+        conv.view.call_after_refresh(self._rebuild_chat_log, conv)
         if activate:
             self._activate(conv)
         else:
@@ -239,7 +262,23 @@ class MTPApp(App):
         """Show ``conv``; its run, if any, keeps streaming in the background either way."""
         if conv not in self._conversations:
             return
+        area = self.query_one("#chat-input", InputArea)
+        previous = self._active
+        if previous is not conv:
+            previous.draft_text = area.text
+            previous.draft_cursor = area.cursor_location
         self._active = conv
+        if previous is not conv:
+            area.load_text(conv.draft_text)
+            area.cursor_location = conv.draft_cursor
+            self._history_index = None
+            self._history_draft = ""
+            badges = self.query_one("#attachment-container")
+            badges.remove_children()
+            for filename in conv.pending_attachments:
+                badges.mount(AttachmentBadge(f"📎 {filename}"))
+            badges.set_class(bool(conv.pending_attachments), "visible")
+            self.query_one("#suggestion-list").remove_class("visible")
         conv.unread = False
         self.query_one("#conversations", ContentSwitcher).current = conv.view.id
         tabs = self.query_one("#conversation-tabs", Tabs)
@@ -251,6 +290,7 @@ class MTPApp(App):
         self._refresh_status_bar()
         self._refresh_sidebar()
         self._refresh_prompt_label()
+        self._dismiss_command_output()
         self._focus_input()
 
     def _select_tab(self, conv: Conversation) -> None:
@@ -344,6 +384,8 @@ class MTPApp(App):
             self._activate(conv)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if self.screen_stack and isinstance(self.screen, (ProviderSetup, ProviderPicker, ThinkingDialog)):
+            return False
         if action == "interrupt":
             # Without a run, let Ctrl+X fall through to the input (cut).
             return self._active.running
@@ -357,13 +399,13 @@ class MTPApp(App):
         first = self._conversations[0]
         with Horizontal():
             with Vertical(id="main-container"):
-                yield BootScreen(id="boot-screen")
                 yield Tabs(Tab(self._tab_label(first), id=first.tab_id), id="conversation-tabs")
+                yield BootScreen(id="boot-screen")
                 with ContentSwitcher(id="conversations", initial=first.view.id):
                     yield first.view
                 # App-level jobs (codebase indexing); run spinners live in each view.
                 yield SpinnerWidget(id="task-spinner")
-                yield RichLog(id="cmd-log", markup=True, highlight=True, wrap=True)
+                yield RichLog(id="cmd-log", min_width=1, markup=False, highlight=False, wrap=True)
                 # InputPanel is docked to the bottom and holds the queue bar,
                 # so queued messages sit right above where you type.
                 yield InputPanel(id="input-panel")
@@ -379,6 +421,8 @@ class MTPApp(App):
         self._rebuild_chat_log(self._active)
         self._refresh_queue_bar()
         self._show_boot_info()
+        self.query_one("#main-container").set_class(not self._state.transcript, "home-view")
+        self.query_one("#boot-screen").display = not self._state.transcript
         # Typing works as soon as the first frame is up; no fixed delay.
         self.call_after_refresh(self._focus_input)
         if self._state.codex_bin:
@@ -386,6 +430,68 @@ class MTPApp(App):
         # Memory status touches sqlite; start it after the first paint.
         self.call_after_refresh(
             lambda: self._request_background_memory_refresh(reason="startup", prefer_full_scan=True)
+        )
+        self.call_after_refresh(self._offer_initial_provider_setup)
+
+    def _offer_initial_provider_setup(self) -> None:
+        from .tui_settings import is_provider_configured, load_provider_settings, provider_settings_path
+        from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
+        state = self._state
+        if state.backend in SUPPORTED_TUI_PROVIDERS and not is_provider_configured(
+            load_provider_settings(provider_settings_path(state.session_store.file_path)), state.backend,
+        ):
+            self._open_provider_setup(state.backend, switching=True)
+
+    def _open_provider_picker(self, *, managing_keys: bool = False) -> None:
+        from .tui_settings import provider_settings_path
+        owner = self._active
+        def selected(provider: str | None) -> None:
+            if not provider:
+                self._focus_input()
+            elif provider == "codex":
+                if managing_keys:
+                    self._write_cmd_log("Codex uses its CLI login, not a provider API key. Use /codex login or choose another provider with /apikey.")
+                else:
+                    self._start_backend_switch(provider, self)
+            elif managing_keys:
+                self.call_later(lambda: self._open_provider_setup(provider, owner=owner))
+            else:
+                self._start_backend_switch(provider, self)
+        self.push_screen(ProviderPicker(provider_settings_path(owner.state.session_store.file_path), owner.state.backend, managing_keys=managing_keys), selected)
+
+    def add_command_result(self, content: Any) -> None:
+        """The provider selector uses the same command feedback as slash commands."""
+        self._write_cmd_log(content)
+
+    def _open_provider_setup(self, provider: str, *, switching: bool = False, owner: Conversation | None = None) -> None:
+        from .tui_settings import provider_settings_path
+        from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
+        if provider not in SUPPORTED_TUI_PROVIDERS:
+            self._write_cmd_log(f"Unknown provider: {provider}. Use /backend to choose one.")
+            return
+        owner = owner or self._active
+        def finished(result: str | None) -> None:
+            if result == "change":
+                self.call_later(lambda: self._open_provider_picker(managing_keys=not switching))
+                return
+            if result in {"saved", "deleted"}:
+                # Credentials are shared, but agents and backend selection belong to chats.
+                for conv in self._conversations:
+                    if conv.state.backend == provider:
+                        conv.state.agent = None
+                if result == "saved" and switching and owner in self._conversations:
+                    self._start_backend_switch(provider, self)
+                else:
+                    self._write_cmd_log(f"{provider}: {'settings saved' if result == 'saved' else 'saved key removed'}. Credentials have not been checked with the provider.")
+                self._refresh_status_bar()
+                self._refresh_sidebar()
+            self._focus_input()
+        self.push_screen(ProviderSetup(provider, provider_settings_path(owner.state.session_store.file_path), switching=switching), finished)
+
+    def _needs_provider_setup(self, conv: Conversation) -> bool:
+        from .tui_settings import is_provider_configured, load_provider_settings, provider_settings_path
+        return conv.state.backend != "codex" and not is_provider_configured(
+            load_provider_settings(provider_settings_path(conv.state.session_store.file_path)), conv.state.backend,
         )
 
     def _save_session(self, conv: Conversation | None = None) -> None:
@@ -564,8 +670,11 @@ class MTPApp(App):
         self._history_index = None
         self._history_draft = ""
         
-        if raw and (not self._input_history or self._input_history[-1] != raw):
-            self._input_history.append(raw)
+        history_value = raw
+        if re.match(r"/apikey\s+set\s+\S+\s+", raw, re.IGNORECASE):
+            history_value = "/apikey " + raw.split(None, 3)[2]
+        if history_value and (not self._input_history or self._input_history[-1] != history_value):
+            self._input_history.append(history_value)
             
         try:
             cmd_log = self.query_one("#cmd-log", RichLog)
@@ -580,9 +689,14 @@ class MTPApp(App):
             self._dispatch_command(cmd, arg)
             # We return early. Attachments remain pending for the next actual prompt.
             return
+
+        if raw and self._needs_provider_setup(self._active):
+            self.query_one("#chat-input", InputArea).text = raw
+            self._open_provider_setup(self._state.backend, switching=True)
+            return
         
         if self._pending_attachments:
-            raw = " ".join([f"@{att}" for att in self._pending_attachments]) + " " + raw
+            raw = " ".join([f'@"{att}"' for att in self._pending_attachments]) + " " + raw
             self._pending_attachments.clear()
             container = self.query_one("#attachment-container")
             for child in container.children:
@@ -639,6 +753,9 @@ class MTPApp(App):
         if option_list.has_class("visible"):
             option_list.remove_class("visible")
             self.query_one("#chat-input", InputArea).focus()
+            return
+        if self.query_one("#main-container").has_class("command-view"):
+            self._dismiss_command_output()
             return
         if self._active.running:
             self.action_interrupt()
@@ -787,7 +904,6 @@ class MTPApp(App):
             "/model": "Switch model",
             "/models": "Show all models",
             "/apikey": "Manage API keys",
-            "/reasoning": "Set reasoning level",
             "/thinking": "Set thinking mode",
             "/mode": "Set harness mode",
             "/sandbox": "Cycle sandbox mode",
@@ -796,7 +912,7 @@ class MTPApp(App):
             "/new": "Open a new chat (Ctrl+N)",
             "/reset": "Open a new chat",
             "/tabs": "List open chats",
-            "/switch": "Switch chat (Alt+1..9)",
+            "/switch": "Switch chat (F1..F9 or Alt+Left/Right)",
             "/close": "Close a chat",
             "/queue": "Show or clear queued messages",
             "/steer": "Add a message to the running reply",
@@ -863,10 +979,10 @@ class MTPApp(App):
             if not normalized:
                 matches = ["memory", "status"]
             elif normalized == "memory":
-                matches = ["on", "off"]
+                matches = ["on", "off", "show"]
             elif normalized.startswith("memory "):
                 tail = normalized.split(" ", 1)[1]
-                matches = [item for item in ["on", "off"] if item.startswith(tail)]
+                matches = [item for item in ["on", "off", "show"] if item.startswith(tail)]
             else:
                 matches = [m for m in ["memory", "status"] if m.startswith(normalized)]
         elif cmd == "codex":
@@ -974,7 +1090,7 @@ class MTPApp(App):
             input_area.text = "\n".join(lines)
             input_area.cursor_location = (cursor_row, start_idx + len(selected) + 1)
             self._show_next_command_suggestions(input_area)
-            if selected.startswith("/") and selected in SLASH_COMMANDS and selected != "/thinking":
+            if selected.startswith("/") and selected in SLASH_COMMANDS:
                 self._submit_completed_command(input_area)
 
     def _submit_completed_command(self, input_area: InputArea) -> None:
@@ -1069,6 +1185,10 @@ class MTPApp(App):
     def _run_next_queued(self, conv: Conversation) -> None:
         if conv.running or not conv.queue or conv not in self._conversations:
             return
+        if self._needs_provider_setup(conv):
+            if conv is self._active:
+                self._open_provider_setup(conv.state.backend, switching=True)
+            return
         item = conv.queue.popleft()
         self._refresh_queue_bar()
         self._start_run(conv, item.text)
@@ -1076,7 +1196,13 @@ class MTPApp(App):
     # ── Runs ─────────────────────────────────────────────────────────────
 
     def _start_run(self, conv: Conversation, raw: str) -> None:
+        if self._needs_provider_setup(conv):
+            if conv is self._active:
+                self.query_one("#chat-input", InputArea).text = raw
+                self._open_provider_setup(conv.state.backend, switching=True)
+            return
         self.query_one("#boot-screen", BootScreen).display = False
+        self.query_one("#main-container").remove_class("home-view", "command-view")
         if conv is self._active:
             cmd_log = self.query_one("#cmd-log", RichLog)
             cmd_log.clear()
@@ -1503,47 +1629,41 @@ class MTPApp(App):
         """Route a command name + argument to the appropriate handler."""
         cmd_log = self.query_one("#cmd-log", RichLog)
         cmd_log.clear()
+        self._command_results.clear()
         cmd_log.add_class("visible")
+        self.query_one("#boot-screen").display = False
+        self.query_one("#main-container").remove_class("home-view")
+        self.query_one("#main-container").add_class("command-view")
         s = self._state
 
+        app = self
         class CmdLogProxy:
             def add_system_message(self, content, style="dim #71717a"):
                 from rich.text import Text
                 if isinstance(content, str):
                     import re
                     cleaned = re.sub(r"\033\[[0-9;]*m", "", content)
-                    cmd_log.write(Text(f"  {cleaned}", style=style))
+                    app._write_cmd_log(Text(f"  {cleaned}", style=style))
                 else:
-                    cmd_log.write(content)
+                    app._write_cmd_log(content)
                     
             def add_command_result(self, content):
                 from rich.text import Text
                 if isinstance(content, str):
                     import re
                     cleaned = re.sub(r"\033\[[0-9;]*m", "", content)
-                    cmd_log.write(Text(f"  {cleaned}", style="#a78bfa"))
+                    app._write_cmd_log(Text(f"  {cleaned}", style="#a78bfa"))
                 else:
-                    cmd_log.write(content)
+                    app._write_cmd_log(content)
 
         chat_log = CmdLogProxy()
 
         if cmd == "help":
             chat_log.add_system_message(self._build_help_text())
-            input_area = self.query_one("#chat-input", InputArea)
-            input_area.text = "/"
-            input_area.cursor_location = (0, 1)
-            self._show_command_suggestions("/")
-            try: self.query_one("#suggestion-list", OptionList).focus()
-            except Exception: pass
         elif cmd == "exit":
             self.exit()
         elif cmd == "clear":
-            self.active_chat_log.clear()
-            cmd_log.remove_class("visible")
-            try:
-                self.query_one("#boot-screen", BootScreen).display = True
-            except Exception:
-                pass
+            self.action_clear_chat()
         elif cmd == "status":
             chat_log.add_system_message(self._build_status_text())
         elif cmd == "sessions":
@@ -1555,7 +1675,13 @@ class MTPApp(App):
             try: self.query_one("#suggestion-list", OptionList).focus()
             except Exception: pass
         elif cmd == "history":
-            limit = int(arg) if arg and arg.isdigit() else None
+            try:
+                limit = int(arg) if arg else None
+                if limit is not None and limit < 1:
+                    raise ValueError
+            except ValueError:
+                chat_log.add_command_result("Usage: /history [positive number of turns]")
+                return
             chat_log.add_system_message(self._build_history_text(limit))
         elif cmd == "models":
             chat_log.add_system_message(self._build_models_text())
@@ -1590,13 +1716,7 @@ class MTPApp(App):
             )
         elif cmd == "backend":
             if not arg:
-                input_area = self.query_one("#chat-input", InputArea)
-                input_area.text = "/backend "
-                input_area.cursor_location = (0, 9)
-                cmd_log.remove_class("visible")
-                self._show_command_argument_suggestions("backend", "")
-                try: self.query_one("#suggestion-list", OptionList).focus()
-                except Exception: pass
+                self._open_provider_picker()
             else:
                 self._start_backend_switch(arg, chat_log)
         elif cmd == "model":
@@ -1618,10 +1738,7 @@ class MTPApp(App):
                 self._refresh_sidebar()
                 return
             if not arg:
-                choices = ", ".join(option.label for option in capability.options)
-                chat_log.add_command_result(f"Usage: /{cmd} <{choices}>")
-                self._refresh_status_bar()
-                self._refresh_sidebar()
+                self.on_thinking_badge_activated(ThinkingBadge.Activated())
                 return
             try:
                 message = apply_thinking_value(s, arg, persist=False)
@@ -1649,26 +1766,36 @@ class MTPApp(App):
                     chat_log.add_command_result(f"Available: {', '.join(HARNESS_MODES)}")
             self._refresh_status_bar()
         elif cmd == "rounds":
-            if arg and arg.isdigit() and int(arg) >= 1:
-                s.max_rounds = int(arg)
+            try:
+                rounds = int(arg)
+            except ValueError:
+                rounds = 0
+            if 1 <= rounds <= 1000:
+                s.max_rounds = rounds
                 self._save_session()
                 chat_log.add_command_result(f"✓ max_rounds set to {arg}")
             else:
-                chat_log.add_command_result("Usage: /rounds <positive-int>")
+                chat_log.add_command_result("Usage: /rounds <1-1000>")
         elif cmd == "cd":
             if not arg:
                 chat_log.add_command_result("Usage: /cd <dir>")
             else:
-                target = Path(arg).expanduser().resolve()
+                path_arg = arg.strip().strip('"').strip("'")
+                path = Path(path_arg).expanduser()
+                target = (s.cwd / path).resolve() if not path.is_absolute() else path.resolve()
                 if target.exists() and target.is_dir():
                     s.cwd = target
                     s.agent = None
                     self._save_session()
                     chat_log.add_command_result(f"✓ cwd set to {target}")
                     self._refresh_prompt_label()
+                    self._refresh_sidebar()
                 else:
                     chat_log.add_command_result(f"✗ Not found: {target}")
         elif cmd == "autoresearch":
+            if arg.lower() not in {"on", "off"}:
+                chat_log.add_command_result(f"Auto research is {'on' if s.autoresearch else 'off'}. Usage: /autoresearch <on|off>")
+                return
             s.autoresearch = arg.lower() == "on"
             s.agent = None
             self._save_session()
@@ -1725,11 +1852,39 @@ class MTPApp(App):
 
         cmd_log = self.query_one("#cmd-log", RichLog)
         cmd_log.add_class("visible")
+        self.query_one("#boot-screen").display = False
+        self.query_one("#main-container").remove_class("home-view")
+        self.query_one("#main-container").add_class("command-view")
         if isinstance(content, str):
             cleaned = re.sub(r"\033\[[0-9;]*m", "", content)
-            cmd_log.write(Text(f"  {cleaned}", style=style))
+            self._command_results.append(Text(f"  {cleaned}", style=style))
         else:
-            cmd_log.write(content)
+            self._command_results.append(content)
+        self.call_after_refresh(self._render_command_results)
+
+    def _render_command_results(self) -> None:
+        log = self.query_one("#cmd-log", RichLog)
+        log.clear()
+        for content in self._command_results:
+            log.write(content, width=max(1, log.content_size.width), scroll_end=False)
+
+    def _dismiss_command_output(self) -> None:
+        self.query_one("#main-container").remove_class("command-view")
+        home = not self._state.transcript and self._active.live is None
+        self.query_one("#main-container").set_class(home, "home-view")
+        self.query_one("#boot-screen").display = home
+        self.query_one("#cmd-log").remove_class("visible")
+        self._focus_input()
+
+    def on_resize(self) -> None:
+        width = self.size.width
+        if width < 80 and self.query("#sidebar"):
+            self.query_one("#sidebar").remove_class("visible")
+        if self.query("#status-hints"):
+            self.query_one("#status-hints").display = width >= 110
+            self.query_one("#status-sandbox").display = width >= 75
+        if self._command_results:
+            self.call_after_refresh(self._render_command_results)
 
     def _run_blocking_command(
         self, label: str, work: Callable[[], T], done: Callable[[T], None],
@@ -1794,8 +1949,13 @@ class MTPApp(App):
         def done(switch: BackendSwitch) -> None:
             if seq != self._backend_switch_seq:
                 return  # a newer /backend superseded this one
+            if switch.setup_provider:
+                self._open_provider_setup(switch.setup_provider, switching=True)
+                return
             if apply_backend_switch(state, switch):
-                self._save_session()
+                owner = next((c for c in self._conversations if c.state is state), None)
+                if owner:
+                    self._save_session(owner)
             self._write_cmd_log(switch.message)
             self._refresh_status_bar()
             self._refresh_prompt_label()
@@ -1838,15 +1998,19 @@ class MTPApp(App):
                 marker = "*" if conv is self._active else " "
                 detail = f"  [{', '.join(flags)}]" if flags else ""
                 lines.append(f"{marker}{position}  {conv.title}  ({conv.state.backend}){detail}")
-            lines.append("Alt+1..9 or /switch <n> to switch, Ctrl+N or /new for a new chat, /close [n] to close.")
+            lines.append("F1..F9, Alt+Left/Right, or /switch <n> to switch; Ctrl+N for a new chat; /close [n] to close.")
             self._write_cmd_log("\n".join(lines))
             return
         target = self._active
         if arg:
-            if not arg.isdigit() or self._conversation_by_position(int(arg)) is None:
+            try:
+                position = int(arg)
+            except ValueError:
+                position = 0
+            if self._conversation_by_position(position) is None:
                 self._write_cmd_log(f"No chat {arg}. Open chats: 1-{len(self._conversations)}.")
                 return
-            target = self._conversation_by_position(int(arg))  # type: ignore[assignment]
+            target = self._conversation_by_position(position)  # type: ignore[assignment]
         if cmd == "switch":
             if not arg:
                 self._write_cmd_log("Usage: /switch <n>")
@@ -1892,7 +2056,11 @@ class MTPApp(App):
 
         from . import tui_codex_backend as codex_backend
 
-        parts = shlex.split(arg or "", posix=(os.name != "nt"))
+        try:
+            parts = shlex.split(arg or "", posix=(os.name != "nt"))
+        except ValueError:
+            chat_log.add_command_result("Close the quotation marks in /codex arguments and try again.")
+            return
         action = parts[0].lower() if parts else ""
         extra_args = parts[1:]
         if action not in {"login", "logout", "status", "account", "models", "doctor", "repair-config"}:
@@ -2156,8 +2324,29 @@ class MTPApp(App):
         option_list.highlighted = 0
 
     def _handle_model_switch(self, arg: str) -> None:
-        chat_log = self.active_chat_log
+        chat_log = self
         s = self._state
+        if arg.split(None, 1)[0].lower() == "add":
+            from .tui_provider_factory import normalize_tui_provider
+            from .tui_settings import add_custom_model, load_provider_settings, provider_settings_path, save_provider_settings
+            parts = arg.split()
+            if len(parts) != 3:
+                self._write_cmd_log("Usage: /model add <provider> <model-name>")
+                return
+            try:
+                provider = normalize_tui_provider(parts[1])
+                path = provider_settings_path(s.session_store.file_path)
+                settings = load_provider_settings(path)
+                added = add_custom_model(settings, provider, parts[2])
+                save_provider_settings(path, settings)
+            except (ValueError, OSError) as exc:
+                self._write_cmd_log(f"Could not add model: {exc}")
+                return
+            self._write_cmd_log(f"{provider}: {parts[2]} {'added' if added else 'already listed'}. Select it with /model {parts[2]} after choosing {provider}.")
+            return
+        if any(char.isspace() for char in arg):
+            self._write_cmd_log("Use a model name without spaces, or /model add <provider> <model-name>.")
+            return
         resolved = resolve_model(arg) if s.backend == "codex" else arg.strip()
 
         if s.backend == "codex":
@@ -2186,19 +2375,22 @@ class MTPApp(App):
         self._refresh_sidebar()
 
     def _handle_sandbox(self, arg: str) -> None:
-        chat_log = self.active_chat_log
+        chat_log = self
         s = self._state
         if not arg:
-            modes = ["read-only", "workspace-write", "danger-full-access"]
-            idx = modes.index(s.codex_sandbox_mode) if s.codex_sandbox_mode in modes else 1
-            s.codex_sandbox_mode = modes[(idx + 1) % len(modes)]
+            self.action_open_sandbox()
+            return
         else:
             mode_map = {
                 "readonly": "read-only", "read-only": "read-only",
                 "write": "workspace-write", "workspace-write": "workspace-write",
                 "full": "danger-full-access", "danger-full-access": "danger-full-access",
             }
-            s.codex_sandbox_mode = mode_map.get(arg.lower(), arg.lower())
+            selected = mode_map.get(arg.lower())
+            if selected is None:
+                self._write_cmd_log("Usage: /sandbox <read-only|workspace-write|danger-full-access>")
+                return
+            s.codex_sandbox_mode = selected
         self._save_session()
         icons = {"read-only": "🔒", "workspace-write": "✓", "danger-full-access": "⚠"}
         icon = icons.get(s.codex_sandbox_mode, "?")
@@ -2206,15 +2398,42 @@ class MTPApp(App):
         self._refresh_status_bar()
 
     def _handle_apikey(self, arg: str) -> None:
-        chat_log = self.active_chat_log
+        from .tui_provider_factory import normalize_tui_provider
+        parts = arg.split(None, 2)
+        if not parts or parts[0].lower() in {"set", "edit"} and len(parts) < 3:
+            provider = parts[1] if len(parts) == 2 else self._state.backend
+            if provider == "codex":
+                self._open_provider_picker(managing_keys=True)
+                return
+            try:
+                self._open_provider_setup(normalize_tui_provider(provider))
+            except ValueError as exc:
+                self._write_cmd_log(str(exc))
+            return
+        if len(parts) == 1 and parts[0].lower() not in {"show", "delete", "set", "list"}:
+            try:
+                self._open_provider_setup(normalize_tui_provider(parts[0]))
+            except ValueError as exc:
+                self._write_cmd_log(str(exc))
+            return
+        if parts[0].lower() in {"delete", "edit"} and len(parts) == 2:
+            try:
+                self._open_provider_setup(normalize_tui_provider(parts[1]))
+            except ValueError as exc:
+                self._write_cmd_log(str(exc))
+            return
         try:
             from . import tui as old_tui
-            result = old_tui._handle_apikey_command(self._state, arg)
+            result = old_tui._handle_apikey_command(self._state, "" if arg.lower() == "list" else arg)
             if result:
                 cleaned = re.sub(r"\033\[[0-9;]*m", "", result)
-                chat_log.add_command_result(cleaned)
-        except Exception as e:
-            chat_log.add_command_result(f"Error: {e}")
+                self._write_cmd_log(cleaned)
+            for conv in self._conversations:
+                if conv.state.backend == (parts[1].lower() if len(parts) > 1 else ""):
+                    conv.state.agent = None
+            self._refresh_status_bar()
+        except (OSError, ValueError) as exc:
+            self._write_cmd_log(f"Could not update provider settings: {exc}")
 
     # ── Text builders ────────────────────────────────────────────────────
 
@@ -2342,8 +2561,7 @@ class MTPApp(App):
         table.add_row("", "/codex account", "Show Codex email, profile, usage")
         table.add_row("", "/codex doctor", "Run Codex diagnostics")
         table.add_row("", "/codex repair-config", "Repair known Codex config issues")
-        table.add_row("", "/reasoning", "Set reasoning level / thinking mode")
-        table.add_row("", "/thinking", "Set thinking mode")
+        table.add_row("", "/thinking [level]", "Choose thinking / reasoning effort")
         table.add_row("", "/mode", "Set harness mode")
         table.add_row("", "/sandbox", "Cycle sandbox mode")
         table.add_row("", "/codebase memory", "Enable, disable, or inspect project memory")
@@ -2537,6 +2755,9 @@ class MTPApp(App):
     # ── Action bindings ──────────────────────────────────────────────────
 
     def action_toggle_sidebar(self) -> None:
+        if self.size.width < 80:
+            self.notify("The sidebar needs 80 columns. Use /status for session details in this window.", timeout=5)
+            return
         sidebar = self.query_one("#sidebar", Sidebar)
         sidebar.toggle()
         self._refresh_sidebar()
@@ -2547,6 +2768,21 @@ class MTPApp(App):
     def action_clear_chat(self) -> None:
         """Clear what is on screen. A running turn keeps streaming into a fresh view."""
         self.active_chat_log.clear()
+        self._command_results.clear()
+        self.query_one("#cmd-log", RichLog).clear()
+        self._dismiss_command_output()
+
+    def action_focus_output(self) -> None:
+        if self.query_one("#cmd-log").has_class("visible"):
+            self.query_one("#cmd-log").focus()
+        else:
+            self.active_chat_log.focus()
+
+    def action_open_sandbox(self) -> None:
+        area = self.query_one("#chat-input", InputArea)
+        area.text = "/sandbox "
+        area.cursor_location = (0, 9)
+        self._show_command_argument_suggestions("sandbox", "")
 
     def action_cycle_sandbox(self) -> None:
         self._handle_sandbox("")

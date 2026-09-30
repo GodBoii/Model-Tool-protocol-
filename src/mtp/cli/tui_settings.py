@@ -30,6 +30,38 @@ DEFAULT_PROVIDER_MODELS: dict[str, str] = {
     "lmstudio": "qwen3",  # Generic default (user will select from loaded models)
 }
 
+PROVIDER_KEY_ENV: dict[str, str] = {
+    "openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY", "claude": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY", "mistral": "MISTRAL_API_KEY",
+    "cohere": "COHERE_API_KEY", "sambanova": "SAMBANOVA_API_KEY", "cerebras": "CEREBRAS_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY", "togetherai": "TOGETHER_API_KEY", "fireworksai": "FIREWORKS_API_KEY",
+    "xiaomi": "MIMO_API_KEY", "ollama": "OLLAMA_API_KEY", "lmstudio": "LMSTUDIO_API_KEY",
+}
+
+
+def provider_api_key(payload: dict[str, Any], provider_name: str) -> str | None:
+    """Resolve a saved key first, then the provider's environment variable."""
+    saved = ensure_provider_entry(payload, provider_name).get("api_key")
+    if isinstance(saved, str) and saved.strip():
+        return saved.strip()
+    env_name = PROVIDER_KEY_ENV.get(provider_name)
+    value = os.getenv(env_name, "").strip() if env_name else ""
+    return value or None
+
+
+def provider_setup_status(payload: dict[str, Any], provider_name: str) -> str:
+    """Describe readiness without exposing credential content."""
+    if provider_name == "codex":
+        return "Uses Codex CLI login"
+    if provider_name in {"ollama", "lmstudio"}:
+        return "Endpoint configured" if is_provider_configured(payload, provider_name) else "Needs endpoint setup"
+    entry = ensure_provider_entry(payload, provider_name)
+    if entry.get("api_key"):
+        return "Key saved locally"
+    if provider_api_key(payload, provider_name):
+        return f"Key from {PROVIDER_KEY_ENV[provider_name]}"
+    return "Needs API key"
+
 
 def provider_settings_path(session_db_path: str | Path) -> Path:
     """
@@ -263,7 +295,7 @@ def is_provider_configured(payload: dict[str, Any], provider_name: str) -> bool:
     from .tui_local_providers import is_local_capable_provider
     
     entry = ensure_provider_entry(payload, provider_name)
-    has_model = isinstance(entry.get("model"), str) and entry["model"].strip()
+    has_model = bool(preferred_model_for_provider(payload, provider_name))
     
     # Local providers don't require API keys
     if is_local_capable_provider(provider_name):
@@ -274,14 +306,14 @@ def is_provider_configured(payload: dict[str, Any], provider_name: str) -> bool:
             return bool(has_model and has_base_url)
         elif deployment_type == "cloud":
             # Cloud deployment: need API key and model
-            has_api_key = isinstance(entry.get("api_key"), str) and entry["api_key"].strip()
+            has_api_key = bool(provider_api_key(payload, provider_name))
             return bool(has_api_key and has_model)
         else:
             # Not configured yet
             return False
     
     # Cloud-only providers: need API key and model
-    has_api_key = isinstance(entry.get("api_key"), str) and entry["api_key"].strip()
+    has_api_key = bool(provider_api_key(payload, provider_name))
     return bool(has_api_key and has_model)
 
 
@@ -313,6 +345,9 @@ def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str
     all_models = []
     if default_model:
         all_models.append(default_model)
+    selected_model = preferred_model_for_provider(payload, provider_name)
+    if selected_model and selected_model not in all_models:
+        all_models.append(selected_model)
     if provider_name == "xiaomi" and "mimo-v2.5" not in all_models:
         all_models.append("mimo-v2.5")
     
@@ -326,7 +361,12 @@ def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str
 def set_provider_api_key(payload: dict[str, Any], provider_name: str, api_key: str) -> None:
     """Set or update API key for a provider."""
     entry = ensure_provider_entry(payload, provider_name)
-    entry["api_key"] = api_key
+    key = api_key.strip()
+    if not key or any(char.isspace() or ord(char) < 32 for char in key):
+        raise ValueError("Enter an API key without spaces or line breaks.")
+    entry["api_key"] = key
+    if not entry.get("model"):
+        entry["model"] = DEFAULT_PROVIDER_MODELS.get(provider_name, "default")
 
 
 def delete_provider_api_key(payload: dict[str, Any], provider_name: str) -> bool:

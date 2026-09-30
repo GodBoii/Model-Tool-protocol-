@@ -303,8 +303,8 @@ def test_every_documented_shortcut_has_a_binding() -> None:
         for key in binding.key.split(","):
             bound.add(key.strip())
     # Keys handled by the input widget itself rather than app bindings.
-    handled_by_input = {"Enter"}
-    expand = {"Alt+1..9": ["alt+1", "alt+9"], "Alt+Left/Right": ["alt+left", "alt+right"], "Esc": ["escape"]}
+    handled_by_input = {"Enter", "Shift+Enter"}
+    expand = {"F1..F9": ["f1", "f9"], "Alt+Left/Right": ["alt+left", "alt+right"], "Esc": ["escape"]}
     for shortcut in SHORTCUTS:
         if shortcut.keys in handled_by_input:
             continue

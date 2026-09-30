@@ -98,6 +98,11 @@ class InputArea(TextArea):
         )
 
     async def _on_key(self, event: events.Key) -> None:
+        if event.key == "shift+enter":
+            self.insert("\n")
+            event.prevent_default()
+            event.stop()
+            return
         # If the autocomplete suggestion list is visible, let the first arrow/enter
         # key immediately interact with it instead of forcing a second keypress.
         if event.key in ("down", "up", "tab", "enter"):
