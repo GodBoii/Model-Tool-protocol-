@@ -1,5 +1,13 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.37, 2026-09-30
+
+- Improve provider setup, command selection and chat navigation in the TUI.
+- Keep setup actions visible and reflow output when the terminal resizes.
+- Align CLI credentials, reject masked keys and validate local provider setup and startup options.
+- Discover provider models and support custom model IDs without retired Groq defaults.
+- Preserve chat views during background notices and update the TUI setup documentation.
+
 ## Release 0.1.36, 2026-09-30
 
 - Execute completed slash-command selections without repeating the selection loop.
