@@ -6,14 +6,14 @@ import os
 from pathlib import Path
 import runpy
 import sys
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
-from .doctor import run_doctor
-from ..agent_os import launch as launch_agent_os
-from ..codebase import CodebaseMemory
-from .providers import get_provider, providers_as_rows
-from .scaffold import VALID_TEMPLATES, scaffold_project
-from .tui import run_tui
+# Subcommand implementations are imported inside their handlers so that one
+# command does not pay for the others (the TUI pulls in Textual, for example).
+from .scaffold import VALID_TEMPLATES
+
+if TYPE_CHECKING:
+    from ..codebase import CodebaseMemory
 
 
 @contextmanager
@@ -42,6 +42,7 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
 
 
 def _cmd_new(args: argparse.Namespace) -> int:
+    from .scaffold import scaffold_project
     base_dir = Path(args.dir)
     try:
         result = scaffold_project(
@@ -108,6 +109,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
+    from .doctor import run_doctor
+    from .providers import get_provider
     provider_filter: set[str] | None = None
     if args.provider:
         provider_filter = set()
@@ -126,6 +129,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def _cmd_providers_list(_args: argparse.Namespace) -> int:
+    from .providers import providers_as_rows
     rows_data = providers_as_rows()
     rows = [
         [
@@ -143,14 +147,17 @@ def _cmd_providers_list(_args: argparse.Namespace) -> int:
 
 
 def _cmd_tui(args: argparse.Namespace) -> int:
+    from .tui import run_tui
     return int(run_tui(args))
 
 
 def _cmd_agent_os(_args: argparse.Namespace) -> int:
+    from ..agent_os import launch as launch_agent_os
     return int(launch_agent_os())
 
 
 def _prompt_codebase_root(start: Path) -> Path:
+    from ..codebase import CodebaseMemory
     suggested = CodebaseMemory.discover_root(start)
     print(f"Current folder: {start.resolve()}")
     if suggested != start.resolve():
@@ -164,6 +171,7 @@ def _prompt_codebase_root(start: Path) -> Path:
 
 
 def _cmd_codebase_memory(args: argparse.Namespace) -> int:
+    from ..codebase import CodebaseMemory
     try:
         root = Path(args.path).expanduser().resolve() if args.path else _prompt_codebase_root(Path.cwd())
         memory = CodebaseMemory(root)
@@ -212,6 +220,7 @@ def _cmd_codebase_memory(args: argparse.Namespace) -> int:
 
 
 def _cmd_codebase_status(args: argparse.Namespace) -> int:
+    from ..codebase import CodebaseMemory
     root = Path(args.path).expanduser().resolve() if args.path else CodebaseMemory.discover_root(Path.cwd())
     status = CodebaseMemory(root).status()
     rows = [
