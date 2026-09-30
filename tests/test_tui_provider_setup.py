@@ -49,6 +49,13 @@ def test_environment_key_needs_no_saved_model_or_key(monkeypatch):
     assert not payload["providers"]["groq"]["api_key"]
 
 
+def test_malformed_saved_or_environment_key_is_not_ready(monkeypatch):
+    payload = {"providers": {"groq": {"api_key": "bad key"}}}
+    assert not is_provider_configured(payload, "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "bad\nkey")
+    assert not is_provider_configured(payload, "groq")
+
+
 def test_missing_provider_save_retry_switch_and_restart(tmp_path, monkeypatch):
     async def scenario():
         state = _make_state(tmp_path)
@@ -186,6 +193,27 @@ def test_local_endpoint_setup_without_key(tmp_path):
             settings = load_provider_settings(provider_settings_path(app.state.session_store.file_path))
             assert is_provider_configured(settings, "ollama")
             assert not settings["providers"]["ollama"]["api_key"]
+    asyncio.run(scenario())
+
+
+def test_local_model_discovery_choice_and_cancel(tmp_path, monkeypatch):
+    from mtp.cli.tui_widgets import provider_setup
+    from mtp.cli.tui_local_providers import DiscoveryResult, DiscoveredModel
+    monkeypatch.setattr(provider_setup, "discover_models", lambda *args, **kwargs: DiscoveryResult(True, [DiscoveredModel("fixture-model")]))
+    async def scenario():
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(100, 40)) as pilot:
+            app._dispatch_command("backend", "lmstudio")
+            await pilot.pause(.2)
+            dialog = app.screen
+            dialog.query_one("#setup-discover").press()
+            await pilot.pause(.2)
+            assert isinstance(app.focused, OptionList)
+            await pilot.press("enter")
+            assert dialog.query_one("#setup-model", Input).value == "fixture-model"
+            await pilot.press("enter")
+            await pilot.pause(.2)
+            assert app.state.backend == "lmstudio" and app.state.agent is None
     asyncio.run(scenario())
 
 

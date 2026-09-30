@@ -95,6 +95,19 @@ def test_palette_new_chat_mounts_without_crashing(tmp_path):
     asyncio.run(scenario())
 
 
+def test_all_nine_direct_chat_shortcuts(tmp_path):
+    async def scenario():
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(100, 32)) as pilot:
+            for _ in range(8):
+                await pilot.press("ctrl+n")
+            conversations = app.conversations
+            for number, conversation in enumerate(conversations, 1):
+                await pilot.press(f"f{number}")
+                assert app.active_conversation is conversation
+    asyncio.run(scenario())
+
+
 def test_thinking_has_one_visible_command_and_opens_picker(tmp_path):
     async def scenario():
         app = MTPApp(state=_make_state(tmp_path))

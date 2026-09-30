@@ -42,11 +42,11 @@ PROVIDER_KEY_ENV: dict[str, str] = {
 def provider_api_key(payload: dict[str, Any], provider_name: str) -> str | None:
     """Resolve a saved key first, then the provider's environment variable."""
     saved = ensure_provider_entry(payload, provider_name).get("api_key")
-    if isinstance(saved, str) and saved.strip():
+    if isinstance(saved, str) and saved.strip() and not any(c.isspace() or ord(c) < 32 for c in saved.strip()):
         return saved.strip()
     env_name = PROVIDER_KEY_ENV.get(provider_name)
     value = os.getenv(env_name, "").strip() if env_name else ""
-    return value or None
+    return value if value and not any(c.isspace() or ord(c) < 32 for c in value) else None
 
 
 def provider_setup_status(payload: dict[str, Any], provider_name: str) -> str:
@@ -56,7 +56,8 @@ def provider_setup_status(payload: dict[str, Any], provider_name: str) -> str:
     if provider_name in {"ollama", "lmstudio"}:
         return "Endpoint configured" if is_provider_configured(payload, provider_name) else "Needs endpoint setup"
     entry = ensure_provider_entry(payload, provider_name)
-    if entry.get("api_key"):
+    saved = entry.get("api_key")
+    if isinstance(saved, str) and saved.strip() and provider_api_key(payload, provider_name) == saved.strip():
         return "Key saved locally"
     if provider_api_key(payload, provider_name):
         return f"Key from {PROVIDER_KEY_ENV[provider_name]}"

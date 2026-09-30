@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 from urllib.parse import urlsplit
 
 from textual.app import ComposeResult
@@ -11,11 +12,25 @@ from textual.widgets import Button, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ..tui_provider_factory import SUPPORTED_TUI_PROVIDERS
+from ..tui_local_providers import discover_models
 from ..tui_settings import (
     PROVIDER_KEY_ENV, delete_provider_api_key, ensure_provider_entry,
     load_provider_settings, preferred_model_for_provider, provider_api_key, provider_setup_status,
     save_provider_settings, set_provider_api_key,
 )
+
+
+def _server_endpoint(value: str) -> str:
+    endpoint = value.strip()
+    try:
+        parsed = urlsplit(endpoint)
+        valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not parsed.username and not parsed.password
+        _ = parsed.port
+    except ValueError:
+        valid = False
+    if not valid or any(c.isspace() or ord(c) < 32 for c in endpoint) or parsed.query or parsed.fragment:
+        raise ValueError("Enter an http:// or https:// server URL without credentials, query, or fragment.")
+    return endpoint.rstrip("/")
 
 
 class ProviderPicker(ModalScreen[str | None]):
@@ -67,6 +82,7 @@ class ProviderSetup(ModalScreen[str | None]):
     #provider-setup { width: 70; max-width: 100%; height: 95%; max-height: 34;
         border: round #38bdf8; background: #18181b; padding: 1 2; }
     #setup-fields { height: 1fr; min-height: 3; }
+    #discovered-models { height: auto; max-height: 5; display: none; }
     #setup-actions { height: 3; margin-top: 1; }
     #provider-setup Label { margin-top: 1; height: auto; color: #e4e4e7; }
     #provider-setup Static { height: auto; }
@@ -80,13 +96,15 @@ class ProviderSetup(ModalScreen[str | None]):
     """
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, provider: str, settings_path: Path, *, switching: bool = False) -> None:
+    def __init__(self, provider: str, settings_path: Path, *, switching: bool = False, refresh_models: bool = False) -> None:
         super().__init__()
         self.provider = provider
         self.settings_path = settings_path
         self.switching = switching
         self.local = provider in {"ollama", "lmstudio"}
         self._delete_confirmed = False
+        self._refresh_models = refresh_models
+        self._discovered_models: list[str] = []
 
     def compose(self) -> ComposeResult:
         settings = load_provider_settings(self.settings_path)
@@ -106,6 +124,8 @@ class ProviderSetup(ModalScreen[str | None]):
                     default_url = "http://localhost:11434" if self.provider == "ollama" else "http://localhost:1234/v1"
                     yield Label("Server endpoint", markup=False)
                     yield Input(str(entry.get("base_url") or default_url), id="setup-endpoint")
+                    yield Button("Load models from server", id="setup-discover")
+                    yield OptionList(id="discovered-models")
                 yield Label("API key (optional)" if self.local else "API key", markup=False)
                 yield Input(password=True, placeholder="Paste a key; leave empty to keep the existing key", id="setup-key")
                 yield Button("Show key", id="key-visibility")
@@ -122,6 +142,8 @@ class ProviderSetup(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         self.query_one("#setup-endpoint" if self.local else "#setup-key", Input).focus()
+        if self.local and self._refresh_models:
+            self.call_after_refresh(self._begin_model_load)
 
     def _error(self, message: str, selector: str | None = None) -> None:
         error = self.query_one("#setup-error", Static)
@@ -150,19 +172,16 @@ class ProviderSetup(ModalScreen[str | None]):
             self._error("Paste an API key, or choose another provider.", "#setup-key")
             return
         if self.local:
-            endpoint = self.query_one("#setup-endpoint", Input).value.strip()
             try:
-                parsed = urlsplit(endpoint)
-                valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not parsed.username and not parsed.password
-                _ = parsed.port
-            except ValueError:
-                valid = False
-            if not valid or any(c.isspace() for c in endpoint) or parsed.query or parsed.fragment:
-                self._error("Enter an http:// or https:// server URL without credentials, query, or fragment.", "#setup-endpoint")
+                endpoint = _server_endpoint(self.query_one("#setup-endpoint", Input).value)
+            except ValueError as exc:
+                self._error(str(exc), "#setup-endpoint")
                 return
-            entry["base_url"] = endpoint.rstrip("/")
+            entry["base_url"] = endpoint
             entry["deployment_type"] = "local"
         entry["model"] = model
+        if self._discovered_models:
+            entry["models"] = list(dict.fromkeys([*entry["models"], *self._discovered_models]))
         try:
             save_provider_settings(self.settings_path, settings)
         except OSError:
@@ -175,11 +194,61 @@ class ProviderSetup(ModalScreen[str | None]):
         event.stop()
         self._save()
 
+    async def _load_models(self, endpoint: str) -> None:
+        button = self.query_one("#setup-discover", Button)
+        button.disabled = True
+        button.label = "Loading models..."
+        try:
+            result = await asyncio.to_thread(discover_models, self.provider, endpoint, timeout=5)
+            if not self.is_mounted:
+                return
+            if self.query_one("#setup-endpoint", Input).value.strip().rstrip("/") != endpoint:
+                self._error("The endpoint changed. Load models again for the new server.")
+                return
+            if not result.success:
+                self._error(result.error_message or "Could not read models. Check that the server is running.")
+                return
+            names = [model.name.strip() for model in result.models if isinstance(model.name, str) and model.name.strip() and not any(c.isspace() for c in model.name)]
+            if not names:
+                self._error("No models available. Load a model in your server, then retry.")
+                return
+            options = self.query_one("#discovered-models", OptionList)
+            self._discovered_models = names
+            options.clear_options()
+            options.add_options([Option(name, id=name) for name in names])
+            options.display = True
+            options.highlighted = 0
+            options.focus()
+            self.query_one("#setup-error").remove_class("visible")
+        except Exception:
+            if self.is_mounted:
+                self._error("Could not read models. Check the endpoint and retry.")
+        finally:
+            if self.is_mounted:
+                button.disabled = False
+                button.label = "Load models from server"
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        model = self.query_one("#setup-model", Input)
+        model.value = event.option_id or ""
+        model.focus()
+
+    def _begin_model_load(self) -> None:
+        try:
+            endpoint = _server_endpoint(self.query_one("#setup-endpoint", Input).value)
+        except ValueError as exc:
+            self._error(str(exc), "#setup-endpoint")
+            return
+        self.run_worker(self._load_models(endpoint), group="setup-discovery", exclusive=True, exit_on_error=False)
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         button_id = event.button.id
         if button_id == "setup-save":
             self._save()
+        elif button_id == "setup-discover":
+            self._begin_model_load()
         elif button_id == "key-visibility":
             key = self.query_one("#setup-key", Input)
             key.password = not key.password

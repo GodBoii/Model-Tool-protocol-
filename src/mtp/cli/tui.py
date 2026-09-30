@@ -170,6 +170,12 @@ def _handle_apikey_command(state: TUIState, arg: str) -> str:
 
 def run_tui(args: Any) -> int:
     from .tui_codex_backend import detect_codex_bin, codex_config_path, _read_toml
+    from mtp.config import load_dotenv_if_available
+
+    cwd = Path(args.cwd).expanduser().resolve()
+    if not cwd.is_dir():
+        raise ValueError(f"Working directory not found: {cwd}")
+    load_dotenv_if_available(str(cwd / ".env"))
 
     config = _read_toml(codex_config_path())
     configured_model = config.get("model")
@@ -177,9 +183,9 @@ def run_tui(args: Any) -> int:
     state = TUIState(
         backend=args.backend,
         codex_model=args.codex_model or (configured_model if isinstance(configured_model, str) else None),
-        openai_model=args.openai_model,
+        openai_model=args.openai_model or DEFAULT_PROVIDER_MODELS["openai"],
         max_rounds=int(args.max_rounds),
-        cwd=Path(args.cwd).expanduser().resolve(),
+        cwd=cwd,
         autoresearch=bool(args.autoresearch),
         research_instructions=args.research_instructions,
         reasoning_effort=str(getattr(args, "reasoning_effort", "medium")),
@@ -198,7 +204,7 @@ def run_tui(args: Any) -> int:
         existing = _load_session_record(state, args.session_id)
         if existing is not None:
             _load_session_into_state(state, existing)
-    _ensure_initial_provider_model(state)
+    _ensure_initial_provider_model(state, model_override=args.openai_model if state.backend == "openai" else None)
     save_tui_session(state)
 
     try:
@@ -217,13 +223,16 @@ def run_tui(args: Any) -> int:
     return 0
 
 
-def _ensure_initial_provider_model(state: TUIState) -> None:
+def _ensure_initial_provider_model(state: TUIState, *, model_override: str | None = None) -> None:
     if state.backend == "codex":
         return
     settings_path = provider_settings_path(state.session_store.file_path)
     settings = load_provider_settings(settings_path)
     entry = ensure_provider_entry(settings, state.backend)
-    entry.setdefault("model", DEFAULT_PROVIDER_MODELS.get(state.backend, "default"))
+    if model_override:
+        entry["model"] = model_override
+    elif not entry.get("model"):
+        entry["model"] = DEFAULT_PROVIDER_MODELS.get(state.backend, "default")
     save_provider_settings(settings_path, settings)
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+from pathlib import Path
 from dataclasses import dataclass
 import importlib.util
 
@@ -32,7 +33,8 @@ def _check_dotenv() -> DoctorItem:
     return DoctorItem("python-dotenv", _status(installed), "optional helper for loading .env files")
 
 
-def _check_provider(info: ProviderInfo) -> list[DoctorItem]:
+def _check_provider(info: ProviderInfo, settings: dict) -> list[DoctorItem]:
+    from .tui_settings import provider_api_key, provider_setup_status
     items: list[DoctorItem] = []
     if info.sdk_module is not None:
         installed = info.sdk_installed() is True
@@ -44,24 +46,28 @@ def _check_provider(info: ProviderInfo) -> list[DoctorItem]:
             )
         )
     if info.env_var is not None:
-        present = bool(os.getenv(info.env_var))
+        provider = "claude" if info.name == "anthropic" else info.name
+        present = bool(provider_api_key(settings, provider))
+        source = provider_setup_status(settings, provider)
         items.append(
             DoctorItem(
-                f"{info.name}.env",
+                f"{info.name}.credentials",
                 _status(present),
-                f"{info.env_var} {'present' if present else 'missing'}",
+                f"{source}. Environment variable: {info.env_var}",
             )
         )
     return items
 
 
-def run_doctor(provider_filter: set[str] | None = None) -> list[DoctorItem]:
+def run_doctor(provider_filter: set[str] | None = None, *, session_db: str | Path | None = None) -> list[DoctorItem]:
+    from .tui_settings import load_provider_settings, provider_settings_path
     load_dotenv_if_available()
+    settings = load_provider_settings(provider_settings_path(session_db or Path.home() / ".mtp" / "sessions"))
     rows: list[DoctorItem] = [_check_python(), _check_dotenv()]
     selected = list_providers()
     if provider_filter:
         selected = [p for p in selected if p.name in provider_filter or p.alias.lower() in provider_filter]
     for provider in selected:
-        rows.extend(_check_provider(provider))
+        rows.extend(_check_provider(provider, settings))
     return rows
 

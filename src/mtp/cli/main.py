@@ -72,9 +72,9 @@ def _cmd_new(args: argparse.Namespace) -> int:
 def _resolve_entrypoint(path: Path, explicit: str | None) -> Path:
     if explicit:
         candidate = path / explicit
-        if not candidate.exists():
+        if not candidate.is_file():
             raise FileNotFoundError(f"Entry script not found: {candidate}")
-        return candidate
+        return candidate.resolve()
     for default_name in ("app.py", "server.py", "main.py"):
         candidate = path / default_name
         if candidate.exists():
@@ -86,6 +86,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.path)
     if not project_path.exists():
         print(f"Path does not exist: {project_path}", file=sys.stderr)
+        return 1
+    if not project_path.is_dir():
+        print(f"Project path is not a directory: {project_path}", file=sys.stderr)
         return 1
     try:
         entry = _resolve_entrypoint(project_path, args.entry)
@@ -121,7 +124,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
                 return 1
             provider_filter.add(info.name)
             provider_filter.add(info.alias.lower())
-    items = run_doctor(provider_filter=provider_filter)
+    items = run_doctor(provider_filter=provider_filter, session_db=args.session_db)
     rows = [[row.name, row.status, row.detail] for row in items]
     _print_table(["check", "status", "detail"], rows)
     has_warn = any(row.status != "OK" for row in items)
@@ -148,7 +151,21 @@ def _cmd_providers_list(_args: argparse.Namespace) -> int:
 
 def _cmd_tui(args: argparse.Namespace) -> int:
     from .tui import run_tui
-    return int(run_tui(args))
+    try:
+        return int(run_tui(args))
+    except (OSError, ValueError) as exc:
+        print(f"Could not start TUI: {exc}", file=sys.stderr)
+        return 1
+
+
+def _round_limit(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Choose a round limit from 1 to 1000.") from None
+    if not 1 <= number <= 1000:
+        raise argparse.ArgumentTypeError("Choose a round limit from 1 to 1000.")
+    return number
 
 
 def _cmd_agent_os(_args: argparse.Namespace) -> int:
@@ -267,10 +284,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Filter checks to one or more providers (repeatable).",
     )
+    doctor_cmd.add_argument("--session-db", default=str(Path.home() / ".mtp" / "sessions"), help="TUI settings directory to check for saved keys.")
     doctor_cmd.set_defaults(handler=_cmd_doctor)
 
     providers_cmd = sub.add_parser("providers", help="Provider metadata commands.")
-    providers_sub = providers_cmd.add_subparsers(dest="providers_command", required=True)
+    providers_cmd.set_defaults(handler=_cmd_providers_list)
+    providers_sub = providers_cmd.add_subparsers(dest="providers_command")
     providers_list = providers_sub.add_parser("list", help="List known providers, SDK modules, and key env vars.")
     providers_list.set_defaults(handler=_cmd_providers_list)
 
@@ -303,8 +322,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Model for Codex backend. Defaults to Codex's configured model.",
     )
-    tui_cmd.add_argument("--openai-model", default="gpt-5.4-mini", help="Initial model for the OpenAI MTP backend.")
-    tui_cmd.add_argument("--max-rounds", type=int, default=6, help="max_rounds for MTP SDK provider backends.")
+    tui_cmd.add_argument("--openai-model", default=None, help="Override the saved OpenAI model for this launch.")
+    tui_cmd.add_argument("--max-rounds", type=_round_limit, default=6, help="Round limit for MTP providers, from 1 to 1000.")
     tui_cmd.add_argument("--cwd", default=".", help="Working directory used by tools and Codex backend.")
     tui_cmd.add_argument(
         "--session-db",
@@ -317,7 +336,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional existing session id to load on startup.",
     )
     tui_cmd.add_argument(
-        "--reasoning-effort",
+        "--thinking", "--reasoning-effort",
+        dest="reasoning_effort",
         choices=["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         default="medium",
         help="Reasoning effort preference used by codex backend.",

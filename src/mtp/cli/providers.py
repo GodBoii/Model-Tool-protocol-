@@ -17,7 +17,10 @@ class ProviderInfo:
     def sdk_installed(self) -> bool | None:
         if self.sdk_module is None:
             return None
-        return importlib.util.find_spec(self.sdk_module) is not None
+        try:
+            return importlib.util.find_spec(self.sdk_module) is not None
+        except (ModuleNotFoundError, ValueError):
+            return False
 
 
 PROVIDERS: list[ProviderInfo] = [
@@ -42,6 +45,7 @@ PROVIDERS: list[ProviderInfo] = [
 
 def get_provider(name_or_alias: str) -> ProviderInfo | None:
     needle = name_or_alias.strip().lower()
+    needle = {"claude": "anthropic", "together": "togetherai", "fireworks": "fireworksai"}.get(needle, needle)
     for info in PROVIDERS:
         if info.name == needle:
             return info

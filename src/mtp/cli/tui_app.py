@@ -477,7 +477,7 @@ class MTPApp(App):
         """The provider selector uses the same command feedback as slash commands."""
         self._write_cmd_log(content)
 
-    def _open_provider_setup(self, provider: str, *, switching: bool = False, owner: Conversation | None = None) -> None:
+    def _open_provider_setup(self, provider: str, *, switching: bool = False, owner: Conversation | None = None, refresh_models: bool = False) -> None:
         from .tui_settings import provider_settings_path
         from .tui_provider_factory import SUPPORTED_TUI_PROVIDERS
         if provider not in SUPPORTED_TUI_PROVIDERS:
@@ -500,7 +500,7 @@ class MTPApp(App):
                 self._refresh_status_bar()
                 self._refresh_sidebar()
             self._focus_input()
-        self.push_screen(ProviderSetup(provider, provider_settings_path(owner.state.session_store.file_path), switching=switching), finished)
+        self.push_screen(ProviderSetup(provider, provider_settings_path(owner.state.session_store.file_path), switching=switching, refresh_models=refresh_models), finished)
 
     def _needs_provider_setup(self, conv: Conversation) -> bool:
         from .tui_settings import is_provider_configured, load_provider_settings, provider_settings_path
@@ -1699,6 +1699,17 @@ class MTPApp(App):
                 return
             chat_log.add_system_message(self._build_history_text(limit))
         elif cmd == "models":
+            if arg:
+                if arg.lower() != "refresh":
+                    chat_log.add_command_result("Usage: /models [refresh]")
+                    return
+                if s.backend == "codex":
+                    self._refresh_codex_models(show=True)
+                    return
+                if s.backend in {"ollama", "lmstudio"}:
+                    self._open_provider_setup(s.backend, refresh_models=True)
+                    return
+                chat_log.add_command_result("Cloud providers list saved model names. Add one with /model add <provider> <name>.")
             chat_log.add_system_message(self._build_models_text())
         elif cmd == "tools":
             chat_log.add_system_message(self._build_tools_text())
@@ -1917,10 +1928,10 @@ class MTPApp(App):
         async def job() -> None:
             try:
                 result = await asyncio.to_thread(work)
+                done(result)
             except Exception as exc:
                 self._write_cmd_log(f"{label} failed: {exc}", style="bold #f43f5e")
                 return
-            done(result)
 
         self.run_worker(job(), name=f"command:{label}", group=_COMMAND_WORKER_GROUP, exclusive=False, exit_on_error=False)
 
