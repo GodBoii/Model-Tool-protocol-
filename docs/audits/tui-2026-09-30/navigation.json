@@ -1,0 +1,515 @@
+[
+  {
+    "check": "ctrl-l-leaves-command-output",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/status | Show session state"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭─────────────────────────────── Session Status ───────────────────────────────╮\n│   session            chat-audit00001                                         │\n│   label              Audit                                                   │\n│   backend            openai                                                  │\n│   model              gpt-4o-mini                                             │\n│   mode               code                                                    │\n│   sandbox            workspace-write                                         │\n│   rounds             8                                                       │\n│   tool_details       off                                                     │\n│   cwd                C:\\Users\\prajw\\AppData\\Local\\Temp\\mtp-tui-audit-2026…   │\n│   turns              0                                                       │\n│   autoresearch       False                                                   │\n│   codebase_memory    on                                                      │\n│   memory_chunks      4                                                       │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "same_output": true
+  },
+  {
+    "check": "slash-clear-hides-command-output",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "check": "boot-model-stale",
+    "state": {
+      "backend": "openai",
+      "model": "changed-audit-model",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "boot_unchanged": false,
+    "boot": "Model Tool Protocol  v0.1.36  ·  SDK + Codex CLI bridge\n\n────────────────────────────────────────────────────────────\n\n  model  changed-audit-model    backend  openai\n  session audit000  cwd workspace\n\n  type Ctrl+P for commands  ·  @file to attach  ·  Ctrl+B sidebar\n────────────────────────────────────────────────────────────"
+  },
+  {
+    "check": "mouse-first-tab",
+    "state": {
+      "backend": "openai",
+      "model": "changed-audit-model",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 2 (chat-c2e2cf28be) Mouse tab",
+      "turns": 0,
+      "agent_created": false
+    },
+    "tabs": [
+      "tab-e8c5f374",
+      "tab-36bc2f65"
+    ]
+  },
+  {
+    "check": "workspace-tree-enter",
+    "state": {
+      "backend": "openai",
+      "model": "changed-audit-model",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "workspace-tree",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 2 (chat-c2e2cf28be) Mouse tab",
+      "turns": 0,
+      "agent_created": false
+    },
+    "children": [
+      {
+        "label": "📁 child",
+        "allow_expand": false
+      },
+      {
+        "label": "📁 space folder",
+        "allow_expand": false
+      },
+      {
+        "label": "📄 file with spaces.txt",
+        "allow_expand": false
+      },
+      {
+        "label": "📄 hello.py",
+        "allow_expand": false
+      },
+      {
+        "label": "📄 readme.md",
+        "allow_expand": false
+      }
+    ]
+  },
+  {
+    "check": "memory-completion-choices",
+    "state": {
+      "backend": "openai",
+      "model": "changed-audit-model",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-audit00001",
+      "input": "/codebase memory ",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": true,
+      "suggestions": [
+        "-> on",
+        "-> off"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 2 (chat-c2e2cf28be) Mouse tab",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "check": "thinking-first-enter",
+    "state": {
+      "backend": "openai",
+      "model": "changed-audit-model",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-audit00001",
+      "input": "/thinking ",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/thinking | Set thinking mode"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 2 (chat-c2e2cf28be) Mouse tab",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "check": "thinking-second-enter",
+    "state": {
+      "backend": "openai",
+      "model": "changed-audit-model",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/thinking | Set thinking mode"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Thinking controls are not available for the current backend/model.",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "check": "codex-thinking-no-modal",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-audit00001",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/thinking | Set thinking mode"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /thinking <low, medium, high, xhigh, max, ultra>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "check": "command-discovery",
+    "palette": [
+      {
+        "name": "Help",
+        "cmd": "help",
+        "arg": ""
+      },
+      {
+        "name": "Exit",
+        "cmd": "exit",
+        "arg": ""
+      },
+      {
+        "name": "New Chat",
+        "cmd": "new",
+        "arg": ""
+      },
+      {
+        "name": "Open Chats",
+        "cmd": "tabs",
+        "arg": ""
+      },
+      {
+        "name": "Close Chat",
+        "cmd": "close",
+        "arg": ""
+      },
+      {
+        "name": "Queue",
+        "cmd": "queue",
+        "arg": ""
+      },
+      {
+        "name": "Clear Queue",
+        "cmd": "queue",
+        "arg": "clear"
+      },
+      {
+        "name": "Clear Screen",
+        "cmd": "clear",
+        "arg": ""
+      },
+      {
+        "name": "Status",
+        "cmd": "status",
+        "arg": ""
+      },
+      {
+        "name": "Sessions",
+        "cmd": "sessions",
+        "arg": ""
+      },
+      {
+        "name": "History",
+        "cmd": "history",
+        "arg": ""
+      },
+      {
+        "name": "Toggle Sidebar",
+        "cmd": "sidebar",
+        "arg": ""
+      },
+      {
+        "name": "Models",
+        "cmd": "models",
+        "arg": ""
+      },
+      {
+        "name": "Tools",
+        "cmd": "tools",
+        "arg": ""
+      },
+      {
+        "name": "Tool Details",
+        "cmd": "details",
+        "arg": "toggle"
+      },
+      {
+        "name": "Open Session",
+        "cmd": "open",
+        "arg": ""
+      },
+      {
+        "name": "Codebase Memory",
+        "cmd": "codebase",
+        "arg": "memory"
+      },
+      {
+        "name": "Reasoning: None",
+        "cmd": "reasoning",
+        "arg": "none"
+      },
+      {
+        "name": "Reasoning: Low",
+        "cmd": "reasoning",
+        "arg": "low"
+      },
+      {
+        "name": "Reasoning: Medium",
+        "cmd": "reasoning",
+        "arg": "medium"
+      },
+      {
+        "name": "Reasoning: High",
+        "cmd": "reasoning",
+        "arg": "high"
+      },
+      {
+        "name": "Reasoning: XHigh",
+        "cmd": "reasoning",
+        "arg": "xhigh"
+      },
+      {
+        "name": "Reasoning: Max",
+        "cmd": "reasoning",
+        "arg": "max"
+      },
+      {
+        "name": "Reasoning: Ultra",
+        "cmd": "reasoning",
+        "arg": "ultra"
+      },
+      {
+        "name": "Thinking",
+        "cmd": "thinking",
+        "arg": ""
+      },
+      {
+        "name": "Mode: Plan",
+        "cmd": "mode",
+        "arg": "plan"
+      },
+      {
+        "name": "Mode: Code",
+        "cmd": "mode",
+        "arg": "code"
+      },
+      {
+        "name": "Mode: Debug",
+        "cmd": "mode",
+        "arg": "debug"
+      },
+      {
+        "name": "Mode: Review",
+        "cmd": "mode",
+        "arg": "review"
+      },
+      {
+        "name": "Sandbox: Read Only",
+        "cmd": "sandbox",
+        "arg": "read-only"
+      },
+      {
+        "name": "Sandbox: Workspace Write",
+        "cmd": "sandbox",
+        "arg": "workspace-write"
+      },
+      {
+        "name": "Sandbox: Full Access",
+        "cmd": "sandbox",
+        "arg": "danger-full-access"
+      },
+      {
+        "name": "Auto Research On",
+        "cmd": "autoresearch",
+        "arg": "on"
+      },
+      {
+        "name": "Auto Research Off",
+        "cmd": "autoresearch",
+        "arg": "off"
+      },
+      {
+        "name": "Codex Login",
+        "cmd": "codex",
+        "arg": "login"
+      },
+      {
+        "name": "Codex Logout",
+        "cmd": "codex",
+        "arg": "logout"
+      },
+      {
+        "name": "Codex Status",
+        "cmd": "codex",
+        "arg": "status"
+      },
+      {
+        "name": "Codex Account",
+        "cmd": "codex",
+        "arg": "account"
+      },
+      {
+        "name": "Codex Models",
+        "cmd": "codex",
+        "arg": "models"
+      },
+      {
+        "name": "Codex Doctor",
+        "cmd": "codex",
+        "arg": "doctor"
+      },
+      {
+        "name": "Codex Repair Config",
+        "cmd": "codex",
+        "arg": "repair-config"
+      }
+    ],
+    "slash": [
+      "/apikey",
+      "/autoresearch",
+      "/backend",
+      "/cd",
+      "/chats",
+      "/clear",
+      "/close",
+      "/codebase",
+      "/codex",
+      "/compose",
+      "/details",
+      "/exit",
+      "/help",
+      "/history",
+      "/load",
+      "/mode",
+      "/model",
+      "/models",
+      "/new",
+      "/open",
+      "/queue",
+      "/reasoning",
+      "/research",
+      "/reset",
+      "/rounds",
+      "/sandbox",
+      "/sessions",
+      "/status",
+      "/steer",
+      "/switch",
+      "/tabs",
+      "/thinking",
+      "/tools"
+    ],
+    "parse_tab_separator": [
+      "unknown",
+      "/mode\tplan"
+    ]
+  }
+]

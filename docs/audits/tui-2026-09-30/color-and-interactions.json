@@ -1,0 +1,4341 @@
+[
+  {
+    "capture": "startup-color-120x40",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          6
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          120,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "startup-color-80x24",
+    "size": [
+      80,
+      24
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          80,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          78,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          78,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          26,
+          78,
+          9
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          16,
+          80,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          17,
+          78,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          22,
+          78,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          23,
+          80,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          24,
+          24,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [],
+      "cmd_log_visible": true,
+      "cmd_log": "  Codebase memory scan complete: 100%\n  files=3 changed=0 deleted=0 chunks=4\n  saved=<audit-root>\\workspace\\.mtp\\\nmemory\\codebase.sqlite",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/status",
+    "natural": false,
+    "dispatches": [
+      [
+        "status",
+        ""
+      ]
+    ],
+    "elapsed_ms": 203,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/status | Show session state"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭─────────────────────────────── Session Status ───────────────────────────────╮\n│   session            chat-coloraudit01                                       │\n│   label              Audit                                                   │\n│   backend            openai                                                  │\n│   model              gpt-4o-mini                                             │\n│   mode               code                                                    │\n│   sandbox            workspace-write                                         │\n│   rounds             8                                                       │\n│   tool_details       off                                                     │\n│   cwd                C:\\Users\\prajw\\AppData\\Local\\Temp\\mtp-tui-audit-2026…   │\n│   turns              0                                                       │\n│   autoresearch       False                                                   │\n│   codebase_memory    on                                                      │\n│   memory_chunks      4                                                       │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "status-color-120x40",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          26,
+          118,
+          19
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          120,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/status | Show session state"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭─────────────────────────────── Session Status ───────────────────────────────╮\n│   session            chat-coloraudit01                                       │\n│   label              Audit                                                   │\n│   backend            openai                                                  │\n│   model              gpt-4o-mini                                             │\n│   mode               code                                                    │\n│   sandbox            workspace-write                                         │\n│   rounds             8                                                       │\n│   tool_details       off                                                     │\n│   cwd                C:\\Users\\prajw\\AppData\\Local\\Temp\\mtp-tui-audit-2026…   │\n│   turns              0                                                       │\n│   autoresearch       False                                                   │\n│   codebase_memory    on                                                      │\n│   memory_chunks      4                                                       │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/help",
+    "natural": false,
+    "dispatches": [
+      [
+        "help",
+        ""
+      ]
+    ],
+    "elapsed_ms": 179,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "/",
+      "focus": "suggestion-list",
+      "screen": "Screen",
+      "suggestions_visible": true,
+      "suggestions": [
+        "/help | Show this reference",
+        "/exit | Quit TUI",
+        "/clear | Clear chat log",
+        "/status | Show session state",
+        "/sessions | List saved sessions",
+        "/history | Show recent turns",
+        "/tools | Show last tool events",
+        "/details | Toggle expanded tool metadata",
+        "/backend | Switch provider",
+        "/model | Switch model",
+        "/models | Show all models",
+        "/apikey | Manage API keys",
+        "/reasoning | Set reasoning level",
+        "/thinking | Set thinking mode",
+        "/mode | Set harness mode",
+        "/sandbox | Cycle sandbox mode",
+        "/load | Load a session",
+        "/open | Open a session",
+        "/new | Open a new chat (Ctrl+N)",
+        "/reset | Open a new chat",
+        "/tabs | List open chats",
+        "/switch | Switch chat (Alt+1..9)",
+        "/close | Close a chat",
+        "/queue | Show or clear queued messages",
+        "/steer | Add a message to the running reply",
+        "/rounds | Set max rounds",
+        "/cd | Change directory",
+        "/autoresearch | Toggle auto-research",
+        "/research | Set research instructions",
+        "/codebase | Codebase memory",
+        "/codex | Codex auth and diagnostics"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Command Reference ──────────────────────────────╮\n│        Navigation    /help                       Show this reference         │\n│                      /exit                       Quit TUI                    │\n│                      /clear                      Clear chat log              │\n│                      /status                     Show session state          │\n│                      /sessions                   List saved sessions         │\n│                      /history                    Show recent turns           │\n│                      /tools                      Show last tool events       │\n│                      /details                    Toggle expanded tool        │\n│                                                  metadata                    │\n│                      /open <session_id>          Open a saved session        │\n│                                                  transcript                  │\n│   Backend & Model    /backend <p>                Switch provider             │\n│                      /model <name>               Switch model                │\n│                      /models                     Show all models             │\n│                      /apikey                     Manage API keys             │\n│                      /codex                      Manage Codex ChatGPT auth   │\n│                      <login|logout|status>                                   │\n│                      /codex account              Show Codex email,           │\n│                                                  profile, usage              │\n│                      /codex doctor               Run Codex diagnostics       │\n│                      /codex repair-config        Repair known Codex config   │\n│                                                  issues                      │\n│                      /reasoning                  Set reasoning level /       │\n│                                                  thinking mode               │\n│                      /thinking                   Set thinking mode           │\n│                      /mode                       Set harness mode            │\n│                      /sandbox                    Cycle sandbox mode          │\n│                      /codebase memory            Enable, disable, or         │\n│                                                  inspect project memory      │\n│             Chats    /new                        Open a new chat; others     │\n│                                                  keep running                │\n│                      /tabs                       List open chats             │\n│                      /switch <n>                 Switch to chat n            │\n│                      /close                      Close a chat (not while     │\n│                                                  it runs)                    │\n│                      /queue                      Show or drop queued         │\n│                                                  messages                    │\n│                      /steer <text>               Add a message to the        │\n│                                                  running reply (MTP          │\n│                                                  backends)                   │\n│              Keys    Enter                       Send, or queue while a      │\n│                                                  reply runs                  │\n│                      Ctrl+X                      Stop the running reply      │\n│                      Ctrl+G                      Send the newest queued      │\n│                                                  message into the running    │\n│                                                  reply                       │\n│                      Ctrl+N                      New chat                    │\n│                      Alt+1..9                    Switch chat                 │\n│                      Alt+Left/Right              Previous / next chat        │\n│                      Ctrl+P                      Commands                    │\n│                      Ctrl+B                      Sidebar                     │\n│                      Ctrl+Y                      Copy last reply             │\n│                      Ctrl+L                      Clear the screen            │\n│                      Esc                         Close suggestions, then     │\n│                                                  stop the reply              │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "help-color-120x40",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          26,
+          118,
+          20
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          22,
+          120,
+          17
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "/",
+      "focus": "suggestion-list",
+      "screen": "Screen",
+      "suggestions_visible": true,
+      "suggestions": [
+        "/help | Show this reference",
+        "/exit | Quit TUI",
+        "/clear | Clear chat log",
+        "/status | Show session state",
+        "/sessions | List saved sessions",
+        "/history | Show recent turns",
+        "/tools | Show last tool events",
+        "/details | Toggle expanded tool metadata",
+        "/backend | Switch provider",
+        "/model | Switch model",
+        "/models | Show all models",
+        "/apikey | Manage API keys",
+        "/reasoning | Set reasoning level",
+        "/thinking | Set thinking mode",
+        "/mode | Set harness mode",
+        "/sandbox | Cycle sandbox mode",
+        "/load | Load a session",
+        "/open | Open a session",
+        "/new | Open a new chat (Ctrl+N)",
+        "/reset | Open a new chat",
+        "/tabs | List open chats",
+        "/switch | Switch chat (Alt+1..9)",
+        "/close | Close a chat",
+        "/queue | Show or clear queued messages",
+        "/steer | Add a message to the running reply",
+        "/rounds | Set max rounds",
+        "/cd | Change directory",
+        "/autoresearch | Toggle auto-research",
+        "/research | Set research instructions",
+        "/codebase | Codebase memory",
+        "/codex | Codex auth and diagnostics"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Command Reference ──────────────────────────────╮\n│        Navigation    /help                       Show this reference         │\n│                      /exit                       Quit TUI                    │\n│                      /clear                      Clear chat log              │\n│                      /status                     Show session state          │\n│                      /sessions                   List saved sessions         │\n│                      /history                    Show recent turns           │\n│                      /tools                      Show last tool events       │\n│                      /details                    Toggle expanded tool        │\n│                                                  metadata                    │\n│                      /open <session_id>          Open a saved session        │\n│                                                  transcript                  │\n│   Backend & Model    /backend <p>                Switch provider             │\n│                      /model <name>               Switch model                │\n│                      /models                     Show all models             │\n│                      /apikey                     Manage API keys             │\n│                      /codex                      Manage Codex ChatGPT auth   │\n│                      <login|logout|status>                                   │\n│                      /codex account              Show Codex email,           │\n│                                                  profile, usage              │\n│                      /codex doctor               Run Codex diagnostics       │\n│                      /codex repair-config        Repair known Codex config   │\n│                                                  issues                      │\n│                      /reasoning                  Set reasoning level /       │\n│                                                  thinking mode               │\n│                      /thinking                   Set thinking mode           │\n│                      /mode                       Set harness mode            │\n│                      /sandbox                    Cycle sandbox mode          │\n│                      /codebase memory            Enable, disable, or         │\n│                                                  inspect project memory      │\n│             Chats    /new                        Open a new chat; others     │\n│                                                  keep running                │\n│                      /tabs                       List open chats             │\n│                      /switch <n>                 Switch to chat n            │\n│                      /close                      Close a chat (not while     │\n│                                                  it runs)                    │\n│                      /queue                      Show or drop queued         │\n│                                                  messages                    │\n│                      /steer <text>               Add a message to the        │\n│                                                  running reply (MTP          │\n│                                                  backends)                   │\n│              Keys    Enter                       Send, or queue while a      │\n│                                                  reply runs                  │\n│                      Ctrl+X                      Stop the running reply      │\n│                      Ctrl+G                      Send the newest queued      │\n│                                                  message into the running    │\n│                                                  reply                       │\n│                      Ctrl+N                      New chat                    │\n│                      Alt+1..9                    Switch chat                 │\n│                      Alt+Left/Right              Previous / next chat        │\n│                      Ctrl+P                      Commands                    │\n│                      Ctrl+B                      Sidebar                     │\n│                      Ctrl+Y                      Copy last reply             │\n│                      Ctrl+L                      Clear the screen            │\n│                      Esc                         Close suggestions, then     │\n│                                                  stop the reply              │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "escape-from-help",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "/",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/help | Show this reference",
+        "/exit | Quit TUI",
+        "/clear | Clear chat log",
+        "/status | Show session state",
+        "/sessions | List saved sessions",
+        "/history | Show recent turns",
+        "/tools | Show last tool events",
+        "/details | Toggle expanded tool metadata",
+        "/backend | Switch provider",
+        "/model | Switch model",
+        "/models | Show all models",
+        "/apikey | Manage API keys",
+        "/reasoning | Set reasoning level",
+        "/thinking | Set thinking mode",
+        "/mode | Set harness mode",
+        "/sandbox | Cycle sandbox mode",
+        "/load | Load a session",
+        "/open | Open a session",
+        "/new | Open a new chat (Ctrl+N)",
+        "/reset | Open a new chat",
+        "/tabs | List open chats",
+        "/switch | Switch chat (Alt+1..9)",
+        "/close | Close a chat",
+        "/queue | Show or clear queued messages",
+        "/steer | Add a message to the running reply",
+        "/rounds | Set max rounds",
+        "/cd | Change directory",
+        "/autoresearch | Toggle auto-research",
+        "/research | Set research instructions",
+        "/codebase | Codebase memory",
+        "/codex | Codex auth and diagnostics"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Command Reference ──────────────────────────────╮\n│        Navigation    /help                       Show this reference         │\n│                      /exit                       Quit TUI                    │\n│                      /clear                      Clear chat log              │\n│                      /status                     Show session state          │\n│                      /sessions                   List saved sessions         │\n│                      /history                    Show recent turns           │\n│                      /tools                      Show last tool events       │\n│                      /details                    Toggle expanded tool        │\n│                                                  metadata                    │\n│                      /open <session_id>          Open a saved session        │\n│                                                  transcript                  │\n│   Backend & Model    /backend <p>                Switch provider             │\n│                      /model <name>               Switch model                │\n│                      /models                     Show all models             │\n│                      /apikey                     Manage API keys             │\n│                      /codex                      Manage Codex ChatGPT auth   │\n│                      <login|logout|status>                                   │\n│                      /codex account              Show Codex email,           │\n│                                                  profile, usage              │\n│                      /codex doctor               Run Codex diagnostics       │\n│                      /codex repair-config        Repair known Codex config   │\n│                                                  issues                      │\n│                      /reasoning                  Set reasoning level /       │\n│                                                  thinking mode               │\n│                      /thinking                   Set thinking mode           │\n│                      /mode                       Set harness mode            │\n│                      /sandbox                    Cycle sandbox mode          │\n│                      /codebase memory            Enable, disable, or         │\n│                                                  inspect project memory      │\n│             Chats    /new                        Open a new chat; others     │\n│                                                  keep running                │\n│                      /tabs                       List open chats             │\n│                      /switch <n>                 Switch to chat n            │\n│                      /close                      Close a chat (not while     │\n│                                                  it runs)                    │\n│                      /queue                      Show or drop queued         │\n│                                                  messages                    │\n│                      /steer <text>               Add a message to the        │\n│                                                  running reply (MTP          │\n│                                                  backends)                   │\n│              Keys    Enter                       Send, or queue while a      │\n│                                                  reply runs                  │\n│                      Ctrl+X                      Stop the running reply      │\n│                      Ctrl+G                      Send the newest queued      │\n│                                                  message into the running    │\n│                                                  reply                       │\n│                      Ctrl+N                      New chat                    │\n│                      Alt+1..9                    Switch chat                 │\n│                      Alt+Left/Right              Previous / next chat        │\n│                      Ctrl+P                      Commands                    │\n│                      Ctrl+B                      Sidebar                     │\n│                      Ctrl+Y                      Copy last reply             │\n│                      Ctrl+L                      Clear the screen            │\n│                      Esc                         Close suggestions, then     │\n│                                                  stop the reply              │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/backend ollama",
+    "natural": false,
+    "dispatches": [
+      [
+        "backend",
+        "ollama"
+      ]
+    ],
+    "elapsed_ms": 201,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> ollama"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Switching to ollama...\n  Provider ollama not configured. Set API key first with /apikey set ollama \n<key>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/backend lmstudio",
+    "natural": false,
+    "dispatches": [
+      [
+        "backend",
+        "lmstudio"
+      ]
+    ],
+    "elapsed_ms": 169,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Switching to lmstudio...\n  Provider lmstudio not configured. Set API key first with /apikey set lmstudio \n<key>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/cd <audit-root>\\workspace\\space folder",
+    "natural": false,
+    "dispatches": [
+      [
+        "cd",
+        "<audit-root>\\workspace\\space folder"
+      ]
+    ],
+    "elapsed_ms": 213,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace\\space folder",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ cwd set to \n<audit-root>\\workspace\\space folder",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/cd \"<audit-root>\\workspace\\space folder\"",
+    "natural": false,
+    "dispatches": [
+      [
+        "cd",
+        "\"<audit-root>\\workspace\\space folder\""
+      ]
+    ],
+    "elapsed_ms": 140,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace\\space folder",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✗ Not found: \n<repo>\\\"C:\\Users\\prajw\\AppData\\Local\\Temp\\mtp-tui-audit-20\n260930\\workspace\\space folder\"",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/cd <audit-root>\\workspace",
+    "natural": false,
+    "dispatches": [
+      [
+        "cd",
+        "<audit-root>\\workspace"
+      ]
+    ],
+    "elapsed_ms": 164,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ cwd set to \n<audit-root>\\workspace",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/cd ..",
+    "natural": false,
+    "dispatches": [
+      [
+        "cd",
+        ".."
+      ]
+    ],
+    "elapsed_ms": 171,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "C:\\Users\\prajw\\Downloads",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ cwd set to C:\\Users\\prajw\\Downloads",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/cd <audit-root>\\workspace",
+    "natural": false,
+    "dispatches": [
+      [
+        "cd",
+        "<audit-root>\\workspace"
+      ]
+    ],
+    "elapsed_ms": 147,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ cwd set to \n<audit-root>\\workspace",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/model gpt-4o-mini",
+    "natural": false,
+    "dispatches": [
+      [
+        "model",
+        "gpt-4o-mini"
+      ]
+    ],
+    "elapsed_ms": 169,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "model-feedback-color",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          27,
+          118,
+          4
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          120,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/sandbox nonsense",
+    "natural": false,
+    "dispatches": [
+      [
+        "sandbox",
+        "nonsense"
+      ]
+    ],
+    "elapsed_ms": 195,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "nonsense",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "sandbox-feedback-color",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          27,
+          118,
+          4
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          120,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          71,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "nonsense",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> lmstudio"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/sandbox workspace-write",
+    "natural": false,
+    "dispatches": [
+      [
+        "sandbox",
+        "workspace-write"
+      ]
+    ],
+    "elapsed_ms": 154,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> workspace-write"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "shift-enter-at-end",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "First line",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> workspace-write"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "cursor": [
+      0,
+      10
+    ]
+  },
+  {
+    "interaction": "type-after-shift-enter",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "First lineSecond line",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> workspace-write"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "pasted-multiline-color",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          27,
+          118,
+          4
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          120,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 1,
+      "session": "chat-coloraudit01",
+      "input": "First line\nSecond line",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> workspace-write"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "draft-in-new-chat",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "First line\nSecond line",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> workspace-write"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "draft-back-in-first-chat",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-coloraudit01",
+      "input": "First line\nSecond line",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> workspace-write"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "attachment-first-chat",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-coloraudit01",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "@hello.py"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "pending": [
+      "hello.py"
+    ]
+  },
+  {
+    "interaction": "attachment-leaks-to-second-chat",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "@hello.py"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "pending": [
+      "hello.py"
+    ]
+  },
+  {
+    "capture": "attachment-other-chat-color",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          0,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          2,
+          118,
+          22
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          24,
+          118,
+          4
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          29,
+          120,
+          10
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "@hello.py"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "spaced-attachment-badge",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "@file with spaces.txt"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "pending": [
+      "file with spaces.txt"
+    ]
+  },
+  {
+    "interaction": "spaced-attachment-parser",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "@file with spaces.txt"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "attachments": [],
+    "warnings": []
+  },
+  {
+    "command": "/clear",
+    "natural": false,
+    "dispatches": [
+      [
+        "clear",
+        ""
+      ]
+    ],
+    "elapsed_ms": 169,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "sidebar-color-120x40",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          80,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          78,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          78,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          80,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          78,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          78,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          64,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          80,
+          0,
+          40,
+          39
+        ],
+        "display": true,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "sidebar-color-80x24",
+    "size": [
+      80,
+      24
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          40,
+          27
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          27,
+          38,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          29,
+          38,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          16,
+          40,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          17,
+          38,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          22,
+          38,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          23,
+          80,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          24,
+          24,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          40,
+          0,
+          40,
+          23
+        ],
+        "display": true,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "sidebar-color-40x15",
+    "size": [
+      40,
+      15
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          1,
+          514
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          514,
+          0,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          516,
+          1,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          14,
+          2,
+          0
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          15,
+          4,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          20,
+          2,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          14,
+          40,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          15,
+          1,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          40,
+          14
+        ],
+        "display": true,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-openai",
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/clear | Clear chat log"
+      ],
+      "cmd_log_visible": false,
+      "cmd_log": "",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 137,
+    "state": {
+      "backend": "openai",
+      "model": "gpt-4o-mini",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ○        gpt-4o                                                          │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-groq",
+    "state": {
+      "backend": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ○        gpt-4o                                                          │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 134,
+    "state": {
+      "backend": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        llama-3.3-70b-versatile                                         │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-claude",
+    "state": {
+      "backend": "claude",
+      "model": "claude-3-5-sonnet-20241022",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        llama-3.3-70b-versatile                                         │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 185,
+    "state": {
+      "backend": "claude",
+      "model": "claude-3-5-sonnet-20241022",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        claude-3-5-sonnet-20241022                                      │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-gemini",
+    "state": {
+      "backend": "gemini",
+      "model": "gemini-2.0-flash-exp",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        claude-3-5-sonnet-20241022                                      │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 157,
+    "state": {
+      "backend": "gemini",
+      "model": "gemini-2.0-flash-exp",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        gemini-2.0-flash-exp                                            │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-openrouter",
+    "state": {
+      "backend": "openrouter",
+      "model": "qwen/qwen-2.5-72b-instruct",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        gemini-2.0-flash-exp                                            │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 167,
+    "state": {
+      "backend": "openrouter",
+      "model": "qwen/qwen-2.5-72b-instruct",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        qwen/qwen-2.5-72b-instruct                                      │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-mistral",
+    "state": {
+      "backend": "mistral",
+      "model": "mistral-large-latest",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        qwen/qwen-2.5-72b-instruct                                      │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 159,
+    "state": {
+      "backend": "mistral",
+      "model": "mistral-large-latest",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        mistral-large-latest                                            │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-cohere",
+    "state": {
+      "backend": "cohere",
+      "model": "command-r-plus-08-2024",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        mistral-large-latest                                            │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 168,
+    "state": {
+      "backend": "cohere",
+      "model": "command-r-plus-08-2024",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        command-r-plus-08-2024                                          │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-sambanova",
+    "state": {
+      "backend": "sambanova",
+      "model": "Meta-Llama-3.1-405B-Instruct",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        command-r-plus-08-2024                                          │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 133,
+    "state": {
+      "backend": "sambanova",
+      "model": "Meta-Llama-3.1-405B-Instruct",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        Meta-Llama-3.1-405B-Instruct                                    │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-cerebras",
+    "state": {
+      "backend": "cerebras",
+      "model": "llama3.1-70b",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        Meta-Llama-3.1-405B-Instruct                                    │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 207,
+    "state": {
+      "backend": "cerebras",
+      "model": "llama3.1-70b",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        llama3.1-70b                                                    │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-deepseek",
+    "state": {
+      "backend": "deepseek",
+      "model": "deepseek-chat",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        llama3.1-70b                                                    │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 155,
+    "state": {
+      "backend": "deepseek",
+      "model": "deepseek-chat",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        deepseek-chat                                                   │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-togetherai",
+    "state": {
+      "backend": "togetherai",
+      "model": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        deepseek-chat                                                   │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 170,
+    "state": {
+      "backend": "togetherai",
+      "model": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo                    │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-fireworksai",
+    "state": {
+      "backend": "fireworksai",
+      "model": "accounts/fireworks/models/llama-v3p1-70b-instruct",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo                    │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 160,
+    "state": {
+      "backend": "fireworksai",
+      "model": "accounts/fireworks/models/llama-v3p1-70b-instruct",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        accounts/fireworks/models/llama-v3p1-70b-instruct               │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-xiaomi",
+    "state": {
+      "backend": "xiaomi",
+      "model": "mimo-v2.5-pro",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        accounts/fireworks/models/llama-v3p1-70b-instruct               │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": {
+      "label": "thinking",
+      "options": [
+        "on",
+        "off"
+      ]
+    }
+  },
+  {
+    "command": "/thinking on",
+    "natural": false,
+    "dispatches": [
+      [
+        "thinking",
+        "on"
+      ]
+    ],
+    "elapsed_ms": 203,
+    "state": {
+      "backend": "xiaomi",
+      "model": "mimo-v2.5-pro",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> on"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Xiaomi thinking set to on",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/thinking off",
+    "natural": false,
+    "dispatches": [
+      [
+        "thinking",
+        "off"
+      ]
+    ],
+    "elapsed_ms": 170,
+    "state": {
+      "backend": "xiaomi",
+      "model": "mimo-v2.5-pro",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> off"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Xiaomi thinking set to off",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/thinking invalid",
+    "natural": false,
+    "dispatches": [
+      [
+        "thinking",
+        "invalid"
+      ]
+    ],
+    "elapsed_ms": 176,
+    "state": {
+      "backend": "xiaomi",
+      "model": "mimo-v2.5-pro",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> off"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /thinking <on, off>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 185,
+    "state": {
+      "backend": "xiaomi",
+      "model": "mimo-v2.5-pro",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        mimo-v2.5-pro                                                   │\n│   ○        mimo-v2.5                                                       │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│ Levels: on, off                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-ollama",
+    "state": {
+      "backend": "ollama",
+      "model": "llama3.2:3b",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        mimo-v2.5-pro                                                   │\n│   ○        mimo-v2.5                                                       │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│ Levels: on, off                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 154,
+    "state": {
+      "backend": "ollama",
+      "model": "llama3.2:3b",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        llama3.2:3b                                                     │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "provider-thinking-lmstudio",
+    "state": {
+      "backend": "lmstudio",
+      "model": "qwen3",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        llama3.2:3b                                                     │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "capability": null
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 154,
+    "state": {
+      "backend": "lmstudio",
+      "model": "qwen3",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭───────────────────────────── Available Models ─────────────────────────────╮\n│   ●        qwen3                                                           │\n│                                                                            │\n│ Reasoning: medium                                                          │\n│                                                                            │\n│                                                                            │\n│ Usage: /model <name>  or  /model add <provider> <name>                     │\n╰────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/backend codex",
+    "natural": false,
+    "dispatches": [
+      [
+        "backend",
+        "codex"
+      ]
+    ],
+    "elapsed_ms": 201,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> codex"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Switching to codex...\n  ✓ Switched to Codex backend.",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/models",
+    "natural": false,
+    "dispatches": [
+      [
+        "models",
+        ""
+      ]
+    ],
+    "elapsed_ms": 139,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭────────────────────────────── Available Models ──────────────────────────────╮\n│   ●    [1]    gpt-6.1-sol    Coding and everyday work                        │\n│                              Reasoning: low, medium, high, xhigh, max,       │\n│                              ultra                                           │\n│   ○    [2]    gpt-6-astra    Complex reasoning                               │\n│                              Reasoning: low, medium, high, xhigh, max,       │\n│                              ultra                                           │\n│   ○    [3]    gpt-6-sol      General coding                                  │\n│                              Reasoning: low, medium, high, xhigh, max,       │\n│                              ultra                                           │\n│   ○    [4]    gpt-6-luna     Faster tasks                                    │\n│                              Reasoning: low, medium, high, xhigh, max        │\n│                                                                              │\n│ Reasoning: medium                                                            │\n│ Levels: low, medium, high, xhigh, max, ultra                                 │\n│ Catalog: Fallback catalog; discovery pending                                 │\n│                                                                              │\n│ Usage: /model <name>  or  /model add <provider> <name>                       │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning none",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "none"
+      ]
+    ],
+    "elapsed_ms": 156,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /reasoning <low, medium, high, xhigh, max, ultra>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning minimal",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "minimal"
+      ]
+    ],
+    "elapsed_ms": 156,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "/models | Show all models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /reasoning <low, medium, high, xhigh, max, ultra>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning low",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "low"
+      ]
+    ],
+    "elapsed_ms": 181,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> low"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Reasoning set to low",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning medium",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "medium"
+      ]
+    ],
+    "elapsed_ms": 219,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> medium"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Reasoning set to medium",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning high",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "high"
+      ]
+    ],
+    "elapsed_ms": 152,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> high",
+        "-> xhigh"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Reasoning set to high",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning xhigh",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "xhigh"
+      ]
+    ],
+    "elapsed_ms": 135,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> xhigh"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Reasoning set to xhigh",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning max",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "max"
+      ]
+    ],
+    "elapsed_ms": 139,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> max"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Reasoning set to max",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning ultra",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "ultra"
+      ]
+    ],
+    "elapsed_ms": 139,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> ultra"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ✓ Reasoning set to ultra",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/reasoning invalid",
+    "natural": false,
+    "dispatches": [
+      [
+        "reasoning",
+        "invalid"
+      ]
+    ],
+    "elapsed_ms": 179,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> ultra"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /reasoning <low, medium, high, xhigh, max, ultra>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "capture": "codex-thinking-hidden-color",
+    "size": [
+      120,
+      40
+    ],
+    "widgets": {
+      "#boot-screen": {
+        "region": [
+          0,
+          0,
+          120,
+          23
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversation-tabs": {
+        "region": [
+          1,
+          23,
+          118,
+          2
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#conversations": {
+        "region": [
+          0,
+          25,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#cmd-log": {
+        "region": [
+          1,
+          26,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-panel": {
+        "region": [
+          1,
+          32,
+          120,
+          7
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#chat-input": {
+        "region": [
+          2,
+          33,
+          118,
+          5
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#input-hints": {
+        "region": [
+          2,
+          38,
+          118,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-bar": {
+        "region": [
+          0,
+          39,
+          120,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#status-main": {
+        "region": [
+          2,
+          40,
+          47,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#thinking-badge": {
+        "region": [
+          49,
+          40,
+          17,
+          1
+        ],
+        "display": true,
+        "visible": true
+      },
+      "#sidebar": {
+        "region": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "display": false,
+        "visible": true
+      }
+    },
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> ultra"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /reasoning <low, medium, high, xhigh, max, ultra>",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/codex status --help",
+    "natural": false,
+    "dispatches": [
+      [
+        "codex",
+        "status --help"
+      ]
+    ],
+    "elapsed_ms": 166,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> ultra"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Checking Codex login status...\n  Show login status\n\nUsage: codex login status [OPTIONS]\n\nOptions:\n  -c, --config <key=value>\n          Override a configuration value that would otherwise be loaded from \n`~/.codex/config.toml`.\n          Use a dotted path (`foo.bar.baz`) to override nested values. The \n`value` portion is parsed\n          as TOML. If it fails to parse as TOML, the raw string is used as a \nliteral.\n          \n          Examples: - `-c model=\"o3\"` - `-c \n'sandbox_permissions=[\"disk-full-read-access\"]'` - `-c\n          shell_environment_policy.inherit=all`\n\n      --enable <FEATURE>\n          Enable a feature (repeatable). Equivalent to `-c features.<name>=true`\n\n      --disable <FEATURE>\n          Disable a feature (repeatable). Equivalent to `-c \nfeatures.<name>=false`\n\n  -h, --help\n          Print help (see a summary with '-h')",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/codex models",
+    "natural": false,
+    "dispatches": [
+      [
+        "codex",
+        "models"
+      ]
+    ],
+    "elapsed_ms": 486,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭────────────────────────────── Available Models ──────────────────────────────╮\n│   ●    [1]    gpt-6.1-sol      Latest workhorse model for coding and         │\n│                                everyday work.                                │\n│                                Reasoning: low, medium, high, xhigh, max,     │\n│                                ultra                                         │\n│   ○    [2]    gpt-6-astra      Frontier intelligence for the most            │\n│                                demanding work.                               │\n│                                Reasoning: low, medium, high, xhigh, max,     │\n│                                ultra                                         │\n│   ○    [3]    gpt-6-sol        Previous generation workhorse model.          │\n│                                Reasoning: low, medium, high, xhigh, max,     │\n│                                ultra                                         │\n│   ○    [4]    gpt-6-luna       Fast and affordable model for easier tasks.   │\n│                                Reasoning: low, medium, high, xhigh, max      │\n│   ○    [5]    gpt-5.6-sol      Older generation workhorse model.             │\n│                                Reasoning: low, medium, high, xhigh, max,     │\n│                                ultra                                         │\n│   ○    [6]    gpt-5.6-terra    Older balanced model for straightforward      │\n│                                work.                                         │\n│                                Reasoning: low, medium, high, xhigh, max,     │\n│                                ultra                                         │\n│   ○    [7]    gpt-5.6-luna     Older fast and efficient model.               │\n│                                Reasoning: low, medium, high, xhigh, max      │\n│   ○    [8]    gpt-5.5          Legacy coding model.                          │\n│                                Reasoning: low, medium, high, xhigh           │\n│                                                                              │\n│ Reasoning: ultra                                                             │\n│ Levels: low, medium, high, xhigh, max, ultra                                 │\n│ Catalog: Codex app-server                                                    │\n│                                                                              │\n│ Usage: /model <name>  or  /model add <provider> <name>                       │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "palette-Status",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "╭─────────────────────────────── Session Status ───────────────────────────────╮\n│   session            chat-03dfc7e98e                                         │\n│   label              (none)                                                  │\n│   backend            codex                                                   │\n│   model              (codex-default)                                         │\n│   mode               code                                                    │\n│   reasoning          ultra                                                   │\n│   sandbox            workspace-write                                         │\n│   rounds             8                                                       │\n│   tool_details       off                                                     │\n│   cwd                C:\\Users\\prajw\\AppData\\Local\\Temp\\mtp-tui-audit-2026…   │\n│   turns              0                                                       │\n│   autoresearch       False                                                   │\n│   codebase_memory    on                                                      │\n│   memory_chunks      4                                                       │\n╰──────────────────────────────────────────────────────────────────────────────╯",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "CommandInput"
+  },
+  {
+    "interaction": "palette-Open Chats",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "   1  Audit  (openai)\n*2  New chat  (codex)\nAlt+1..9 or /switch <n> to switch, Ctrl+N or /new for a new chat, /close [n] to \nclose.",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "CommandInput"
+  },
+  {
+    "interaction": "palette-Clear Queue",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Cleared 0 queued messages.",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "CommandInput"
+  },
+  {
+    "interaction": "palette-Toggle Sidebar",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Cleared 0 queued messages.",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "CommandInput"
+  },
+  {
+    "interaction": "palette-Thinking",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 2,
+      "session": "chat-03dfc7e98e",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  Usage: /thinking <low, medium, high, xhigh, max, ultra>",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "CommandInput"
+  },
+  {
+    "interaction": "palette-New Chat",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "CommandInput"
+  },
+  {
+    "interaction": "palette-Help",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    },
+    "focus_type": "InputArea"
+  },
+  {
+    "command": "/clear",
+    "natural": false,
+    "dispatches": [],
+    "elapsed_ms": 154,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/clear",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/codebase memory",
+    "natural": false,
+    "dispatches": [],
+    "elapsed_ms": 155,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/codebase memory",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "memory-picker-direct",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/codebase memory",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    },
+    "options": [
+      "-> models"
+    ]
+  },
+  {
+    "command": "/codebase memory ",
+    "natural": true,
+    "dispatches": [],
+    "elapsed_ms": 158,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/codebase memory ",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "interaction": "memory-picker-natural",
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/codebase memory ",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    },
+    "options": [
+      "-> models"
+    ]
+  },
+  {
+    "command": "/codebase memory off",
+    "natural": false,
+    "dispatches": [],
+    "elapsed_ms": 156,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/codebase memory off",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    }
+  },
+  {
+    "command": "/clear",
+    "natural": false,
+    "dispatches": [],
+    "elapsed_ms": 154,
+    "state": {
+      "backend": "codex",
+      "model": "(codex-default)",
+      "mode": "code",
+      "sandbox": "workspace-write",
+      "rounds": 8,
+      "cwd": "<audit-root>\\workspace",
+      "autoresearch": false,
+      "research": null,
+      "chats": 3,
+      "session": "chat-010489aba3",
+      "input": "/clear",
+      "focus": "chat-input",
+      "screen": "Screen",
+      "suggestions_visible": false,
+      "suggestions": [
+        "-> models"
+      ],
+      "cmd_log_visible": true,
+      "cmd_log": "  ? New chat 3 (chat-010489aba3)",
+      "turns": 0,
+      "agent_created": false
+    }
+  }
+]
