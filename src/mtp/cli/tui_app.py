@@ -38,8 +38,9 @@ from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_codex_backend import CodexRunHandle
 from .tui_live_events import LiveEvent, LiveEventBatcher
 from .tui_commands import MTPCommandProvider, parse_slash_command
+from .tui_persistence import SessionSaver
 from .tui_workers import (
-    save_tui_session, record_turn, collect_prompt_attachments,
+    record_turn, snapshot_tui_session, summary_for_turn, collect_prompt_attachments,
     run_prompt_blocking, switch_backend,
 )
 
@@ -63,6 +64,14 @@ class LiveEventBatch(Message):
         super().__init__()
         self.run_id = run_id
         self.events = events
+
+
+class SessionSaveFailed(Message):
+    """A background session write failed. Posted from the writer thread."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self.error = error
 
 
 @dataclass(slots=True)
@@ -131,6 +140,9 @@ class MTPApp(App):
         self._codex_run_handle: CodexRunHandle | None = None
         self._pending_turn_widgets: list[Widget] = []
         self._live_model_name: str = ""
+        self.session_saver = SessionSaver(
+            on_error=lambda exc: self.post_message(SessionSaveFailed(exc)),
+        )
         self._live_flush_timer: Timer | None = None
 
     @property
@@ -160,6 +172,17 @@ class MTPApp(App):
         self._show_boot_info()
         self.set_timer(0.5, self._focus_input)
         self._request_background_memory_refresh(reason="startup", prefer_full_scan=True)
+
+    def _save_session(self) -> None:
+        """Snapshot state now; the write happens debounced on a background thread."""
+        self.session_saver.request(snapshot_tui_session(self._state))
+
+    def on_session_save_failed(self, message: SessionSaveFailed) -> None:
+        self.notify(f"Could not save session: {message.error}", title="Save failed", severity="error")
+
+    def on_unmount(self) -> None:
+        # Nothing queued may be lost when the app exits.
+        self.session_saver.close()
 
     def _focus_input(self) -> None:
         try:
@@ -1107,7 +1130,7 @@ class MTPApp(App):
                 result: CodebaseScanResult = event.worker.result
                 self._state.cwd = result.root
                 self._state.agent = None
-                save_tui_session(self._state)
+                self._save_session()
                 self._refresh_prompt_label()
                 self._refresh_status_bar()
                 self._append_cmd_log(
@@ -1170,8 +1193,9 @@ class MTPApp(App):
             if self._live_thinking_text and not result.thinking_text:
                 result.thinking_text = self._live_thinking_text.strip()
 
-            # Record the turn with the original raw prompt
-            record_turn(self._state, self._pending_raw_prompt, result)
+            # Record the turn with the original raw prompt; disk work happens off-thread.
+            record_turn(self._state, self._pending_raw_prompt, result, persist=False)
+            self.session_saver.run_task(summary_for_turn(self._state, self._pending_raw_prompt, result).record)
             self._request_background_memory_refresh(reason="post-run")
 
             # Auto-generate title from first prompt
@@ -1179,7 +1203,7 @@ class MTPApp(App):
                 self._state.session_label = generate_session_title_from_prompt(
                     self._state.transcript[0].prompt
                 )
-                save_tui_session(self._state)
+            self._save_session()
 
             self._state.last_tool_events = list(result.tool_events)
             self._state.last_tool_details = list(result.tool_details)
@@ -1317,7 +1341,7 @@ class MTPApp(App):
             s.last_usage_lines = []
             s.agent = None
             s.codex_session_id = None
-            save_tui_session(s)
+            self._save_session()
             self._clear_pending_turn_display()
             self._reset_live_preview()
             self._rebuild_chat_log()
@@ -1384,7 +1408,7 @@ class MTPApp(App):
                 try:
                     s.harness_mode = normalize_harness_mode(arg)
                     s.agent = None
-                    save_tui_session(s)
+                    self._save_session()
                     chat_log.add_command_result(f"✓ Mode set to {s.harness_mode}")
                 except ValueError:
                     chat_log.add_command_result(f"Available: {', '.join(HARNESS_MODES)}")
@@ -1392,7 +1416,7 @@ class MTPApp(App):
         elif cmd == "rounds":
             if arg and arg.isdigit() and int(arg) >= 1:
                 s.max_rounds = int(arg)
-                save_tui_session(s)
+                self._save_session()
                 chat_log.add_command_result(f"✓ max_rounds set to {arg}")
             else:
                 chat_log.add_command_result("Usage: /rounds <positive-int>")
@@ -1404,7 +1428,7 @@ class MTPApp(App):
                 if target.exists() and target.is_dir():
                     s.cwd = target
                     s.agent = None
-                    save_tui_session(s)
+                    self._save_session()
                     chat_log.add_command_result(f"✓ cwd set to {target}")
                     self._refresh_prompt_label()
                 else:
@@ -1412,12 +1436,12 @@ class MTPApp(App):
         elif cmd == "autoresearch":
             s.autoresearch = arg.lower() == "on"
             s.agent = None
-            save_tui_session(s)
+            self._save_session()
             chat_log.add_command_result(f"✓ autoresearch={s.autoresearch}")
         elif cmd == "research":
             s.research_instructions = arg or None
             s.agent = None
-            save_tui_session(s)
+            self._save_session()
             chat_log.add_command_result("✓ research_instructions updated")
         elif cmd == "codebase":
             self._handle_codebase(arg, chat_log)
@@ -1554,7 +1578,7 @@ class MTPApp(App):
                     result = codex_backend.run_codex_logout(codex_bin, extra_args)
 
             self._state.codex_session_id = None
-            save_tui_session(self._state)
+            self._save_session()
             if result.return_code == 0:
                 chat_log.add_command_result(f"Codex {action} completed.")
             else:
@@ -1723,7 +1747,7 @@ class MTPApp(App):
 
         if s.backend == "codex":
             s.codex_model = None if resolved.lower() in {"default", "auto"} else resolved
-            save_tui_session(s)
+            self._save_session()
             chat_log.add_command_result(f"✓ Codex model: {s.codex_model or '(default)'}")
         else:
             from .tui_settings import (
@@ -1737,7 +1761,7 @@ class MTPApp(App):
             entry["model"] = resolved
             save_provider_settings(settings_path, settings)
             s.agent = None
-            save_tui_session(s)
+            self._save_session()
             chat_log.add_command_result(f"✓ {s.backend} model: {resolved}")
         self._refresh_status_bar()
         self._refresh_sidebar()
@@ -1756,7 +1780,7 @@ class MTPApp(App):
                 "full": "danger-full-access", "danger-full-access": "danger-full-access",
             }
             s.codex_sandbox_mode = mode_map.get(arg.lower(), arg.lower())
-        save_tui_session(s)
+        self._save_session()
         icons = {"read-only": "🔒", "workspace-write": "✓", "danger-full-access": "⚠"}
         icon = icons.get(s.codex_sandbox_mode, "?")
         chat_log.add_command_result(f"✓ Sandbox: {s.codex_sandbox_mode} {icon}")

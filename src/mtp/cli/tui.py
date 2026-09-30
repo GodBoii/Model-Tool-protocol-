@@ -208,7 +208,11 @@ def run_tui(args: Any) -> int:
         return 1
 
     app = MTPApp(state=state)
-    app.run()
+    try:
+        app.run()
+    finally:
+        # on_unmount also closes it; this covers exits that skip unmount.
+        app.session_saver.close()
     return 0
 
 

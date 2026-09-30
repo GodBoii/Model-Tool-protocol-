@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -28,45 +29,73 @@ if TYPE_CHECKING:
 
 # ── Session persistence ──────────────────────────────────────────────────────
 
-def save_tui_session(state: TUIState) -> None:
-    """Persist current TUI state to the session store."""
-    from mtp import SessionRecord
-    existing = state.session_store.get_session(
-        session_id=state.session_id, user_id=state.user_id
-    )
-    metadata = dict(existing.metadata if existing else {})
-    metadata["tui"] = {
-        "session_label": state.session_label,
-        "backend": state.backend,
-        "cwd": str(state.cwd),
-        "codex_model": state.codex_model,
-        "openai_model": state.openai_model,
-        "codex_session_id": state.codex_session_id,
-        "reasoning_effort": state.reasoning_effort,
-        "harness_mode": state.harness_mode,
-        "codex_sandbox_mode": state.codex_sandbox_mode,
-        "max_rounds": state.max_rounds,
-        "autoresearch": state.autoresearch,
-        "research_instructions": state.research_instructions,
-        "last_usage_lines": list(state.last_usage_lines),
-        "turn_count": len(state.transcript),
-        "updated_at": now_label(),
-        "transcript": serialize_transcript(state.transcript),
-    }
-    record = SessionRecord(
+@dataclass(frozen=True, slots=True)
+class SessionSnapshot:
+    """Everything needed to persist a TUI session, detached from live state."""
+
+    store: Any
+    session_id: str
+    user_id: str | None
+    tui_metadata: dict[str, Any]
+
+
+def snapshot_tui_session(state: TUIState) -> SessionSnapshot:
+    """Capture state for saving. No I/O; call on the thread that owns ``state``."""
+    return SessionSnapshot(
+        store=state.session_store,
         session_id=state.session_id,
-        user_id=state.user_id or (existing.user_id if existing else None),
+        user_id=state.user_id,
+        tui_metadata={
+            "session_label": state.session_label,
+            "backend": state.backend,
+            "cwd": str(state.cwd),
+            "codex_model": state.codex_model,
+            "openai_model": state.openai_model,
+            "codex_session_id": state.codex_session_id,
+            "reasoning_effort": state.reasoning_effort,
+            "harness_mode": state.harness_mode,
+            "codex_sandbox_mode": state.codex_sandbox_mode,
+            "max_rounds": state.max_rounds,
+            "autoresearch": state.autoresearch,
+            "research_instructions": state.research_instructions,
+            "last_usage_lines": list(state.last_usage_lines),
+            "turn_count": len(state.transcript),
+            "updated_at": now_label(),
+            "transcript": serialize_transcript(state.transcript),
+        },
+    )
+
+
+def write_session_snapshot(snapshot: SessionSnapshot) -> None:
+    """Merge ``snapshot`` into the stored session record. Safe off the UI thread."""
+    from mtp import SessionRecord
+    store = snapshot.store
+    existing = store.get_session(session_id=snapshot.session_id, user_id=snapshot.user_id)
+    metadata = dict(existing.metadata if existing else {})
+    metadata["tui"] = snapshot.tui_metadata
+    record = SessionRecord(
+        session_id=snapshot.session_id,
+        user_id=snapshot.user_id or (existing.user_id if existing else None),
         metadata=metadata,
         messages=list(existing.messages) if existing else [],
         runs=list(existing.runs) if existing else [],
         created_at=existing.created_at if existing else now_label(),
         updated_at=existing.updated_at if existing else now_label(),
     )
-    state.session_store.upsert_session(record)
+    store.upsert_session(record)
 
 
-def record_turn(state: TUIState, prompt: str, result: ChatResult) -> None:
-    """Record a conversation turn and save."""
+def save_tui_session(state: TUIState) -> None:
+    """Persist current TUI state to the session store synchronously."""
+    write_session_snapshot(snapshot_tui_session(state))
+
+
+def record_turn(state: TUIState, prompt: str, result: ChatResult, *, persist: bool = True) -> None:
+    """Record a conversation turn.
+
+    With ``persist=False`` the caller is responsible for saving the session
+    and for the codebase summary (the TUI does both off the UI thread).
+    """
     state.transcript.append(TranscriptTurn(
         prompt=prompt,
         response=result.text,
@@ -82,25 +111,48 @@ def record_turn(state: TUIState, prompt: str, result: ChatResult) -> None:
     ))
     state.last_usage_lines = list(result.usage_lines)
     state.last_tool_details = list(result.tool_details)
-    save_tui_session(state)
-    _record_codebase_conversation_summary(state, prompt, result)
+    if persist:
+        save_tui_session(state)
+        summary_for_turn(state, prompt, result).record()
 
 
-def _record_codebase_conversation_summary(state: TUIState, prompt: str, result: ChatResult) -> None:
-    """Store a lightweight post-turn summary when codebase memory is enabled."""
-    try:
-        from mtp.codebase import CodebaseMemory
+@dataclass(frozen=True, slots=True)
+class TurnSummary:
+    """Inputs for the codebase-memory conversation summary of one turn."""
 
-        memory = CodebaseMemory(state.cwd)
-        memory.record_conversation_summary(
-            session_id=state.session_id,
-            prompt=prompt,
-            response=result.text,
-            backend=state.backend,
-            model=active_model_name(state),
-        )
-    except Exception:
-        return
+    cwd: Path
+    session_id: str
+    prompt: str
+    response: str
+    backend: str
+    model: str
+
+    def record(self) -> None:
+        """Store the summary when codebase memory is enabled. Safe off the UI thread."""
+        try:
+            from mtp.codebase import CodebaseMemory
+
+            CodebaseMemory(self.cwd).record_conversation_summary(
+                session_id=self.session_id,
+                prompt=self.prompt,
+                response=self.response,
+                backend=self.backend,
+                model=self.model,
+            )
+        except Exception:
+            # Best effort: memory is optional and must never fail a turn.
+            return
+
+
+def summary_for_turn(state: TUIState, prompt: str, result: ChatResult) -> TurnSummary:
+    return TurnSummary(
+        cwd=state.cwd,
+        session_id=state.session_id,
+        prompt=prompt,
+        response=result.text,
+        backend=state.backend,
+        model=state.transcript[-1].model if state.transcript else active_model_name(state),
+    )
 
 
 # ── Attachment collection ────────────────────────────────────────────────────

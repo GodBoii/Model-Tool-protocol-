@@ -227,3 +227,47 @@ def test_escape_cancels_codex_run(tmp_path: Path, fake_runner: FakeRunner) -> No
             await pilot.pause(0.3)
 
     asyncio.run(scenario())
+
+
+def test_completed_turn_is_saved_off_the_ui_thread(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    state = _make_state(tmp_path)
+    ui_thread_writes: list[str] = []
+    real_upsert = state.session_store.upsert_session
+
+    def tracking_upsert(record: Any) -> Any:
+        ui_thread_writes.append(threading.current_thread().name)
+        return real_upsert(record)
+
+    state.session_store.upsert_session = tracking_upsert  # type: ignore[method-assign]
+
+    async def scenario() -> None:
+        app = MTPApp(state=state)
+        async with app.run_test(size=(120, 40)) as pilot:
+            app._send_prompt("remember me")
+            run = await fake_runner.wait_started()
+            run["release"].set()
+            await pilot.pause(0.3)
+            await asyncio.to_thread(app.session_saver.flush)
+            stored = state.session_store.get_session(session_id=state.session_id, user_id=state.user_id)
+            assert stored is not None
+            assert stored.metadata["tui"]["turn_count"] == 1
+            assert stored.metadata["tui"]["session_label"]
+
+    asyncio.run(scenario())
+    assert ui_thread_writes, "session was never written"
+    assert all(name.startswith("mtp-session-save") for name in ui_thread_writes)
+
+
+def test_pending_save_is_flushed_on_exit(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    state = _make_state(tmp_path)
+
+    async def scenario() -> None:
+        app = MTPApp(state=state)
+        async with app.run_test(size=(120, 40)) as pilot:
+            app._dispatch_command("rounds", "9")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    stored = state.session_store.get_session(session_id=state.session_id, user_id=state.user_id)
+    assert stored is not None
+    assert stored.metadata["tui"]["max_rounds"] == 9
