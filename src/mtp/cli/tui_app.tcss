@@ -48,8 +48,9 @@ Screen {
     height: 1fr;
 }
 
+/* Tabs is a label row plus an underline row; "auto" makes it fill the screen. */
 #conversation-tabs {
-    height: auto;
+    height: 2;
     margin: 0 1;
 }
 

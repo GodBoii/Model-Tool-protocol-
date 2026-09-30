@@ -311,3 +311,25 @@ def test_every_documented_shortcut_has_a_binding() -> None:
         keys = expand.get(shortcut.keys, [shortcut.keys.lower()])
         for key in keys:
             assert key in bound, f"{shortcut.keys} is documented but not bound"
+
+
+def test_chat_keeps_most_of_the_screen_while_running_with_a_queue(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    async def scenario() -> None:
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(110, 34)) as pilot:
+            app._send_prompt("hello")
+            run = await fake_runner.wait_started()
+            app._send_prompt("queued")
+            await pilot.pause(0.3)
+            assert app.query_one("#conversation-tabs").region.height == 2
+            assert app.active_chat_log.region.height >= 15
+            queue_bar = app.query_one("#queue-bar")
+            input_panel = app.query_one("#input-panel")
+            # The queue sits inside the docked input panel, above the prompt.
+            assert input_panel.region.contains_region(queue_bar.region)
+            run["release"].set()
+            nxt = await fake_runner.wait_started()
+            nxt["release"].set()
+            await pilot.pause(0.3)
+
+    asyncio.run(scenario())

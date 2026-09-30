@@ -43,7 +43,7 @@ from .tui_widgets.boot_screen import BootScreen, BootInfo
 from .tui_widgets.thinking_dialog import ThinkingDialog
 from .tui_codex_backend import CodexRunHandle
 from .tui_conversation import Conversation, LiveTurn, QueuedPrompt
-from .tui_widgets.queue_bar import QueueBar
+from .tui_widgets.queue_bar import QueueBar  # mounted inside InputPanel
 from .tui_indexes import (
     FILE_INDEX_MAX_AGE, BackgroundIndex, FileList, FileSignature, SessionSummary,
     file_signature, load_session_summaries, scan_workspace_files,
@@ -363,7 +363,8 @@ class MTPApp(App):
                 # App-level jobs (codebase indexing); run spinners live in each view.
                 yield SpinnerWidget(id="task-spinner")
                 yield RichLog(id="cmd-log", markup=True, highlight=True, wrap=True)
-                yield QueueBar(id="queue-bar")
+                # InputPanel is docked to the bottom and holds the queue bar,
+                # so queued messages sit right above where you type.
                 yield InputPanel(id="input-panel")
             yield Sidebar(id="sidebar")
         yield StatusBar(id="status-bar")

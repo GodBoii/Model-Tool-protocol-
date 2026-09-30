@@ -15,6 +15,7 @@ from textual import events
 from rich.text import Text
 
 from ..tui_shortcuts import hint_bar_text
+from .queue_bar import QueueBar
 
 
 class PromptLabel(Static):
@@ -195,6 +196,7 @@ class InputPanel(Vertical):
 
     def compose(self) -> ComposeResult:
         yield OptionList(id="suggestion-list")
+        yield QueueBar(id="queue-bar")
         yield Horizontal(id="attachment-container")
         yield PromptLabel(id="prompt-label")
         yield InputArea(id="chat-input")
