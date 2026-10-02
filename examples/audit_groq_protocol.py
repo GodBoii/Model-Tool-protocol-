@@ -187,6 +187,7 @@ def run_case(model: str, name: str) -> dict[str, Any]:
                 "passed": outputs == expected
                 and count == len(expected)
                 and modes == expected_modes
+                and overlapping(timeline) == (name != "sequential_refs")
                 and all(r.success for r in output.tool_results),
             }
         )
