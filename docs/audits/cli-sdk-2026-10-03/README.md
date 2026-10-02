@@ -24,3 +24,16 @@ only Groq is authorized for live provider requests.
 The final report will include a provider-by-provider documentation matrix,
 severity-ranked findings with code locations and repros, protocol execution
 evidence, TUI screenshots, and a prioritized list of additional providers.
+
+## Additional protocol checks
+
+`tests/test_audit_regressions.py` exercises all 15 adapters with synthetic native
+responses and the actual runtime. Its 34 positive checks pass. Nine strict
+expected failures reproduce unresolved defects. Running the same file with
+`--runxfail` confirms nine actual failures and 34 passes.
+
+Live Groq batch probes pass on `qwen/qwen3.8-27b`: one parallel batch of three
+calls, four sequential batches linked by `$ref`, and a mixed parallel/sequential
+graph. Handler timestamps prove overlap for independent calls. The account's
+models endpoint does not list `llama-3.3-70b-versatile`, and requests return 404.
+`openai/gpt-oss-120b` did not meet the single-response batch requirements.

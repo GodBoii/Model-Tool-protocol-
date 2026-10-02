@@ -151,7 +151,7 @@ def run_case(model: str, name: str) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("tmp/groq-audit.json"))
-    parser.add_argument("--models", nargs="+", default=["llama-3.3-70b-versatile", "openai/gpt-oss-120b"])
+    parser.add_argument("--models", nargs="+", default=["qwen/qwen3.8-27b", "openai/gpt-oss-120b"])
     parser.add_argument("--cases", nargs="+", choices=list(CASES), default=list(CASES))
     args = parser.parse_args()
     load_dotenv_if_available(str(Path(__file__).resolve().parents[1] / ".env"))
