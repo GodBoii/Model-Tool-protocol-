@@ -1,0 +1,432 @@
+[
+  {
+    "provider": "openai",
+    "class": "OpenAIToolCallingProvider",
+    "defaults": {
+      "model": "gpt-4o",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True"
+    },
+    "capabilities": {
+      "provider": "openai",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "audio",
+        "file",
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "groq",
+    "class": "GroqToolCallingProvider",
+    "defaults": {
+      "model": "openai/gpt-oss-120b",
+      "api_key": "None",
+      "system_prompt": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True",
+      "encourage_batch_tool_calls": "True",
+      "strict_dependency_mode": "False",
+      "include_reasoning": "None",
+      "reasoning_format": "None",
+      "reasoning_effort": "None",
+      "stream_include_usage": "True"
+    },
+    "capabilities": {
+      "provider": "groq",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": true,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": true,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "openrouter",
+    "class": "OpenRouterToolCallingProvider",
+    "defaults": {
+      "model": "qwen/qwen3.6-plus-preview:free",
+      "api_key": "None",
+      "site_url": "None",
+      "site_name": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto"
+    },
+    "capabilities": {
+      "provider": "openrouter",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": false,
+      "input_modalities": [
+        "audio",
+        "file",
+        "image",
+        "text",
+        "video"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "anthropic",
+    "class": "AnthropicToolCallingProvider",
+    "defaults": {
+      "model": "claude-3-5-sonnet-20241022",
+      "api_key": "None",
+      "max_tokens": "1024",
+      "temperature": "0.0"
+    },
+    "capabilities": {
+      "provider": "anthropic",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "gemini",
+    "class": "GeminiToolCallingProvider",
+    "defaults": {
+      "model": "gemini-2.0-flash",
+      "api_key": "None",
+      "temperature": "0.0"
+    },
+    "capabilities": {
+      "provider": "gemini",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": false,
+      "input_modalities": [
+        "audio",
+        "file",
+        "image",
+        "text",
+        "video"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "cohere",
+    "class": "CohereToolCallingProvider",
+    "defaults": {
+      "model": "command-a-03-2025",
+      "api_key": "None",
+      "temperature": "0.3",
+      "max_tokens": "4096",
+      "preamble": "None",
+      "force_single_step": "False"
+    },
+    "capabilities": {
+      "provider": "cohere",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": false,
+      "input_modalities": [
+        "text"
+      ],
+      "supports_tool_media_output": false,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "basic",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "mistral",
+    "class": "MistralToolCallingProvider",
+    "defaults": {
+      "model": "mistral-large-latest",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True"
+    },
+    "capabilities": {
+      "provider": "mistral",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": false,
+      "input_modalities": [
+        "text"
+      ],
+      "supports_tool_media_output": false,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "basic",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "cerebras",
+    "class": "CerebrasToolCallingProvider",
+    "defaults": {
+      "model": "llama-4-scout-17b-16e-instruct",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True"
+    },
+    "capabilities": {
+      "provider": "cerebras",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "text"
+      ],
+      "supports_tool_media_output": false,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "deepseek",
+    "class": "DeepSeekToolCallingProvider",
+    "defaults": {
+      "model": "deepseek-chat",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True",
+      "capture_reasoning": "True"
+    },
+    "capabilities": {
+      "provider": "deepseek",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "text"
+      ],
+      "supports_tool_media_output": false,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": true,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "sambanova",
+    "class": "SambaNovaToolCallingProvider",
+    "defaults": {
+      "model": "Meta-Llama-3.1-70B-Instruct",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto"
+    },
+    "capabilities": {
+      "provider": "sambanova",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": false,
+      "input_modalities": [
+        "audio",
+        "file",
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "together",
+    "class": "TogetherAIToolCallingProvider",
+    "defaults": {
+      "model": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True",
+      "max_tokens": "4096"
+    },
+    "capabilities": {
+      "provider": "together",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "fireworks",
+    "class": "FireworksAIToolCallingProvider",
+    "defaults": {
+      "model": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True",
+      "max_tokens": "4096",
+      "response_format": "None"
+    },
+    "capabilities": {
+      "provider": "fireworks",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": false,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "xiaomi",
+    "class": "XiaomiToolCallingProvider",
+    "defaults": {
+      "model": "mimo-v2.5-pro",
+      "api_key": "None",
+      "base_url": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True",
+      "thinking_mode": "adaptive",
+      "final_thinking_mode": "enabled",
+      "timeout_seconds": "60.0"
+    },
+    "capabilities": {
+      "provider": "xiaomi",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "audio",
+        "file",
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": true,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": true,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "ollama",
+    "class": "OllamaToolCallingProvider",
+    "defaults": {
+      "model": "qwen3",
+      "host": "None",
+      "api_key": "None",
+      "options": "None",
+      "format": "None",
+      "keep_alive": "None",
+      "think": "None"
+    },
+    "capabilities": {
+      "provider": "ollama",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": true,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  },
+  {
+    "provider": "lmstudio",
+    "class": "LMStudioToolCallingProvider",
+    "defaults": {
+      "model": "qwen3",
+      "base_url": "http://127.0.0.1:1234/v1",
+      "api_key": "None",
+      "temperature": "0.0",
+      "tool_choice": "auto",
+      "parallel_tool_calls": "True"
+    },
+    "capabilities": {
+      "provider": "lmstudio",
+      "supports_tool_calling": true,
+      "supports_parallel_tool_calls": true,
+      "input_modalities": [
+        "image",
+        "text"
+      ],
+      "supports_tool_media_output": true,
+      "supports_finalize_streaming": true,
+      "usage_metrics_quality": "rich",
+      "supports_reasoning_metadata": false,
+      "structured_output_support": "client_validated",
+      "supports_native_async": false,
+      "allow_finalize_stream_fallback": true
+    }
+  }
+]

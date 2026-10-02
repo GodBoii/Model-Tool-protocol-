@@ -1,0 +1,1092 @@
+{
+  "async_events": {
+    "events": [
+      {
+        "type": "run_started",
+        "timestamp": "2026-10-02T21:58:45.571723+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 1,
+        "data": {
+          "user_message": "Use audit_calculate to calculate 17+25, 6*7, and 100-9. These are independent. Return all THREE native tool calls together in ONE response, then report the results.",
+          "max_rounds": 1,
+          "tools_available": 1,
+          "tool_names": [
+            "audit_calculate"
+          ],
+          "direct_tool_names": [
+            "audit_calculate"
+          ],
+          "delegation_tool_names": [],
+          "system_instructions": [
+            "You operate inside the MTP (Model Tool Protocol) harness. MTP is a tool-execution runtime, not a plain chat loop.\n\nCORE HARNESS MODEL:\n- Use the provider's native function/tool-calling channel whenever tools are needed.\n- Do not write JSON plans, XML tool tags, or pseudo-tool syntax in normal assistant text.\n- The runtime converts your native tool_calls into an internal dependency graph and executes it for you.\n- Tool names use 'namespace.action' naming.\n\nHOW MTP EXPECTS TOOL USE:\n- A single native tool_calls response may contain one call or many calls.\n- Inside one single native tool_calls response, you may emit n tool calls when needed.\n- If calls are independent, return them together in one response so MTP can run them in parallel.\n- If a later call depends on an earlier result, still return them in the same native tool_calls response and reference the earlier result with {\"$ref\": \"<call_id>\"} inside arguments.\n- MTP will automatically derive sequential execution from those dependencies.\n- Only split work into another tool round when you truly need results from a previous runtime execution round that are not yet available.\n\nNATIVE TOOL-CALL RESPONSE SHAPE:\n- The provider response shape is like: {\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [...]}}]}.\n- Each tool call item is like: {\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"calculator.add\", \"arguments\": \"{\\\"a\\\":15,\\\"b\\\":27}\"}}.\n- Critical: function.arguments is a JSON string at the provider boundary, not a nested object literal in the raw provider payload.\n\nDEPENDENCY RULES:\n- Never guess intermediate values when a prior tool result is needed.\n- Use literal arguments only for values you already know.\n- Use $ref for any value that must come from a previous tool call result.\n- $ref must point to a real tool-call ID, not a guessed placeholder from another round.\n- MTP automatically derives depends_on from $ref references, so the important thing is to wire dependencies correctly in arguments.\n- When strict_dependency_mode is enabled, explicit dependency wiring is mandatory for same-toolkit multi-call plans.\n\nARGUMENT RULES:\n- Arguments must match the advertised JSON schema exactly.\n- Numbers must be JSON numbers, not strings.\n- Booleans must be true/false, not quoted strings.\n- Arrays and objects must be native JSON values, not stringified JSON inside fields.\n- Do not wrap a $ref object inside a string. Use {\"$ref\":\"call_id\"}, not \"{\\\"$ref\\\":\\\"call_id\\\"}\".\n- Paths should be relative to the configured working directory unless a tool explicitly accepts absolute paths.\n- The optional reasoning argument is only a brief public summary of why the tool is being used; it is not private chain-of-thought.\n\nNATIVE TOOL-CALL PATTERNS:\n- Parallel example: return one native tool_calls response containing multiple independent calls such as calculator.add, calculator.multiply, and calculator.sqrt together.\n- Example provider payload for parallel calls: {\"choices\":[{\"message\":{\"content\":null,\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"calculator.add\",\"arguments\":\"{\\\"a\\\":1,\\\"b\\\":2}\"}},{\"id\":\"call_2\",\"type\":\"function\",\"function\":{\"name\":\"calculator.multiply\",\"arguments\":\"{\\\"a\\\":3,\\\"b\\\":4}\"}},{\"id\":\"call_3\",\"type\":\"function\",\"function\":{\"name\":\"calculator.sqrt\",\"arguments\":\"{\\\"x\\\":9}\"}}]}}]}.\n- Sequential-in-one-response example: emit calculator.subtract(id=\"call_1\", a=18, b=6), calculator.multiply(id=\"call_2\", a=4, b={\"$ref\":\"call_1\"}), calculator.divide(id=\"call_3\", a={\"$ref\":\"call_2\"}, b=3), and calculator.add(id=\"call_4\", a=15, b={\"$ref\":\"call_3\"}). MTP will run these in dependency order even though they were returned in one native tool_calls response.\n- Example provider payload for dependency wiring: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"calculator.add\",\"arguments\":\"{\\\"a\\\":10,\\\"b\\\":5}\"}},{\"id\":\"call_2\",\"type\":\"function\",\"function\":{\"name\":\"calculator.multiply\",\"arguments\":\"{\\\"a\\\":{\\\"$ref\\\":\\\"call_1\\\"},\\\"b\\\":3}\"}}]}}]}.\n\nWHAT TO DO:\n- Use the native tool_calls channel when tools are needed.\n- Batch independent tool calls together in one response.\n- Use $ref when later tool calls depend on earlier tool results.\n- Keep arguments schema-correct.\n\nWHAT NOT TO DO:\n- Do not output tool calls as plain assistant text.\n- Do not output an ExecutionPlan JSON blob in assistant content.\n- Do not output XML tool tags.\n- Do not send numbers or booleans as quoted strings when the schema expects numeric or boolean values.\n- Do not invent intermediate values that should come from prior tool results.\n\nFINAL RESPONSE RULES:\n- Ground the answer in actual tool outputs.\n- If tools are needed, wait for execution rather than inventing results.\n- Keep the final answer concise and directly useful."
+          ],
+          "user_instructions": [],
+          "autoresearch": false,
+          "research_instructions": [],
+          "orchestration_instructions": [],
+          "member_agents": [],
+          "user_id": null,
+          "session_id": null,
+          "metadata": {},
+          "input_validation_error": null,
+          "stream_tool_events": true,
+          "stream_tool_results": true
+        },
+        "user_message": "Use audit_calculate to calculate 17+25, 6*7, and 100-9. These are independent. Return all THREE native tool calls together in ONE response, then report the results.",
+        "max_rounds": 1,
+        "tools_available": 1,
+        "tool_names": [
+          "audit_calculate"
+        ],
+        "direct_tool_names": [
+          "audit_calculate"
+        ],
+        "delegation_tool_names": [],
+        "system_instructions": [
+          "You operate inside the MTP (Model Tool Protocol) harness. MTP is a tool-execution runtime, not a plain chat loop.\n\nCORE HARNESS MODEL:\n- Use the provider's native function/tool-calling channel whenever tools are needed.\n- Do not write JSON plans, XML tool tags, or pseudo-tool syntax in normal assistant text.\n- The runtime converts your native tool_calls into an internal dependency graph and executes it for you.\n- Tool names use 'namespace.action' naming.\n\nHOW MTP EXPECTS TOOL USE:\n- A single native tool_calls response may contain one call or many calls.\n- Inside one single native tool_calls response, you may emit n tool calls when needed.\n- If calls are independent, return them together in one response so MTP can run them in parallel.\n- If a later call depends on an earlier result, still return them in the same native tool_calls response and reference the earlier result with {\"$ref\": \"<call_id>\"} inside arguments.\n- MTP will automatically derive sequential execution from those dependencies.\n- Only split work into another tool round when you truly need results from a previous runtime execution round that are not yet available.\n\nNATIVE TOOL-CALL RESPONSE SHAPE:\n- The provider response shape is like: {\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [...]}}]}.\n- Each tool call item is like: {\"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"calculator.add\", \"arguments\": \"{\\\"a\\\":15,\\\"b\\\":27}\"}}.\n- Critical: function.arguments is a JSON string at the provider boundary, not a nested object literal in the raw provider payload.\n\nDEPENDENCY RULES:\n- Never guess intermediate values when a prior tool result is needed.\n- Use literal arguments only for values you already know.\n- Use $ref for any value that must come from a previous tool call result.\n- $ref must point to a real tool-call ID, not a guessed placeholder from another round.\n- MTP automatically derives depends_on from $ref references, so the important thing is to wire dependencies correctly in arguments.\n- When strict_dependency_mode is enabled, explicit dependency wiring is mandatory for same-toolkit multi-call plans.\n\nARGUMENT RULES:\n- Arguments must match the advertised JSON schema exactly.\n- Numbers must be JSON numbers, not strings.\n- Booleans must be true/false, not quoted strings.\n- Arrays and objects must be native JSON values, not stringified JSON inside fields.\n- Do not wrap a $ref object inside a string. Use {\"$ref\":\"call_id\"}, not \"{\\\"$ref\\\":\\\"call_id\\\"}\".\n- Paths should be relative to the configured working directory unless a tool explicitly accepts absolute paths.\n- The optional reasoning argument is only a brief public summary of why the tool is being used; it is not private chain-of-thought.\n\nNATIVE TOOL-CALL PATTERNS:\n- Parallel example: return one native tool_calls response containing multiple independent calls such as calculator.add, calculator.multiply, and calculator.sqrt together.\n- Example provider payload for parallel calls: {\"choices\":[{\"message\":{\"content\":null,\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"calculator.add\",\"arguments\":\"{\\\"a\\\":1,\\\"b\\\":2}\"}},{\"id\":\"call_2\",\"type\":\"function\",\"function\":{\"name\":\"calculator.multiply\",\"arguments\":\"{\\\"a\\\":3,\\\"b\\\":4}\"}},{\"id\":\"call_3\",\"type\":\"function\",\"function\":{\"name\":\"calculator.sqrt\",\"arguments\":\"{\\\"x\\\":9}\"}}]}}]}.\n- Sequential-in-one-response example: emit calculator.subtract(id=\"call_1\", a=18, b=6), calculator.multiply(id=\"call_2\", a=4, b={\"$ref\":\"call_1\"}), calculator.divide(id=\"call_3\", a={\"$ref\":\"call_2\"}, b=3), and calculator.add(id=\"call_4\", a=15, b={\"$ref\":\"call_3\"}). MTP will run these in dependency order even though they were returned in one native tool_calls response.\n- Example provider payload for dependency wiring: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"calculator.add\",\"arguments\":\"{\\\"a\\\":10,\\\"b\\\":5}\"}},{\"id\":\"call_2\",\"type\":\"function\",\"function\":{\"name\":\"calculator.multiply\",\"arguments\":\"{\\\"a\\\":{\\\"$ref\\\":\\\"call_1\\\"},\\\"b\\\":3}\"}}]}}]}.\n\nWHAT TO DO:\n- Use the native tool_calls channel when tools are needed.\n- Batch independent tool calls together in one response.\n- Use $ref when later tool calls depend on earlier tool results.\n- Keep arguments schema-correct.\n\nWHAT NOT TO DO:\n- Do not output tool calls as plain assistant text.\n- Do not output an ExecutionPlan JSON blob in assistant content.\n- Do not output XML tool tags.\n- Do not send numbers or booleans as quoted strings when the schema expects numeric or boolean values.\n- Do not invent intermediate values that should come from prior tool results.\n\nFINAL RESPONSE RULES:\n- Ground the answer in actual tool outputs.\n- If tools are needed, wait for execution rather than inventing results.\n- Keep the final answer concise and directly useful."
+        ],
+        "user_instructions": [],
+        "autoresearch": false,
+        "research_instructions": [],
+        "orchestration_instructions": [],
+        "member_agents": [],
+        "user_id": null,
+        "session_id": null,
+        "metadata": {},
+        "input_validation_error": null,
+        "stream_tool_events": true,
+        "stream_tool_results": true
+      },
+      {
+        "type": "round_started",
+        "timestamp": "2026-10-02T21:58:45.571749+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 2,
+        "data": {
+          "round": 1
+        },
+        "round": 1
+      },
+      {
+        "type": "llm_response",
+        "timestamp": "2026-10-02T21:58:46.823969+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 3,
+        "data": {
+          "round": 1,
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b",
+          "usage": {
+            "input_tokens": 1754,
+            "output_tokens": 209,
+            "total_tokens": 1963
+          },
+          "rate_limits": null,
+          "reasoning": null,
+          "duration_seconds": 1.2522058999893488,
+          "has_plan": true,
+          "has_response": false
+        },
+        "round": 1,
+        "provider": "groq",
+        "model": "qwen/qwen3.8-27b",
+        "usage": {
+          "input_tokens": 1754,
+          "output_tokens": 209,
+          "total_tokens": 1963
+        },
+        "rate_limits": null,
+        "reasoning": null,
+        "duration_seconds": 1.2522058999893488,
+        "has_plan": true,
+        "has_response": false
+      },
+      {
+        "type": "plan_received",
+        "timestamp": "2026-10-02T21:58:46.823991+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 4,
+        "data": {
+          "round": 1,
+          "batches": [
+            {
+              "mode": "parallel",
+              "calls": [
+                "audit_calculate",
+                "audit_calculate",
+                "audit_calculate"
+              ],
+              "call_ids": [
+                "ntn1rbw6n",
+                "84w7a6qg7",
+                "sp3p0bvsw"
+              ]
+            }
+          ],
+          "tool_call_source": "native_tool_calls",
+          "raw_tool_call_count": 3,
+          "derived_batch_count": 1,
+          "derived_batch_modes": [
+            "parallel"
+          ]
+        },
+        "round": 1,
+        "batches": [
+          {
+            "mode": "parallel",
+            "calls": [
+              "audit_calculate",
+              "audit_calculate",
+              "audit_calculate"
+            ],
+            "call_ids": [
+              "ntn1rbw6n",
+              "84w7a6qg7",
+              "sp3p0bvsw"
+            ]
+          }
+        ],
+        "tool_call_source": "native_tool_calls",
+        "raw_tool_call_count": 3,
+        "derived_batch_count": 1,
+        "derived_batch_modes": [
+          "parallel"
+        ]
+      },
+      {
+        "type": "assistant_tool_message",
+        "timestamp": "2026-10-02T21:58:46.824021+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 5,
+        "data": {
+          "round": 1,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "id": "ntn1rbw6n",
+                "type": "function",
+                "function": {
+                  "name": "audit_calculate",
+                  "arguments": "{\"a\":17,\"b\":25,\"operation\":\"add\",\"reasoning\":\"Compute 17+25\"}"
+                },
+                "reasoning": null
+              },
+              {
+                "id": "84w7a6qg7",
+                "type": "function",
+                "function": {
+                  "name": "audit_calculate",
+                  "arguments": "{\"a\":6,\"b\":7,\"operation\":\"multiply\",\"reasoning\":\"Compute 6*7\"}"
+                },
+                "reasoning": null
+              },
+              {
+                "id": "sp3p0bvsw",
+                "type": "function",
+                "function": {
+                  "name": "audit_calculate",
+                  "arguments": "{\"a\":100,\"b\":9,\"operation\":\"subtract\",\"reasoning\":\"Compute 100-9\"}"
+                },
+                "reasoning": null
+              }
+            ]
+          }
+        },
+        "round": 1,
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "ntn1rbw6n",
+              "type": "function",
+              "function": {
+                "name": "audit_calculate",
+                "arguments": "{\"a\":17,\"b\":25,\"operation\":\"add\",\"reasoning\":\"Compute 17+25\"}"
+              },
+              "reasoning": null
+            },
+            {
+              "id": "84w7a6qg7",
+              "type": "function",
+              "function": {
+                "name": "audit_calculate",
+                "arguments": "{\"a\":6,\"b\":7,\"operation\":\"multiply\",\"reasoning\":\"Compute 6*7\"}"
+              },
+              "reasoning": null
+            },
+            {
+              "id": "sp3p0bvsw",
+              "type": "function",
+              "function": {
+                "name": "audit_calculate",
+                "arguments": "{\"a\":100,\"b\":9,\"operation\":\"subtract\",\"reasoning\":\"Compute 100-9\"}"
+              },
+              "reasoning": null
+            }
+          ]
+        }
+      },
+      {
+        "type": "batch_started",
+        "timestamp": "2026-10-02T21:58:46.824028+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 6,
+        "data": {
+          "round": 1,
+          "batch_index": 1,
+          "mode": "parallel",
+          "call_ids": [
+            "ntn1rbw6n",
+            "84w7a6qg7",
+            "sp3p0bvsw"
+          ]
+        },
+        "round": 1,
+        "batch_index": 1,
+        "mode": "parallel",
+        "call_ids": [
+          "ntn1rbw6n",
+          "84w7a6qg7",
+          "sp3p0bvsw"
+        ]
+      },
+      {
+        "type": "tool_started",
+        "timestamp": "2026-10-02T21:58:46.824034+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 7,
+        "data": {
+          "round": 1,
+          "batch_index": 1,
+          "call_id": "ntn1rbw6n",
+          "tool_name": "audit_calculate",
+          "arguments": {
+            "a": 17,
+            "b": 25,
+            "operation": "add"
+          },
+          "depends_on": [],
+          "reasoning": "Compute 17+25"
+        },
+        "round": 1,
+        "batch_index": 1,
+        "call_id": "ntn1rbw6n",
+        "tool_name": "audit_calculate",
+        "arguments": {
+          "a": 17,
+          "b": 25,
+          "operation": "add"
+        },
+        "depends_on": [],
+        "reasoning": "Compute 17+25"
+      },
+      {
+        "type": "tool_started",
+        "timestamp": "2026-10-02T21:58:46.824040+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 8,
+        "data": {
+          "round": 1,
+          "batch_index": 1,
+          "call_id": "84w7a6qg7",
+          "tool_name": "audit_calculate",
+          "arguments": {
+            "a": 6,
+            "b": 7,
+            "operation": "multiply"
+          },
+          "depends_on": [],
+          "reasoning": "Compute 6*7"
+        },
+        "round": 1,
+        "batch_index": 1,
+        "call_id": "84w7a6qg7",
+        "tool_name": "audit_calculate",
+        "arguments": {
+          "a": 6,
+          "b": 7,
+          "operation": "multiply"
+        },
+        "depends_on": [],
+        "reasoning": "Compute 6*7"
+      },
+      {
+        "type": "tool_started",
+        "timestamp": "2026-10-02T21:58:46.824047+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 9,
+        "data": {
+          "round": 1,
+          "batch_index": 1,
+          "call_id": "sp3p0bvsw",
+          "tool_name": "audit_calculate",
+          "arguments": {
+            "a": 100,
+            "b": 9,
+            "operation": "subtract"
+          },
+          "depends_on": [],
+          "reasoning": "Compute 100-9"
+        },
+        "round": 1,
+        "batch_index": 1,
+        "call_id": "sp3p0bvsw",
+        "tool_name": "audit_calculate",
+        "arguments": {
+          "a": 100,
+          "b": 9,
+          "operation": "subtract"
+        },
+        "depends_on": [],
+        "reasoning": "Compute 100-9"
+      },
+      {
+        "type": "tool_finished",
+        "timestamp": "2026-10-02T21:58:46.979499+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 10,
+        "data": {
+          "round": 1,
+          "call_id": "ntn1rbw6n",
+          "tool_name": "audit_calculate",
+          "success": true,
+          "cached": false,
+          "approval": "allow",
+          "output": 42,
+          "error": null,
+          "reasoning": "Compute 17+25",
+          "media_counts": {
+            "images": 0,
+            "videos": 0,
+            "audios": 0,
+            "files": 0
+          }
+        },
+        "round": 1,
+        "call_id": "ntn1rbw6n",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "cached": false,
+        "approval": "allow",
+        "output": 42,
+        "error": null,
+        "reasoning": "Compute 17+25",
+        "media_counts": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0,
+          "files": 0
+        }
+      },
+      {
+        "type": "tool_finished",
+        "timestamp": "2026-10-02T21:58:46.979522+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 11,
+        "data": {
+          "round": 1,
+          "call_id": "84w7a6qg7",
+          "tool_name": "audit_calculate",
+          "success": true,
+          "cached": false,
+          "approval": "allow",
+          "output": 42,
+          "error": null,
+          "reasoning": "Compute 6*7",
+          "media_counts": {
+            "images": 0,
+            "videos": 0,
+            "audios": 0,
+            "files": 0
+          }
+        },
+        "round": 1,
+        "call_id": "84w7a6qg7",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "cached": false,
+        "approval": "allow",
+        "output": 42,
+        "error": null,
+        "reasoning": "Compute 6*7",
+        "media_counts": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0,
+          "files": 0
+        }
+      },
+      {
+        "type": "tool_finished",
+        "timestamp": "2026-10-02T21:58:46.979531+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 12,
+        "data": {
+          "round": 1,
+          "call_id": "sp3p0bvsw",
+          "tool_name": "audit_calculate",
+          "success": true,
+          "cached": false,
+          "approval": "allow",
+          "output": 91,
+          "error": null,
+          "reasoning": "Compute 100-9",
+          "media_counts": {
+            "images": 0,
+            "videos": 0,
+            "audios": 0,
+            "files": 0
+          }
+        },
+        "round": 1,
+        "call_id": "sp3p0bvsw",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "cached": false,
+        "approval": "allow",
+        "output": 91,
+        "error": null,
+        "reasoning": "Compute 100-9",
+        "media_counts": {
+          "images": 0,
+          "videos": 0,
+          "audios": 0,
+          "files": 0
+        }
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.320526+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 13,
+        "data": {
+          "chunk": "Results",
+          "source": "finalize_stream"
+        },
+        "chunk": "Results",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.332421+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 14,
+        "data": {
+          "chunk": ":",
+          "source": "finalize_stream"
+        },
+        "chunk": ":",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.336297+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 15,
+        "data": {
+          "chunk": "\n",
+          "source": "finalize_stream"
+        },
+        "chunk": "\n",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.336520+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 16,
+        "data": {
+          "chunk": "-",
+          "source": "finalize_stream"
+        },
+        "chunk": "-",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.336725+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 17,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.336926+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 18,
+        "data": {
+          "chunk": "1",
+          "source": "finalize_stream"
+        },
+        "chunk": "1",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.337120+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 19,
+        "data": {
+          "chunk": "7",
+          "source": "finalize_stream"
+        },
+        "chunk": "7",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.337283+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 20,
+        "data": {
+          "chunk": " +",
+          "source": "finalize_stream"
+        },
+        "chunk": " +",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.337431+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 21,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.337581+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 22,
+        "data": {
+          "chunk": "2",
+          "source": "finalize_stream"
+        },
+        "chunk": "2",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.337728+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 23,
+        "data": {
+          "chunk": "5",
+          "source": "finalize_stream"
+        },
+        "chunk": "5",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.337889+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 24,
+        "data": {
+          "chunk": " =",
+          "source": "finalize_stream"
+        },
+        "chunk": " =",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.338039+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 25,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.338183+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 26,
+        "data": {
+          "chunk": "4",
+          "source": "finalize_stream"
+        },
+        "chunk": "4",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.341875+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 27,
+        "data": {
+          "chunk": "2",
+          "source": "finalize_stream"
+        },
+        "chunk": "2",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.342066+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 28,
+        "data": {
+          "chunk": "\n",
+          "source": "finalize_stream"
+        },
+        "chunk": "\n",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.342230+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 29,
+        "data": {
+          "chunk": "-",
+          "source": "finalize_stream"
+        },
+        "chunk": "-",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.342388+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 30,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.342553+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 31,
+        "data": {
+          "chunk": "6",
+          "source": "finalize_stream"
+        },
+        "chunk": "6",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.343800+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 32,
+        "data": {
+          "chunk": " \u00d7",
+          "source": "finalize_stream"
+        },
+        "chunk": " \u00d7",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.344025+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 33,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.344208+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 34,
+        "data": {
+          "chunk": "7",
+          "source": "finalize_stream"
+        },
+        "chunk": "7",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.349798+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 35,
+        "data": {
+          "chunk": " =",
+          "source": "finalize_stream"
+        },
+        "chunk": " =",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.350003+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 36,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.350189+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 37,
+        "data": {
+          "chunk": "4",
+          "source": "finalize_stream"
+        },
+        "chunk": "4",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.350338+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 38,
+        "data": {
+          "chunk": "2",
+          "source": "finalize_stream"
+        },
+        "chunk": "2",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.353810+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 39,
+        "data": {
+          "chunk": "\n",
+          "source": "finalize_stream"
+        },
+        "chunk": "\n",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.357805+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 40,
+        "data": {
+          "chunk": "-",
+          "source": "finalize_stream"
+        },
+        "chunk": "-",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.358008+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 41,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.369869+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 42,
+        "data": {
+          "chunk": "1",
+          "source": "finalize_stream"
+        },
+        "chunk": "1",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.370055+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 43,
+        "data": {
+          "chunk": "0",
+          "source": "finalize_stream"
+        },
+        "chunk": "0",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.370209+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 44,
+        "data": {
+          "chunk": "0",
+          "source": "finalize_stream"
+        },
+        "chunk": "0",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.370384+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 45,
+        "data": {
+          "chunk": " \u2212",
+          "source": "finalize_stream"
+        },
+        "chunk": " \u2212",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.370536+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 46,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.402117+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 47,
+        "data": {
+          "chunk": "9",
+          "source": "finalize_stream"
+        },
+        "chunk": "9",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.402350+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 48,
+        "data": {
+          "chunk": " =",
+          "source": "finalize_stream"
+        },
+        "chunk": " =",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.402551+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 49,
+        "data": {
+          "chunk": " ",
+          "source": "finalize_stream"
+        },
+        "chunk": " ",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.402823+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 50,
+        "data": {
+          "chunk": "9",
+          "source": "finalize_stream"
+        },
+        "chunk": "9",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "text_chunk",
+        "timestamp": "2026-10-02T21:58:47.403045+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 51,
+        "data": {
+          "chunk": "1",
+          "source": "finalize_stream"
+        },
+        "chunk": "1",
+        "source": "finalize_stream"
+      },
+      {
+        "type": "llm_response",
+        "timestamp": "2026-10-02T21:58:47.404002+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 52,
+        "data": {
+          "round": 1,
+          "stage": "finalize",
+          "provider": "BudgetedGroq",
+          "model": "qwen/qwen3.8-27b",
+          "usage": {
+            "input_tokens": 1585,
+            "output_tokens": 40,
+            "total_tokens": 1625
+          },
+          "rate_limits": null,
+          "reasoning": null,
+          "duration_seconds": 0.4244307999906596,
+          "has_plan": false,
+          "has_response": true
+        },
+        "round": 1,
+        "stage": "finalize",
+        "provider": "BudgetedGroq",
+        "model": "qwen/qwen3.8-27b",
+        "usage": {
+          "input_tokens": 1585,
+          "output_tokens": 40,
+          "total_tokens": 1625
+        },
+        "rate_limits": null,
+        "reasoning": null,
+        "duration_seconds": 0.4244307999906596,
+        "has_plan": false,
+        "has_response": true
+      },
+      {
+        "type": "run_completed",
+        "timestamp": "2026-10-02T21:58:47.404014+00:00",
+        "run_id": "54d19132-68b1-4fa3-9866-700c21660557",
+        "sequence": 53,
+        "data": {
+          "final_text": "Results:\n- 17 + 25 = 42\n- 6 \u00d7 7 = 42\n- 100 \u2212 9 = 91",
+          "rounds": 1,
+          "total_tool_calls": 3
+        },
+        "final_text": "Results:\n- 17 + 25 = 42\n- 6 \u00d7 7 = 42\n- 100 \u2212 9 = 91",
+        "rounds": 1,
+        "total_tool_calls": 3
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "at": 100413.3494573
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 6,
+        "b": 7,
+        "at": 100413.3494695
+      },
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 100,
+        "b": 9,
+        "at": 100413.3494759
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "at": 100413.504113
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 42,
+        "at": 100413.5041246
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 91,
+        "at": 100413.5041314
+      }
+    ],
+    "sequences_contiguous": true,
+    "tool_outputs": [
+      42,
+      42,
+      91
+    ],
+    "event_types": [
+      "run_started",
+      "round_started",
+      "llm_response",
+      "plan_received",
+      "assistant_tool_message",
+      "batch_started",
+      "tool_started",
+      "tool_started",
+      "tool_started",
+      "tool_finished",
+      "tool_finished",
+      "tool_finished",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "text_chunk",
+      "llm_response",
+      "run_completed"
+    ],
+    "stream_usage": {
+      "input_tokens": 1585,
+      "output_tokens": 40,
+      "total_tokens": 1625
+    }
+  },
+  "session": {
+    "final_text": "LYRA-271",
+    "remembered": true,
+    "other_user_cannot_read": true
+  }
+}

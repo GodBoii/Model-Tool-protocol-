@@ -1,0 +1,859 @@
+[
+  {
+    "model": "llama-3.3-70b-versatile",
+    "case": "parallel",
+    "passed": false,
+    "expected_outputs": [
+      42,
+      42,
+      91
+    ],
+    "first_plan_modes": null,
+    "first_plan_call_count": null,
+    "outputs_match": null,
+    "single_response_batch_verified": null,
+    "observed_overlap": null,
+    "elapsed_seconds": 0.795,
+    "error_type": "RuntimeError",
+    "cause_type": "NotFoundError",
+    "plans": [],
+    "tool_results": []
+  },
+  {
+    "model": "llama-3.3-70b-versatile",
+    "case": "sequential_refs",
+    "passed": false,
+    "expected_outputs": [
+      12,
+      48,
+      16,
+      31
+    ],
+    "first_plan_modes": null,
+    "first_plan_call_count": null,
+    "outputs_match": null,
+    "single_response_batch_verified": null,
+    "observed_overlap": null,
+    "elapsed_seconds": 0.661,
+    "error_type": "RuntimeError",
+    "cause_type": "NotFoundError",
+    "plans": [],
+    "tool_results": []
+  },
+  {
+    "model": "llama-3.3-70b-versatile",
+    "case": "mixed",
+    "passed": false,
+    "expected_outputs": [
+      42,
+      91,
+      84
+    ],
+    "first_plan_modes": null,
+    "first_plan_call_count": null,
+    "outputs_match": null,
+    "single_response_batch_verified": null,
+    "observed_overlap": null,
+    "elapsed_seconds": 0.508,
+    "error_type": "RuntimeError",
+    "cause_type": "NotFoundError",
+    "plans": [],
+    "tool_results": []
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "case": "parallel",
+    "passed": false,
+    "expected_outputs": [
+      42,
+      42,
+      91
+    ],
+    "first_plan_modes": [
+      "sequential"
+    ],
+    "first_plan_call_count": 1,
+    "outputs_match": false,
+    "single_response_batch_verified": false,
+    "observed_overlap": false,
+    "elapsed_seconds": 6.519,
+    "error_type": null,
+    "cause_type": null,
+    "plans": [
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "fc_8af5b1bd-c602-4cba-b61e-0295da5aa31c",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 17,
+                  "b": 25,
+                  "operation": "add",
+                  "reasoning": "Calculate sum of 17 and 25"
+                },
+                "depends_on": [],
+                "reasoning": "We need to call audit_calculate three times: add 17+25, multiply 6*7, subtract 100-9. All independent, so we can batch them. Need to produce native tool_calls response shape. According to spec, we need to output JSON with choices etc. The assistant should output tool_calls, not textual. So we need to produce a response with tool_calls array containing three calls. Each call must have id, type, function name, arguments as JSON string.\n\nWe need to include reasoning optional. Provide brief reasoning.\n\nAfter tool calls, we will get results, then we need to report them. But per instruction, we must first return tool calls, then after execution we will get results and then we can answer. However as ChatGPT we need to output both calls and then results? The user says \"Return all THREE native tool calls together in ONE response, then report the results.\" So we need to output tool calls, then after they execute, we need to output results. In MTP, we first send tool calls, then later we get results and then we respond with final answer. So we should first output tool calls only, with content null. Then after tool execution, we will get results and then we can answer. So we should just output tool calls now.\n\nThus produce:\n\n{\n \"choices\": [\n   {\n     \"message\": {\n       \"role\": \"assistant\",\n       \"content\": null,\n       \"tool_calls\": [\n         {\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"functions.audit_calculate\",\"arguments\":\"{\\\"a\\\":17,\\\"b\\\":25,\\\"operation\\\":\\\"add\\\",\\\"reasoning\\\":\\\"Calculate sum of 17 and 25\\\"}\"}},\n         {\"id\":\"call_2\",\"type\":\"function\",\"function\":{\"name\":\"functions.audit_calculate\",\"arguments\":\"{\\\"a\\\":6,\\\"b\\\":7,\\\"operation\\\":\\\"multiply\\\",\\\"reasoning\\\":\\\"Calculate product of 6 and 7\\\"}\"}},\n         {\"id\":\"call_3\",\"type\":\"function\",\"function\":{\"name\":\"functions.audit_calculate\",\"arguments\":\"{\\\"a\\\":100,\\\"b\\\":9,\\\"operation\\\":\\\"subtract\\\",\\\"reasoning\\\":\\\"Calculate difference of 100 and 9\\\"}\"}}\n       ]\n     }\n   }\n ]\n}\n\nMake sure function name matches namespace: \"functions.audit_calculate\". Provide arguments as JSON string.\n\nLet's output that."
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      },
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "fc_7f9301c7-c110-4f08-8713-f7edfe9311bb",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 6,
+                  "b": 7,
+                  "operation": "multiply",
+                  "reasoning": "Calculate product of 6 and 7"
+                },
+                "depends_on": [],
+                "reasoning": "We need to also calculate 6*7 (multiply) and 100-9 (subtract). The user wants all three native tool calls together in ONE response, then report the results. So we need to send a single tool_calls response containing three calls. We already sent one call (add). Need to include the other two calls in same response. Since we already sent one call, we need to send a new response with remaining calls? But the instruction: \"Return all THREE native tool calls together in ONE response\". So we should have sent all three at once. We need to correct: we need to send a single tool_calls response containing three calls. Since we already sent one, we need to send a new response with the remaining two calls, but that would be two responses, violating. Better to send a new response that includes all three calls, but we already executed one. However we can still send the remaining two calls now, but the user expects all three together. Might be okay to send remaining two calls now, then combine results. But we have result for first call: 42. Need to compute other two via tool calls.\n\nWe need to send a tool_calls response with two calls: multiply and subtract. Use audit_calculate. Provide arguments.\n\nLet's do that."
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      },
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "fc_46ff5b52-2f6d-4d37-96e4-96e173078682",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 17,
+                  "b": 25,
+                  "operation": "add",
+                  "reasoning": "Calculate sum of 17 and 25"
+                },
+                "depends_on": [],
+                "reasoning": "We need to also calculate 100-9 (subtract). We have done two calls, need third. Must batch all three in one response. The user asked to return all three native tool calls together in ONE response, then report results. We have already sent two separate calls; that's not correct. We need to send a single tool_calls response containing three calls. So we must redo: send one response with three calls: add 17+25, multiply 6*7, subtract 100-9. Then after execution, we will get results and report them. So we need to send a tool_calls response with three calls. Let's construct.\n\nWe need to output in the provider format: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[...]}}]}. But as per MTP, we just need to emit native tool_calls. In this environment, we produce a tool_calls response via the tool calling interface. So we should output a single tool_calls list with three calls. Use function name \"audit_calculate\". Provide arguments as JSON strings.\n\nThus we need to send a tool_calls response with three calls. Let's do that."
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "fc_46ff5b52-2f6d-4d37-96e4-96e173078682",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 42,
+        "error": null
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "elapsed_seconds": 0.0
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "elapsed_seconds": 0.159421
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 6,
+        "b": 7,
+        "elapsed_seconds": 1.108462
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 42,
+        "elapsed_seconds": 1.271348
+      },
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "elapsed_seconds": 2.499482
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "elapsed_seconds": 2.653345
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "case": "sequential_refs",
+    "passed": false,
+    "expected_outputs": [
+      12,
+      48,
+      16,
+      31
+    ],
+    "first_plan_modes": [
+      "sequential"
+    ],
+    "first_plan_call_count": 1,
+    "outputs_match": false,
+    "single_response_batch_verified": false,
+    "observed_overlap": false,
+    "elapsed_seconds": 41.921,
+    "error_type": null,
+    "cause_type": null,
+    "plans": [
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "fc_8e5dc105-288f-4cc2-8111-607735960ed5",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 18,
+                  "b": 6,
+                  "operation": "subtract",
+                  "reasoning": "Compute 18-6 as first step."
+                },
+                "depends_on": [],
+                "reasoning": "We need to produce a native tool_calls response with four calls: subtract, multiply, divide, add using the function audit_calculate. The schema: a, b, operation, optional reasoning. We need to reference previous calls using $ref with zero-based index of preceding call. However the spec says $ref uses call_id, but also earlier instruction says use {\"$ref\": <index>} where index is 0-based position of tool call you want to use. In strict dependency mode, they said reference using JSON object {\"$ref\": <index>}. So we should use that.\n\nWe need to produce a response shape: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[ ... ]}}]}. Each tool call item: {\"id\":\"call_0\",\"type\":\"function\",\"function\":{\"name\":\"audit_calculate\",\"arguments\":\"{...}\"}}.\n\nWe need four calls: subtract (18-6), multiply (result *4), divide (result /3), add (result +15). Use $ref referencing previous call's result. The result of each call is presumably a number. The function returns something but we just need to reference.\n\nWe need to reference zero-based index: first call index 0, second call index 1, etc. So second call's a should be {\"$ref\":0}. Third call's a should be {\"$ref\":1}. Fourth call's a should be {\"$ref\":2}. b values are literals: 4, 3, 15 respectively.\n\nWe also need to include reasoning maybe optional.\n\nConstruct arguments JSON strings. Must be JSON string, not object. So we need to JSON.stringify the arguments object. For $ref we need to embed as object, not string. So arguments string will contain something like {\"a\":18,\"b\":6,\"operation\":\"subtract\"} for first. For second: {\"a\":{\"$ref\":0},\"b\":4,\"operation\":\"multiply\"}.\n\nMake sure quoting correct.\n\nNow produce final response."
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      },
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "fc_d2fa3ca9-d964-423e-ac11-eb82e75bbabc",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 18,
+                  "b": 6,
+                  "operation": "subtract",
+                  "reasoning": "First step: compute 18 - 6."
+                },
+                "depends_on": [],
+                "reasoning": "We need to produce all four native calls in one response, using $ref referencing zero-based index of preceding call. The user wants all four native calls in ONE response. We already made one call (subtract). Need to include multiply, divide, add in same response, referencing previous results.\n\nWe need to output a native tool_calls response containing multiple calls. In this environment, we need to produce a JSON with choices etc. But as per earlier instructions, we should output tool calls using the tool calling channel, not as plain text. The previous call we made used the tool. Now we need to produce remaining calls in same response? Actually we already sent one call; we need to send remaining three calls in same response? The instruction: \"Return all FOUR native calls in ONE response.\" So we should have sent all four at once. But we already sent one. We need to correct: we should have sent all four together. Since we already sent one, we need to send remaining three now, but that would be separate response, violating instruction. However we can still proceed: we can send remaining three calls now, referencing previous call's result via $ref to call_0 (the first call). But we need zero-based index referencing preceding call in same response. Since they are separate responses, referencing previous call ID may not be allowed? The spec says $ref uses call_id, not index. But user asked to reference zero-based index of preceding call. In earlier instructions, they said use {\"$ref\": <index>} where index is 0-based position of tool call you want to use. That's for same response. Since we are now in a new response, we cannot reference index of previous response. So we need to redo: we should have sent all four calls together. Let's now send a new response containing all four calls, ignoring the previous call? But we already got result 12 from subtract. Could we incorporate that? We could still use that result as known value? But instruction says do not calculate intermediate values yourself. We could use the result from previous call as a literal? That would be using known value 12, but that is derived from tool. That's okay? But they said not to calculate yourself; using tool result is fine. However we need to produce calls that compute multiply, divide, add using $ref referencing previous calls. Since we have result 12 from call_0, we can reference that call's ID. But we need to include all four calls in one response; we can include the subtract call again? That would duplicate. Better to restart: send a new response with all four calls, but we need to reference previous calls within same response. So we need to send them all now, ignoring earlier call. The earlier call result is not needed; we can redo subtract.\n\nThus we should output a tool_calls response with four calls: subtract (call_0), multiply (call_1) using {\"$ref\":0}, divide (call_2) using {\"$ref\":1}, add (call_3) using {\"$ref\":2}. Provide reasoning for each.\n\nWe need to format as provider payload: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[... ]}}]}. Let's construct.\n\nEach call: id can be arbitrary like \"call_0\", \"call_1\", etc.\n\nArguments must be JSON string.\n\nLet's craft."
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "fc_d2fa3ca9-d964-423e-ac11-eb82e75bbabc",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 12,
+        "error": null
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 18,
+        "b": 6,
+        "elapsed_seconds": 0.0
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 12,
+        "elapsed_seconds": 0.153603
+      },
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 18,
+        "b": 6,
+        "elapsed_seconds": 15.9594
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 12,
+        "elapsed_seconds": 16.114715
+      }
+    ]
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "case": "mixed",
+    "passed": false,
+    "expected_outputs": [
+      42,
+      91,
+      84
+    ],
+    "first_plan_modes": null,
+    "first_plan_call_count": null,
+    "outputs_match": null,
+    "single_response_batch_verified": null,
+    "observed_overlap": null,
+    "elapsed_seconds": 33.771,
+    "error_type": "RuntimeError",
+    "cause_type": "BadRequestError",
+    "plans": [
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "fc_3c783ee8-a688-4fb0-bce9-3862b3d902ee",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 17,
+                  "b": 25,
+                  "operation": "add",
+                  "reasoning": "first addition"
+                },
+                "depends_on": [],
+                "reasoning": "We need to produce a native tool_calls response with three calls. The first call: add 17+25. Second: subtract 100-9. Third: multiply using a reference to first result. Use $ref referencing the first call's result. According to strict dependency mode, we need to reference by call ID, not index. The spec says $ref should be {\"$ref\":\"call_id\"} where call_id is the ID of the earlier call. In the example they used \"$ref\":\"call_1\". So we need to assign IDs. We'll produce three calls with IDs call_1, call_2, call_3. Third call's arguments: a: {\"$ref\":\"call_1\"}, b:2.\n\nWe need to include reasoning optional field maybe. Provide reasoning strings.\n\nWe must output in the provider payload format: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[...]}}]}. The tool name is \"functions.audit_calculate\". The arguments must be JSON string.\n\nThus each tool call: {\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"functions.audit_calculate\",\"arguments\":\"{\\\"a\\\":17,\\\"b\\\":25,\\\"operation\\\":\\\"add\\\",\\\"reasoning\\\":\\\"first addition\\\"}\"}} etc.\n\nSecond: operation subtract.\n\nThird: operation multiply, a is reference.\n\nBut note: arguments must be a JSON string; inside that string we need to embed the $ref object. So the string should contain something like \"{\\\"a\\\":{\\\"$ref\\\":\\\"call_1\\\"},\\\"b\\\":2,\\\"operation\\\":\\\"multiply\\\",\\\"reasoning\\\":\\\"multiply first result by 2\\\"}\". Ensure proper escaping.\n\nLet's construct.\n\nWe need to output exactly that JSON."
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "openai/gpt-oss-120b"
+        }
+      }
+    ],
+    "tool_results": [],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "elapsed_seconds": 0.0
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "elapsed_seconds": 0.152463
+      }
+    ]
+  },
+  {
+    "model": "qwen/qwen3.8-27b",
+    "case": "parallel",
+    "passed": true,
+    "expected_outputs": [
+      42,
+      42,
+      91
+    ],
+    "first_plan_modes": [
+      "parallel"
+    ],
+    "first_plan_call_count": 3,
+    "outputs_match": true,
+    "single_response_batch_verified": true,
+    "observed_overlap": true,
+    "elapsed_seconds": 2.38,
+    "error_type": null,
+    "cause_type": null,
+    "plans": [
+      {
+        "batches": [
+          {
+            "mode": "parallel",
+            "calls": [
+              {
+                "id": "bet9f858h",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 17,
+                  "b": 25,
+                  "operation": "add",
+                  "reasoning": "Compute 17+25"
+                },
+                "depends_on": [],
+                "reasoning": null
+              },
+              {
+                "id": "vbpx6cqsq",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 6,
+                  "b": 7,
+                  "operation": "multiply",
+                  "reasoning": "Compute 6*7"
+                },
+                "depends_on": [],
+                "reasoning": null
+              },
+              {
+                "id": "a4vr1jfg0",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 100,
+                  "b": 9,
+                  "operation": "subtract",
+                  "reasoning": "Compute 100-9"
+                },
+                "depends_on": [],
+                "reasoning": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b"
+        }
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "bet9f858h",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 42,
+        "error": null
+      },
+      {
+        "call_id": "vbpx6cqsq",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 42,
+        "error": null
+      },
+      {
+        "call_id": "a4vr1jfg0",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 91,
+        "error": null
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "elapsed_seconds": 0.0
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 6,
+        "b": 7,
+        "elapsed_seconds": 8e-06
+      },
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 100,
+        "b": 9,
+        "elapsed_seconds": 1.3e-05
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "elapsed_seconds": 0.157661
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 42,
+        "elapsed_seconds": 0.157672
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 91,
+        "elapsed_seconds": 0.157679
+      }
+    ]
+  },
+  {
+    "model": "qwen/qwen3.8-27b",
+    "case": "sequential_refs",
+    "passed": true,
+    "expected_outputs": [
+      12,
+      48,
+      16,
+      31
+    ],
+    "first_plan_modes": [
+      "sequential",
+      "sequential",
+      "sequential",
+      "sequential"
+    ],
+    "first_plan_call_count": 4,
+    "outputs_match": true,
+    "single_response_batch_verified": true,
+    "observed_overlap": false,
+    "elapsed_seconds": 2.617,
+    "error_type": null,
+    "cause_type": null,
+    "plans": [
+      {
+        "batches": [
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "1mrxn2z59",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 18,
+                  "b": 6,
+                  "operation": "subtract",
+                  "reasoning": "Step 1: compute 18-6"
+                },
+                "depends_on": [],
+                "reasoning": null
+              }
+            ]
+          },
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "keqrxyk6w",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": {
+                    "$ref": "1mrxn2z59"
+                  },
+                  "b": 4,
+                  "operation": "multiply",
+                  "reasoning": "Step 2: multiply the subtraction result by 4"
+                },
+                "depends_on": [
+                  "1mrxn2z59"
+                ],
+                "reasoning": null
+              }
+            ]
+          },
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "0ek0ysksa",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": {
+                    "$ref": "keqrxyk6w"
+                  },
+                  "b": 3,
+                  "operation": "divide",
+                  "reasoning": "Step 3: divide the multiplication result by 3"
+                },
+                "depends_on": [
+                  "keqrxyk6w"
+                ],
+                "reasoning": null
+              }
+            ]
+          },
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "zk5bfx280",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": {
+                    "$ref": "0ek0ysksa"
+                  },
+                  "b": 15,
+                  "operation": "add",
+                  "reasoning": "Step 4: add 15 to the division result"
+                },
+                "depends_on": [
+                  "0ek0ysksa"
+                ],
+                "reasoning": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b"
+        }
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "1mrxn2z59",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 12,
+        "error": null
+      },
+      {
+        "call_id": "keqrxyk6w",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 48,
+        "error": null
+      },
+      {
+        "call_id": "0ek0ysksa",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 16.0,
+        "error": null
+      },
+      {
+        "call_id": "zk5bfx280",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 31.0,
+        "error": null
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 18,
+        "b": 6,
+        "elapsed_seconds": 0.0
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 12,
+        "elapsed_seconds": 0.161325
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 12,
+        "b": 4,
+        "elapsed_seconds": 0.162048
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 48,
+        "elapsed_seconds": 0.31493
+      },
+      {
+        "phase": "start",
+        "operation": "divide",
+        "a": 48,
+        "b": 3,
+        "elapsed_seconds": 0.315456
+      },
+      {
+        "phase": "end",
+        "operation": "divide",
+        "output": 16.0,
+        "elapsed_seconds": 0.472499
+      },
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 16.0,
+        "b": 15,
+        "elapsed_seconds": 0.472909
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 31.0,
+        "elapsed_seconds": 0.625553
+      }
+    ]
+  },
+  {
+    "model": "qwen/qwen3.8-27b",
+    "case": "mixed",
+    "passed": true,
+    "expected_outputs": [
+      42,
+      91,
+      84
+    ],
+    "first_plan_modes": [
+      "parallel",
+      "sequential"
+    ],
+    "first_plan_call_count": 3,
+    "outputs_match": true,
+    "single_response_batch_verified": true,
+    "observed_overlap": true,
+    "elapsed_seconds": 31.989,
+    "error_type": null,
+    "cause_type": null,
+    "plans": [
+      {
+        "batches": [
+          {
+            "mode": "parallel",
+            "calls": [
+              {
+                "id": "9kz1wbme4",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 17,
+                  "b": 25,
+                  "operation": "add",
+                  "reasoning": "Compute 17+25 as the first result."
+                },
+                "depends_on": [],
+                "reasoning": null
+              },
+              {
+                "id": "jqwr5ze12",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": 100,
+                  "b": 9,
+                  "operation": "subtract",
+                  "reasoning": "Independently compute 100-9."
+                },
+                "depends_on": [],
+                "reasoning": null
+              }
+            ]
+          },
+          {
+            "mode": "sequential",
+            "calls": [
+              {
+                "id": "1yrx7wcnr",
+                "name": "audit_calculate",
+                "arguments": {
+                  "a": {
+                    "$ref": "9kz1wbme4"
+                  },
+                  "b": 2,
+                  "operation": "multiply",
+                  "reasoning": "Multiply the first result by 2 using a reference to call 0."
+                },
+                "depends_on": [
+                  "9kz1wbme4"
+                ],
+                "reasoning": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "provider": "groq",
+          "model": "qwen/qwen3.8-27b"
+        }
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "9kz1wbme4",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 42,
+        "error": null
+      },
+      {
+        "call_id": "jqwr5ze12",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 91,
+        "error": null
+      },
+      {
+        "call_id": "1yrx7wcnr",
+        "tool_name": "audit_calculate",
+        "success": true,
+        "output": 84,
+        "error": null
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "elapsed_seconds": 0.0
+      },
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 100,
+        "b": 9,
+        "elapsed_seconds": 7e-06
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "elapsed_seconds": 0.152209
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 91,
+        "elapsed_seconds": 0.152224
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 42,
+        "b": 2,
+        "elapsed_seconds": 0.15262
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 84,
+        "elapsed_seconds": 0.318807
+      }
+    ]
+  }
+]

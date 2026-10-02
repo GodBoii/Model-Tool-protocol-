@@ -1,0 +1,138 @@
+{
+  "date": "2026-10-03",
+  "timezone": "Asia/Calcutta",
+  "versions": {
+    "mtpx": "0.1.37",
+    "openai": "3.24.0",
+    "groq": "1.7.0",
+    "anthropic": "1.11.0",
+    "google-genai": "2.28.0",
+    "cohere": "7.2.0",
+    "mistralai": "3.0.0",
+    "ollama": "0.6.3",
+    "cerebras-cloud-sdk": "1.91.0",
+    "textual": "8.2.8",
+    "pytest": "9.1.1",
+    "pytest-asyncio": "1.4.0"
+  },
+  "original_fast_suite": {
+    "passed": 622,
+    "failed": 0,
+    "skipped": 0,
+    "expected_failures": 0,
+    "failure_tests": [],
+    "expected_failure_tests": []
+  },
+  "final_non_live_suite": {
+    "passed": 670,
+    "failed": 0,
+    "skipped": 1,
+    "expected_failures": 18,
+    "failure_tests": [],
+    "expected_failure_tests": [
+      "test_identical_write_calls_execute_twice",
+      "test_failed_prerequisite_blocks_dependent_handler",
+      "test_reference_can_use_a_previous_round_result",
+      "test_cache_trimming_keeps_tool_history_complete",
+      "test_history_limit_preserves_complete_tool_groups",
+      "test_anthropic_tool_names_meet_official_contract",
+      "test_deepseek_reasoner_receives_tools",
+      "test_gemini_preserves_function_call_thought_signature",
+      "test_ollama_stream_keeps_calls_from_separate_chunks",
+      "test_website_does_not_accept_a_redirect_to_private_network",
+      "test_documented_cli_run_positional_path_is_accepted",
+      "test_async_events_leave_event_loop_responsive_during_sync_stream",
+      "test_fireworks_native_clients_keep_their_own_keys",
+      "test_cohere_replays_the_provider_tool_name",
+      "test_real_sdk_tool_round_and_result_round[anthropic-AnthropicToolCallingProvider]",
+      "test_mcp_does_not_claim_an_unknown_protocol_version",
+      "test_mcp_http_rejects_untrusted_origin",
+      "test_mcp_unknown_method_returns_jsonrpc_method_not_found"
+    ]
+  },
+  "audit_repros_with_runxfail": {
+    "passed": 53,
+    "failed": 18,
+    "skipped": 0,
+    "expected_failures": 0,
+    "failure_tests": [
+      "test_identical_write_calls_execute_twice",
+      "test_failed_prerequisite_blocks_dependent_handler",
+      "test_reference_can_use_a_previous_round_result",
+      "test_cache_trimming_keeps_tool_history_complete",
+      "test_history_limit_preserves_complete_tool_groups",
+      "test_anthropic_tool_names_meet_official_contract",
+      "test_deepseek_reasoner_receives_tools",
+      "test_gemini_preserves_function_call_thought_signature",
+      "test_ollama_stream_keeps_calls_from_separate_chunks",
+      "test_website_does_not_accept_a_redirect_to_private_network",
+      "test_documented_cli_run_positional_path_is_accepted",
+      "test_async_events_leave_event_loop_responsive_during_sync_stream",
+      "test_fireworks_native_clients_keep_their_own_keys",
+      "test_cohere_replays_the_provider_tool_name",
+      "test_real_sdk_tool_round_and_result_round[anthropic-AnthropicToolCallingProvider]",
+      "test_mcp_does_not_claim_an_unknown_protocol_version",
+      "test_mcp_http_rejects_untrusted_origin",
+      "test_mcp_unknown_method_returns_jsonrpc_method_not_found"
+    ],
+    "expected_failure_tests": []
+  },
+  "ci_like_collection": {
+    "errors": 6,
+    "reason": "pytest-asyncio omitted from CI installation"
+  },
+  "coverage": {
+    "existing_suite_percent": 52,
+    "suite_plus_audit_percent": 61
+  },
+  "packaging": {
+    "wheel": true,
+    "sdist": true,
+    "tui_css_in_wheel": true,
+    "template_count": 9,
+    "wheel_only_cli_list_and_scaffold": true
+  },
+  "live_groq": {
+    "qwen_batch_cases_passed": 3,
+    "gpt_oss_single_response_cases_passed": 0,
+    "llama_3_3_unavailable": true,
+    "budgeted_async_streaming_passed": true,
+    "session_reload_passed": true
+  },
+  "native_computer_use": {
+    "verified": false,
+    "reason": "Windows helper could not confidently determine Edge URL"
+  },
+  "browser_tui": {
+    "parallel_file_reads_verified": true,
+    "answer_sum": 42,
+    "status_verified": true,
+    "escape_and_stop_shortcuts_certified": false
+  },
+  "provider_catalog": {
+    "qwen/qwen3.6-plus-preview:free": {
+      "listed": false,
+      "supported_parameters": []
+    },
+    "qwen/qwen-2.5-72b-instruct": {
+      "listed": true,
+      "supported_parameters": [
+        "frequency_penalty",
+        "logit_bias",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_p"
+      ]
+    }
+  }
+}

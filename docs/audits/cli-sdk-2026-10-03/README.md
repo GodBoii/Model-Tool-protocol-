@@ -1,14 +1,17 @@
 # CLI, SDK, and provider audit
 
+The completed audit is in [AUDIT.md](AUDIT.md). The notes below record the early
+baseline; use the completed report and evidence summary for final results.
+
 Audit date: 2026-10-03, Asia/Calcutta. Package under review: MTPX 0.1.37.
 
 This audit checks implementation, current official provider documentation, the
 existing test suite, additional adversarial protocol cases, live Groq requests,
 and the actual Textual TUI through browser and Windows computer-use tools.
 
-The audit is in progress. Results below are preliminary until the evidence files
-and final findings are complete. Provider API contracts are checked locally;
-only Groq is authorized for live provider requests.
+The audit is complete for the scope in AUDIT.md. Provider API contracts were
+checked locally; only Groq was used for live provider requests. The report
+separates completed checks from work that still needs credentials or services.
 
 ## Baseline
 
@@ -19,18 +22,18 @@ only Groq is authorized for live provider requests.
 - The initial Git checkout was clean on `main`.
 - TUI verification uses a separate session database under `tmp/`.
 
-## Evidence under construction
+## Evidence available
 
-The final report will include a provider-by-provider documentation matrix,
-severity-ranked findings with code locations and repros, protocol execution
-evidence, TUI screenshots, and a prioritized list of additional providers.
+The completed report includes a provider-by-provider documentation matrix,
+ranked findings with code locations and repros, protocol execution evidence,
+TUI screenshots, and a prioritized list of additional providers.
 
 ## Additional protocol checks
 
-`tests/test_audit_regressions.py` exercises all 15 adapters with synthetic native
-responses and the actual runtime. Its 34 positive checks pass. Nine strict
-expected failures reproduce unresolved defects. Running the same file with
-`--runxfail` confirms nine actual failures and 34 passes.
+The three new audit test files exercise all 15 adapters, real SDK serialization,
+and loopback transports. Running them with `--runxfail` produces 18 failures
+and 53 passes. The final full non-live suite reports 670 passes, 18 strict
+expected failures, and one skipped module. Production defects remain unresolved.
 
 Live Groq batch probes pass on `qwen/qwen3.8-27b`: one parallel batch of three
 calls, four sequential batches linked by `$ref`, and a mixed parallel/sequential
