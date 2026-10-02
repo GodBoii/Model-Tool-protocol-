@@ -289,7 +289,8 @@ def safe_load_arguments(raw_args: Any) -> dict[str, Any]:
 def calls_to_dependency_batches(calls: list[ToolCall]) -> list[ToolBatch]:
     remaining: dict[str, ToolCall] = {call.id: call for call in calls}
     ordered_ids = [call.id for call in calls]
-    done: set[str] = set()
+    # Prior-round dependencies are validated by the runtime against its supplied results.
+    done: set[str] = {dep for call in calls for dep in call.depends_on if dep not in remaining}
     batches: list[ToolBatch] = []
 
     while remaining:

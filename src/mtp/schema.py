@@ -393,7 +393,8 @@ def validate_tool_arguments(arguments: dict[str, Any], input_schema: dict[str, A
     _validate_value(arguments, input_schema, "$", input_schema)
 
 
-def validate_execution_plan(plan: ExecutionPlan) -> None:
+def validate_execution_plan(plan: ExecutionPlan, *, prior_call_ids: set[str] | None = None) -> None:
+    prior_ids = set(prior_call_ids or ())
     call_ids: list[str] = []
     deps_map: dict[str, list[str]] = {}
 
@@ -406,7 +407,7 @@ def validate_execution_plan(plan: ExecutionPlan) -> None:
 
     call_id_set = set(call_ids)
     for call_id, deps in deps_map.items():
-        missing = [dep for dep in deps if dep not in call_id_set]
+        missing = [dep for dep in deps if dep not in call_id_set and dep not in prior_ids]
         if missing:
             raise PlanValidationError(
                 f"Call {call_id} depends on missing call ids: {missing}"
@@ -418,6 +419,8 @@ def validate_execution_plan(plan: ExecutionPlan) -> None:
     def visit(node: str, trail: list[str]) -> None:
         color[node] = GRAY
         for dep in deps_map[node]:
+            if dep not in color:
+                continue
             if color[dep] == WHITE:
                 visit(dep, trail + [dep])
             elif color[dep] == GRAY:
@@ -430,7 +433,7 @@ def validate_execution_plan(plan: ExecutionPlan) -> None:
         if color[call_id] == WHITE:
             visit(call_id, [call_id])
 
-    completed: set[str] = set()
+    completed: set[str] = prior_ids - call_id_set
     for batch in plan.batches:
         available = set(completed)
         if batch.mode == "sequential":

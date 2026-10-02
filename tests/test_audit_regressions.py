@@ -198,9 +198,6 @@ def test_invalid_plan_is_rejected_before_side_effects(calls):
     assert not invoked
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A01: parallel batches deduplicate non-cacheable write calls"
-)
 def test_identical_write_calls_execute_twice():
     invoked = []
     registry = ToolRegistry()
@@ -227,9 +224,6 @@ def test_identical_write_calls_execute_twice():
     assert invoked == [1, 1]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A02: failed prerequisites still permit dependent handlers"
-)
 def test_failed_prerequisite_blocks_dependent_handler():
     registry = ToolRegistry()
     invoked = []
@@ -278,9 +272,6 @@ def wire_call(call_id, value):
     }
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A03: documented references to previous rounds are rejected"
-)
 def test_reference_can_use_a_previous_round_result():
     registry = ToolRegistry()
     registry.register_tool(ToolSpec("echo", "echo"), lambda value: value)
@@ -296,9 +287,51 @@ def test_reference_can_use_a_previous_round_result():
     assert output.tool_results[0].output == 7
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A04: trimming cached calls leaves unanswered wire tool IDs"
+@pytest.mark.parametrize(
+    "api", ["run_output", "arun_output", "run_loop_events", "arun_loop_events"]
 )
+def test_prior_round_references_across_agent_apis(api):
+    registry = ToolRegistry()
+    registry.register_tool(ToolSpec("echo", "echo"), lambda value: value)
+    agent = Agent(
+        provider=ScriptedProvider(
+            [
+                native_action([wire_call("a", 7)]),
+                native_action([wire_call("b", {"$ref": "a"})]),
+            ]
+        ),
+        tools=registry,
+    )
+    if api == "run_output":
+        assert agent.run_output("synthetic", max_rounds=3).tool_results[0].output == 7
+    elif api == "arun_output":
+        assert (
+            asyncio.run(agent.arun_output("synthetic", max_rounds=3))
+            .tool_results[0]
+            .output
+            == 7
+        )
+    else:
+        if api == "run_loop_events":
+            events = list(
+                agent.run_loop_events(
+                    "synthetic", max_rounds=3, stream_tool_results=True
+                )
+            )
+        else:
+
+            async def collect():
+                return [
+                    e
+                    async for e in agent.arun_loop_events(
+                        "synthetic", max_rounds=3, stream_tool_results=True
+                    )
+                ]
+
+            events = asyncio.run(collect())
+        assert [e["output"] for e in events if e["type"] == "tool_finished"] == [7, 7]
+
+
 def test_cache_trimming_keeps_tool_history_complete():
     registry = ToolRegistry()
     registry.register_tool(
@@ -318,9 +351,6 @@ def test_cache_trimming_keeps_tool_history_complete():
     assert declared <= answered
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A05: history message limit can orphan tool results"
-)
 def test_history_limit_preserves_complete_tool_groups():
     registry = ToolRegistry()
     registry.register_tool(ToolSpec("echo", "echo"), lambda value: value)

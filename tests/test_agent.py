@@ -133,7 +133,7 @@ class TestAgentRunLoop:
         result = agent.run_loop("test", tool_call_limit=2)
         assert result is not None
 
-    def test_plain_run_trims_repeated_cacheable_tool_calls_like_events(self):
+    def test_plain_run_answers_repeated_cacheable_tool_calls(self):
         reg = ToolRegistry()
         spec = make_tool_spec("test.cached", cache_ttl_seconds=60)
         reg.register_tool(spec, make_echo_handler())
@@ -147,11 +147,8 @@ class TestAgentRunLoop:
         output = agent.run_output("repeat cached", max_rounds=2)
 
         assert output.final_text == "Done."
-        assert any(
-            msg.get("role") == "system"
-            and "repeated cached work" in str(msg.get("content", ""))
-            for msg in output.messages
-        )
+        assert output.tool_results[0].cached is True
+        assert len([msg for msg in output.messages if msg.get("role") == "tool"]) == 2
 
     def test_messages_accumulate(self):
         reg = ToolRegistry()

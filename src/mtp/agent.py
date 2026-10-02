@@ -705,31 +705,18 @@ class Agent:
                 return value.strip()
         return None
 
-    def _trim_cacheable_repeated_tool_calls(
-        self,
-        plan: ExecutionPlan,
-        seen: set[tuple[str, str]] | None = None,
-    ) -> ExecutionPlan:
-        tool_names = [call.name for batch in plan.batches for call in batch.calls]
-        self.registry.ensure_tools_available(tool_names)
-        specs = {spec.name: spec for spec in self.registry.list_tools()}
-        seen_keys = seen if seen is not None else set()
-        batches = []
-        for batch in plan.batches:
-            calls = []
-            for call in batch.calls:
-                spec = specs.get(call.name)
-                if spec is None or spec.cache_ttl_seconds <= 0:
-                    calls.append(call)
-                    continue
-                key = (call.name, json.dumps(call.arguments, sort_keys=True, separators=(",", ":"), default=str))
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-                calls.append(call)
-            if calls:
-                batches.append(type(batch)(mode=batch.mode, calls=calls))
-        return ExecutionPlan(batches=batches)
+    def _prior_tool_results(self) -> dict[str, ToolResult]:
+        results: dict[str, ToolResult] = {}
+        for message in self.messages:
+            if message.get("role") != "tool" or not isinstance(message.get("tool_call_id"), str):
+                continue
+            success = message.get("success", True) is not False
+            results[message["tool_call_id"]] = ToolResult(
+                call_id=message["tool_call_id"], tool_name=str(message.get("tool_name") or ""),
+                output=message.get("content") if success else None, success=success,
+                error=str(message.get("content")) if not success else None,
+            )
+        return results
 
     def _parse_and_validate_output(
         self,
@@ -998,8 +985,25 @@ class Agent:
             return
         system_messages = [msg for msg in self.messages if msg.get("role") == "system"]
         non_system = [msg for msg in self.messages if msg.get("role") != "system"]
-        keep_non_system = max(self.max_history_messages - len(system_messages), 0)
-        self.messages = system_messages + non_system[-keep_non_system:]
+        budget = max(self.max_history_messages - len(system_messages), 0)
+        groups: list[list[dict[str, Any]]] = []
+        for message in non_system:
+            if message.get("role") == "tool":
+                if groups and groups[-1][0].get("tool_calls"):
+                    ids = {call.get("id") for call in groups[-1][0]["tool_calls"] if isinstance(call, dict)}
+                    if message.get("tool_call_id") in ids:
+                        groups[-1].append(message)
+                continue
+            groups.append([message])
+        retained: list[list[dict[str, Any]]] = []
+        count = 0
+        for group in reversed(groups):
+            if retained and count + len(group) > budget:
+                break
+            # Keep the newest complete or in-flight group even when it exceeds the soft limit.
+            retained.append(group)
+            count += len(group)
+        self.messages = system_messages + [message for group in reversed(retained) for message in group]
 
     def _append_message(self, message: dict[str, Any]) -> None:
         self.messages.append(message)
@@ -1152,7 +1156,6 @@ class Agent:
         cancelled = False
         total_tool_calls = 0
         paused = False
-        seen_cacheable_tool_calls: set[tuple[str, str]] = set()
 
         for round_idx in self._round_indices(max_rounds):
             if self._is_cancelled(run_id):
@@ -1228,22 +1231,7 @@ class Agent:
                     )
                     continue
 
-            plan_before_trim = sum(len(batch.calls) for batch in action.plan.batches)
-            action.plan = self._trim_cacheable_repeated_tool_calls(action.plan, seen_cacheable_tool_calls)
-            plan_after_trim = sum(len(batch.calls) for batch in action.plan.batches)
-            if plan_after_trim < plan_before_trim:
-                self._debug(
-                    "tool_plan_trimmed "
-                    f"removed={plan_before_trim - plan_after_trim} remaining={plan_after_trim}"
-                )
-            if plan_after_trim == 0:
-                self._append_message(
-                    {
-                        "role": "system",
-                        "content": "All proposed tool calls repeated cached work. Use the available tool results and respond.",
-                    }
-                )
-                continue
+            prior_tool_results = self._prior_tool_results()
 
             assistant_tool_message = action_metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
@@ -1257,6 +1245,7 @@ class Agent:
                         action.plan,
                         cancel_checker=lambda: self._is_cancelled(run_id),
                         media_context=media_context,
+                        prior_results=prior_tool_results,
                     )
                 )
             except ExecutionCancelledError:
@@ -1563,7 +1552,6 @@ class Agent:
         cancelled = False
         total_tool_calls = 0
         paused = False
-        seen_cacheable_tool_calls: set[tuple[str, str]] = set()
 
         for _round_idx in self._round_indices(max_rounds):
             if self._is_cancelled(run_id):
@@ -1610,22 +1598,7 @@ class Agent:
                     )
                     continue
 
-            plan_before_trim = sum(len(batch.calls) for batch in action.plan.batches)
-            action.plan = self._trim_cacheable_repeated_tool_calls(action.plan, seen_cacheable_tool_calls)
-            plan_after_trim = sum(len(batch.calls) for batch in action.plan.batches)
-            if plan_after_trim < plan_before_trim:
-                self._debug(
-                    "tool_plan_trimmed "
-                    f"removed={plan_before_trim - plan_after_trim} remaining={plan_after_trim}"
-                )
-            if plan_after_trim == 0:
-                self._append_message(
-                    {
-                        "role": "system",
-                        "content": "All proposed tool calls repeated cached work. Use the available tool results and respond.",
-                    }
-                )
-                continue
+            prior_tool_results = self._prior_tool_results()
 
             assistant_tool_message = action_metadata.get("assistant_tool_message")
             if isinstance(assistant_tool_message, dict):
@@ -1636,6 +1609,7 @@ class Agent:
                     action.plan,
                     cancel_checker=lambda: self._is_cancelled(run_id),
                     media_context=media_context,
+                    prior_results=prior_tool_results,
                 )
             except ExecutionCancelledError:
                 cancelled = True
@@ -2054,7 +2028,6 @@ class Agent:
         last_results: list[ToolResult] = []
         total_tool_calls = 0
         current_round = 0
-        seen_cacheable_tool_calls: set[tuple[str, str]] = set()
         try:
             for round_idx in self._round_indices(max_rounds):
                 current_round = round_idx
@@ -2164,24 +2137,7 @@ class Agent:
                         )
                         continue
 
-                plan_before_trim = sum(len(batch.calls) for batch in action.plan.batches)
-                action.plan = self._trim_cacheable_repeated_tool_calls(action.plan, seen_cacheable_tool_calls)
-                plan_after_trim = sum(len(batch.calls) for batch in action.plan.batches)
-                if plan_after_trim < plan_before_trim:
-                    yield events.emit(
-                        "tool_plan_trimmed",
-                        round=round_idx,
-                        removed=plan_before_trim - plan_after_trim,
-                        remaining=plan_after_trim,
-                    )
-                if plan_after_trim == 0:
-                    self._append_message(
-                        {
-                            "role": "system",
-                            "content": "All proposed tool calls repeated cached work. Use the available tool results and respond.",
-                        }
-                    )
-                    continue
+                prior_tool_results = self._prior_tool_results()
 
                 assistant_tool_message = action_metadata.get("assistant_tool_message")
                 if isinstance(assistant_tool_message, dict):
@@ -2216,6 +2172,7 @@ class Agent:
                             action.plan,
                             cancel_checker=lambda: self._is_cancelled(resolved_run_id),
                             media_context=media_context,
+                            prior_results=prior_tool_results,
                         )
                     )
                 except ExecutionCancelledError:
@@ -2429,7 +2386,6 @@ class Agent:
         last_results: list[ToolResult] = []
         total_tool_calls = 0
         current_round = 0
-        seen_cacheable_tool_calls: set[tuple[str, str]] = set()
         try:
             for round_idx in self._round_indices(max_rounds):
                 current_round = round_idx
@@ -2539,24 +2495,7 @@ class Agent:
                         )
                         continue
 
-                plan_before_trim = sum(len(batch.calls) for batch in action.plan.batches)
-                action.plan = self._trim_cacheable_repeated_tool_calls(action.plan, seen_cacheable_tool_calls)
-                plan_after_trim = sum(len(batch.calls) for batch in action.plan.batches)
-                if plan_after_trim < plan_before_trim:
-                    yield events.emit(
-                        "tool_plan_trimmed",
-                        round=round_idx,
-                        removed=plan_before_trim - plan_after_trim,
-                        remaining=plan_after_trim,
-                    )
-                if plan_after_trim == 0:
-                    self._append_message(
-                        {
-                            "role": "system",
-                            "content": "All proposed tool calls repeated cached work. Use the available tool results and respond.",
-                        }
-                    )
-                    continue
+                prior_tool_results = self._prior_tool_results()
 
                 assistant_tool_message = action_metadata.get("assistant_tool_message")
                 if isinstance(assistant_tool_message, dict):
@@ -2590,6 +2529,7 @@ class Agent:
                         action.plan,
                         cancel_checker=lambda: self._is_cancelled(resolved_run_id),
                         media_context=media_context,
+                        prior_results=prior_tool_results,
                     )
                 except ExecutionCancelledError:
                     yield events.emit("run_cancelled", round=round_idx)

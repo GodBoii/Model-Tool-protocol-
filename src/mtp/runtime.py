@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from .exceptions import RetryAgentRun, StopAgentRun
 from .media import coerce_audios, coerce_files, coerce_images, coerce_videos
 from .policy import PolicyDecision, RiskPolicy
-from .protocol import ExecutionPlan, ToolCall, ToolOutput, ToolResult, ToolSpec
+from .protocol import ExecutionPlan, ToolCall, ToolOutput, ToolResult, ToolRiskLevel, ToolSpec
 from .schema import (
     ToolArgumentsValidationError,
     coerce_tool_arguments,
@@ -269,6 +269,8 @@ class ToolRegistry:
                 ref_id = value["$ref"]
                 if ref_id not in results:
                     raise KeyError(f"Missing tool result reference: {ref_id}")
+                if not results[ref_id].success:
+                    raise KeyError(f"Referenced tool call failed: {ref_id}")
                 return results[ref_id].output
             return {k: self._resolve_refs(v, results) for k, v in value.items()}
         if isinstance(value, list):
@@ -285,6 +287,11 @@ class ToolRegistry:
     ) -> ToolResult:
         if cancel_checker is not None and cancel_checker():
             raise ExecutionCancelledError("Execution cancelled before tool call execution.")
+
+        failed_dependencies = [dep for dep in call.depends_on if dep in prior_results and not prior_results[dep].success]
+        if failed_dependencies:
+            return ToolResult(call_id=call.id, tool_name=call.name, output=None, success=False,
+                              skipped=True, error=f"Prerequisite calls failed: {failed_dependencies}")
 
         self.ensure_tools_available([call.name])
         tool = self._tools.get(call.name)
@@ -449,9 +456,10 @@ class ToolRegistry:
         *,
         cancel_checker: CancelChecker | None = None,
         media_context: dict[str, Any] | None = None,
+        prior_results: dict[str, ToolResult] | None = None,
     ) -> list[ToolResult]:
-        validate_execution_plan(plan)
-        results: dict[str, ToolResult] = {}
+        validate_execution_plan(plan, prior_call_ids=set(prior_results or ()))
+        results: dict[str, ToolResult] = dict(prior_results or {})
         ordered: list[ToolResult] = []
 
         for batch in plan.batches:
@@ -489,8 +497,12 @@ class ToolRegistry:
                 raise ExecutionCancelledError("Execution plan cancelled before parallel tool execution.")
             unique_calls: dict[tuple[str, str], ToolCall] = {}
             call_keys: dict[str, tuple[str, str]] = {}
+            self.ensure_tools_available([call.name for call in batch.calls])
             for call in batch.calls:
-                key = self._cache_key(call.name, self._resolve_refs(call.arguments, results))
+                spec = self._tools.get(call.name)
+                pure_read = spec is not None and spec.spec.risk_level == ToolRiskLevel.READ_ONLY and spec.spec.side_effects == "none"
+                # Only pure reads may share execution. Writes always retain multiplicity.
+                key = self._cache_key(call.name, call.arguments) if pure_read else (call.name, call.id)
                 call_keys[call.id] = key
                 unique_calls.setdefault(key, call)
 
