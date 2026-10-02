@@ -471,8 +471,100 @@ def test_website_does_not_accept_a_redirect_to_private_network(monkeypatch):
     assert validated == ["https://public.example/start", "http://127.0.0.1/private"]
 
 
-@pytest.mark.xfail(strict=True, reason="A15: README's positional mtp run command is rejected")
+@pytest.mark.xfail(
+    strict=True, reason="A15: README's positional mtp run command is rejected"
+)
 def test_documented_cli_run_positional_path_is_accepted():
     from mtp.cli.main import build_parser
 
     assert build_parser().parse_args(["run", "my-agent"]).path == "my-agent"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="A16: async event API iterates blocking finalize stream on its event loop",
+)
+def test_async_events_leave_event_loop_responsive_during_sync_stream():
+    import threading
+
+    async def probe():
+        started = asyncio.Event()
+        heartbeat = threading.Event()
+        observed = []
+
+        class Provider(ScriptedProvider):
+            def finalize_stream(self, messages, tool_results):
+                started.set()
+                observed.append(heartbeat.wait(timeout=0.2))
+                yield "done"
+
+        async def beat():
+            await started.wait()
+            heartbeat.set()
+
+        registry = ToolRegistry()
+        registry.register_tool(ToolSpec("echo", "echo"), lambda value: value)
+        provider = Provider([native_action([wire_call("a", 7)])])
+        agent = Agent(provider=provider, tools=registry)
+        task = asyncio.create_task(beat())
+        try:
+            async for _event in agent.arun_loop_events("synthetic", max_rounds=1):
+                pass
+            assert observed == [True]
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(probe())
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="A17: native Fireworks wrapper shares the latest instance's global key",
+)
+def test_fireworks_native_clients_keep_their_own_keys(monkeypatch):
+    import sys
+    from types import ModuleType
+
+    from mtp.providers.fireworks_provider import FireworksAIToolCallingProvider
+
+    parent = ModuleType("fireworks")
+    parent.__path__ = []
+    sdk = ModuleType("fireworks.client")
+    sdk.api_key = None
+    sdk.ChatCompletion = NS(create=lambda **kwargs: sdk.api_key)
+    parent.client = sdk
+    monkeypatch.setitem(sys.modules, "fireworks", parent)
+    monkeypatch.setitem(sys.modules, "fireworks.client", sdk)
+    first = FireworksAIToolCallingProvider(api_key="synthetic-first")
+    FireworksAIToolCallingProvider(api_key="synthetic-second")
+    assert first._client.chat.completions.create() == "synthetic-first"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="A18: Cohere replays dotted names instead of the advertised sanitized names",
+)
+def test_cohere_replays_the_provider_tool_name():
+    from mtp.providers.cohere_provider import CohereToolCallingProvider
+
+    response = NS(
+        message=NS(
+            content=[],
+            tool_calls=[
+                NS(
+                    id="cohere1",
+                    function=NS(name="calculator__add", arguments='{"a":1,"b":2}'),
+                )
+            ],
+        ),
+        usage=None,
+    )
+    provider = CohereToolCallingProvider(client=NS(chat=lambda **kwargs: response))
+    spec = ToolSpec("calculator.add", "add")
+    action = provider.next_action([{"role": "user", "content": "add"}], [spec])
+    replay = provider._to_cohere_messages([action.metadata["assistant_tool_message"]])
+    assert (
+        replay[0]["tool_calls"][0]["function"]["name"]
+        == provider._to_cohere_tools([spec])[0]["function"]["name"]
+    )
