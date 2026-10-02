@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 from ..protocol import ToolRiskLevel, ToolSpec
 from ..runtime import RegisteredTool, ToolkitLoader
@@ -71,11 +71,22 @@ class WebsiteToolkit(ToolkitLoader):
             ) from exc
 
         safe_url = self._validate_url(url)
-        response = requests.get(
-            safe_url,
-            headers={"User-Agent": self.user_agent},
-            timeout=self.timeout_seconds,
-        )
+        for _hop in range(6):
+            response = requests.get(
+                safe_url, headers={"User-Agent": self.user_agent},
+                timeout=self.timeout_seconds, allow_redirects=False,
+            )
+            # Also reject unexpected transport-side redirects before accepting content.
+            self._validate_url(getattr(response, "url", None) or safe_url)
+            if getattr(response, "status_code", 200) not in {301, 302, 303, 307, 308}:
+                break
+            location = response.headers.get("Location")
+            response.close()
+            if not location:
+                raise ValueError("Redirect response is missing Location.")
+            safe_url = self._validate_url(urljoin(safe_url, location))
+        else:
+            raise ValueError("Too many website redirects.")
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")

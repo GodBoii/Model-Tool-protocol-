@@ -215,9 +215,6 @@ def test_mcp_websocket_lifecycle_and_tool_round():
     asyncio.run(probe())
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A10: MCP initialize echoes unsupported protocol versions"
-)
 def test_mcp_does_not_claim_an_unknown_protocol_version():
     server = MCPJsonRpcServer(tools=registry())
     response = server.handle_request(
@@ -226,7 +223,6 @@ def test_mcp_does_not_claim_an_unknown_protocol_version():
     assert response["result"]["protocolVersion"] != "9999-01-01"
 
 
-@pytest.mark.xfail(strict=True, reason="A11: MCP HTTP accepts an untrusted Origin")
 def test_mcp_http_rejects_untrusted_origin():
     from urllib.error import HTTPError
 
@@ -239,10 +235,6 @@ def test_mcp_http_rejects_untrusted_origin():
         assert error.value.code == 403
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="A13: MCP unknown methods use invalid-params instead of method-not-found",
-)
 def test_mcp_unknown_method_returns_jsonrpc_method_not_found():
     server = MCPJsonRpcServer(tools=registry())
     server.handle_request(rpc("initialize"))

@@ -14,6 +14,11 @@ from .protocol import ToolCall, ToolRiskLevel, ToolSpec
 from .runtime import ToolRegistry
 
 JsonDict = dict[str, Any]
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
+
+
+class _MethodNotFoundError(ValueError):
+    pass
 AuthValidator = Callable[[str | None, JsonDict], bool]
 ResourceReader = Callable[[str], Any]
 PromptRenderer = Callable[[str, dict[str, Any]], Any]
@@ -100,7 +105,7 @@ class MCPJsonRpcServer:
         auth_token: str | None = None,
         auth_validator: AuthValidator | None = None,
         auth_provider: MCPAuthProvider | None = None,
-        protocol_version: str = "2026-03-26",
+        protocol_version: str = "2025-11-25",
         resources: list[MCPResource] | None = None,
         resource_reader: ResourceReader | None = None,
         prompts: list[MCPPrompt] | None = None,
@@ -123,6 +128,8 @@ class MCPJsonRpcServer:
         self.auth_token = auth_token
         self.auth_validator = auth_validator
         self.auth_provider = auth_provider
+        if protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
+            raise ValueError(f"Unsupported MCP revision: {protocol_version}")
         self.protocol_version = protocol_version
         self.resources = list(resources or [])
         self.resource_reader = resource_reader
@@ -215,6 +222,8 @@ class MCPJsonRpcServer:
 
         try:
             result = self._dispatch(method, params, request_id=request_id)
+        except _MethodNotFoundError as exc:
+            return None if is_notification else self._error_response(request_id, -32601, str(exc))
         except ValueError as exc:
             if is_notification:
                 return None
@@ -280,6 +289,8 @@ class MCPJsonRpcServer:
 
         try:
             result = await self._adispatch(method, params, request_id=request_id)
+        except _MethodNotFoundError as exc:
+            return None if is_notification else self._error_response(request_id, -32601, str(exc))
         except ValueError as exc:
             if is_notification:
                 return None
@@ -446,7 +457,7 @@ class MCPJsonRpcServer:
             return {"prompts": [self._prompt_to_mcp(prompt) for prompt in self.prompts]}
         if method == "prompts/get":
             return self._prompts_get(params)
-        raise ValueError(f"Method not found: {method}")
+        raise _MethodNotFoundError(f"Method not found: {method}")
 
     async def _adispatch(self, method: str, params: JsonDict, *, request_id: Any = None) -> JsonDict:
         if method in {"ping", "initialize", "notifications/initialized", "notifications/progress"}:
@@ -463,11 +474,11 @@ class MCPJsonRpcServer:
             return {"prompts": [self._prompt_to_mcp(prompt) for prompt in self.prompts]}
         if method == "prompts/get":
             return self._prompts_get(params)
-        raise ValueError(f"Method not found: {method}")
+        raise _MethodNotFoundError(f"Method not found: {method}")
 
     def _initialize(self, params: JsonDict) -> JsonDict:
         requested_version = params.get("protocolVersion")
-        if isinstance(requested_version, str) and requested_version.strip():
+        if requested_version in SUPPORTED_PROTOCOL_VERSIONS:
             negotiated_version = requested_version
         else:
             negotiated_version = self.protocol_version

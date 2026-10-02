@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .mcp import MCPJsonRpcServer
+from .mcp import MCPJsonRpcServer, SUPPORTED_PROTOCOL_VERSIONS
 
 
 def _now_iso() -> str:
@@ -220,10 +220,12 @@ class MCPHTTPTransportServer:
         replay_store_path: str | Path | None = None,
         replay_store: _ProgressReplayStore | None = None,
         sse_keepalive_seconds: float = 15.0,
+        allowed_origins: set[str] | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.server = server
+        self.allowed_origins = set(allowed_origins) if allowed_origins is not None else None
         self._http: ThreadingHTTPServer | None = None
         self.sse_keepalive_seconds = max(1.0, float(sse_keepalive_seconds))
         self._replay = replay_store or _ProgressReplayStore(
@@ -270,6 +272,19 @@ class MCPHTTPTransportServer:
         outer = self
 
         class _Handler(BaseHTTPRequestHandler):
+            def _validate_origin(self) -> bool:
+                origin = self.headers.get("Origin")
+                if origin is None:
+                    return True
+                port = outer._http.server_address[1]
+                allowed = outer.allowed_origins if outer.allowed_origins is not None else {
+                    f"http://localhost:{port}", f"http://127.0.0.1:{port}", f"http://[::1]:{port}",
+                }
+                if origin in allowed:
+                    return True
+                self._write_json(403, {"error": "Untrusted Origin"})
+                return False
+
             def _read_json_body(self) -> Any:
                 content_length = int(self.headers.get("Content-Length", "0"))
                 raw = self.rfile.read(content_length).decode("utf-8")
@@ -386,6 +401,8 @@ class MCPHTTPTransportServer:
                     return
 
             def do_GET(self) -> None:  # noqa: N802
+                if not self._validate_origin():
+                    return
                 parsed = urlparse(self.path)
                 qs = parse_qs(parsed.query)
                 session_id, auth_fingerprint = outer._scope_from_http_request(headers=self.headers, qs=qs)
@@ -429,6 +446,12 @@ class MCPHTTPTransportServer:
                 )
 
             def do_POST(self) -> None:  # noqa: N802
+                if not self._validate_origin():
+                    return
+                revision = self.headers.get("MCP-Protocol-Version")
+                if revision is not None and revision not in SUPPORTED_PROTOCOL_VERSIONS:
+                    self._write_json(400, {"error": "Unsupported MCP protocol version"})
+                    return
                 parsed = urlparse(self.path)
                 if parsed.path not in {"/", "/rpc"}:
                     self.send_response(404)
@@ -455,7 +478,7 @@ class MCPHTTPTransportServer:
                     request_obj = self._inject_auth_and_session(dict(payload))
                     result = outer.server.handle_request(request_obj)
                     if result is None:
-                        self.send_response(204)
+                        self.send_response(202)
                         self.end_headers()
                         return
                     self._write_json(200, result)

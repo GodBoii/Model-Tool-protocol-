@@ -273,6 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     new_cmd.set_defaults(handler=_cmd_new)
 
     run_cmd = sub.add_parser("run", help="Run a scaffolded project entry script.")
+    run_cmd.add_argument("path", nargs="?", default=argparse.SUPPRESS, help="Project directory.")
     run_cmd.add_argument("--path", default=".", help="Project directory.")
     run_cmd.add_argument("--entry", default=None, help="Explicit entry script path relative to --path.")
     run_cmd.set_defaults(handler=_cmd_run)
