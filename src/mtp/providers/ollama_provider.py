@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from ..async_stream import async_from_sync
 from ..agent import AgentAction, ProviderAdapter
 from ..media import Image
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
@@ -272,7 +273,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
 
         content_acc = ""
         reasoning_acc = ""
-        tool_calls: list[dict[str, Any]] | None = None
+        tool_calls: list[Any] = []
         usage: dict[str, int] | None = None
 
         for chunk in stream:
@@ -294,7 +295,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
                 content_acc += chunk_content
                 
             if isinstance(chunk_tool_calls, list) and chunk_tool_calls:
-                tool_calls = chunk_tool_calls
+                tool_calls.extend(chunk_tool_calls)
 
         action_meta: dict[str, Any] = {"provider": "ollama", "model": self.model}
         if usage:
@@ -412,13 +413,8 @@ class OllamaToolCallingProvider(ProviderAdapter):
         return await asyncio.to_thread(self.next_action, messages, tools)
 
     async def astream_next_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> Any:
-        stream = self.stream_next_action(messages, tools)
-        while True:
-            try:
-                chunk = await asyncio.to_thread(next, stream)
-                yield chunk
-            except StopIteration:
-                break
+        async for chunk in async_from_sync(lambda: self.stream_next_action(messages, tools)):
+            yield chunk
 
     async def afinalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         return await asyncio.to_thread(self.finalize, messages, tool_results)

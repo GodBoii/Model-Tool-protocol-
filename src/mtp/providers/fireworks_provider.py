@@ -78,19 +78,8 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
 
         # Prefer the native Fireworks SDK for full feature support
         try:
-            import fireworks.client as fw
-            fw.api_key = key
-
-            class _FireworksClient:
-                """Thin wrapper to give a unified .chat.completions.create interface."""
-                class chat:
-                    class completions:
-                        @staticmethod
-                        def create(**kwargs: Any) -> Any:
-                            from fireworks.client import ChatCompletion
-                            return ChatCompletion.create(**kwargs)
-
-            return _FireworksClient()
+            from fireworks import Fireworks
+            return Fireworks(api_key=key)
         except ImportError:
             pass
 

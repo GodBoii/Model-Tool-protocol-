@@ -90,6 +90,10 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             )
             if converted is None:
                 continue
+            if converted.get("role") == "assistant":
+                reasoning = msg.get("reasoning_content", msg.get("reasoning"))
+                if isinstance(reasoning, str):
+                    converted["reasoning_content"] = reasoning
             if converted.get("role") == "tool":
                 converted["name"] = msg.get("tool_name") or msg.get("name")
             formatted.append(converted)
@@ -128,8 +132,10 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         }
 
         # deepseek-reasoner does not support tool_choice or parallel_tool_calls
-        if deepseek_tools and not is_reasoner:
+        if deepseek_tools:
             request_args["tools"] = deepseek_tools
+            if is_reasoner and (not isinstance(self.tool_choice, str) or self.tool_choice not in {"auto", "none"}):
+                raise ValueError("DeepSeek thinking mode supports only auto or none tool choice.")
             request_args["tool_choice"] = self.tool_choice
             try:
                 request_args["parallel_tool_calls"] = self.parallel_tool_calls
@@ -145,8 +151,9 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
 
         # R1 exposes chain-of-thought in reasoning_content
         reasoning: str | None = None
+        reasoning_content = getattr(message, "reasoning_content", None)
         if self.capture_reasoning:
-            reasoning = getattr(message, "reasoning_content", None)
+            reasoning = reasoning_content
 
         usage = extract_usage_metrics(response)
         action_meta: dict[str, Any] = {"provider": "deepseek", "model": self.model}
@@ -154,6 +161,10 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
             action_meta["usage"] = usage
         if reasoning:
             action_meta["reasoning"] = reasoning
+        assistant_message = {"role": "assistant", "content": message.content or ""}
+        if isinstance(reasoning_content, str):
+            assistant_message["reasoning_content"] = reasoning_content
+        action_meta["assistant_message"] = assistant_message
 
         if tool_calls:
             payload = openai_like_tool_call_plan_payload(
@@ -165,6 +176,8 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
                 tool_call_source="native_tool_calls",
                 use_current_index_refs=True,
             )
+            if isinstance(reasoning_content, str):
+                payload["metadata"]["assistant_tool_message"]["reasoning_content"] = reasoning_content
             return AgentAction(
                 plan=payload["plan"],
                 metadata={**action_meta, **payload["metadata"]},
@@ -181,6 +194,9 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
+        self._last_finalize_message = {"role": "assistant", "content": message.content or ""}
+        if isinstance(getattr(message, "reasoning_content", None), str):
+            self._last_finalize_message["reasoning_content"] = message.reasoning_content
         if getattr(message, "tool_calls", None):
             return "Model requested an additional tool round; rerun with a larger max_rounds."
         return message.content or "Done."
@@ -189,8 +205,8 @@ class DeepSeekToolCallingProvider(ProviderAdapter):
         is_reasoner = self._is_reasoner()
         return ProviderCapabilities(
             provider="deepseek",
-            supports_tool_calling=not is_reasoner,
-            supports_parallel_tool_calls=bool(self.parallel_tool_calls) and not is_reasoner,
+            supports_tool_calling=True,
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text"],
             supports_tool_media_output=False,
             supports_finalize_streaming=False,

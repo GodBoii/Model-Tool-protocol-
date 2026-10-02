@@ -16,6 +16,7 @@ from .common import (
     normalize_refs,
     safe_load_arguments,
 )
+from .tool_names import ToolNameMap
 
 
 class CohereToolCallingProvider(ProviderAdapter):
@@ -60,6 +61,7 @@ class CohereToolCallingProvider(ProviderAdapter):
         self.max_tokens = max_tokens
         self.preamble = preamble          # Cohere's version of system prompt
         self.force_single_step = force_single_step
+        self._tool_names = ToolNameMap()
         self._last_finalize_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
@@ -99,7 +101,7 @@ class CohereToolCallingProvider(ProviderAdapter):
             {
                 "type": "function",
                 "function": {
-                    "name": tool.name.replace(".", "__"),
+                    "name": self._tool_names.wire_name(tool.name),
                     "description": tool.description,
                     "parameters": tool.input_schema or {"type": "object", "properties": {}},
                 },
@@ -153,7 +155,7 @@ class CohereToolCallingProvider(ProviderAdapter):
                             "id": tc.get("id", f"call_{i}"),
                             "type": "function",
                             "function": {
-                                "name": tc["function"]["name"],
+                                "name": self._tool_names.wire_name(tc["function"]["name"]),
                                 "arguments": tc["function"].get("arguments", "{}"),
                             },
                         }
@@ -261,8 +263,7 @@ class CohereToolCallingProvider(ProviderAdapter):
                     continue
                 # Map back sanitized names (replace __ with .)
                 fn_name = getattr(fn, "name", "") or ""
-                if "__" in fn_name:
-                    fn_name = fn_name.replace("__", ".")
+                fn_name = self._tool_names.original_name(fn_name)
                 
                 raw_arguments = getattr(fn, "arguments", "{}")
                 parsed_args = safe_load_arguments(raw_arguments)

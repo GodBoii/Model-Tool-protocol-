@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import mimetypes
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
@@ -182,6 +184,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         Content, Part = self._get_content_and_part_types()
 
         contents: list[Any] = []
+        native_call_ids: set[str] = set()
         system_lines: list[str] = []
         for msg in messages:
             role = msg.get("role")
@@ -232,6 +235,25 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 continue
 
             if role == "assistant":
+                native = msg.get("gemini_content")
+                if isinstance(native, dict):
+                    native_call_ids.update(
+                        part["function_call"]["id"] for part in native.get("parts", [])
+                        if isinstance(part.get("function_call"), dict) and part["function_call"].get("id")
+                    )
+                    if hasattr(Content, "model_validate"):
+                        contents.append(Content.model_validate(native))
+                    else:
+                        native_parts = []
+                        for value in native.get("parts", []):
+                            function = value.get("function_call")
+                            part = Part.from_function_call(name=function["name"], args=function.get("args", {})) if function else Part.from_text(text=value.get("text", ""))
+                            signature = value.get("thought_signature")
+                            if signature:
+                                part.thought_signature = base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4))
+                            native_parts.append(part)
+                        contents.append(Content(role="model", parts=native_parts))
+                    continue
                 tool_calls = msg.get("tool_calls")
                 if isinstance(tool_calls, list):
                     for tool_call in tool_calls:
@@ -256,6 +278,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 continue
 
             if role == "tool":
+                parts = []
                 tool_name = msg.get("tool_name")
                 if not isinstance(tool_name, str) or not tool_name:
                     tool_name = "tool"
@@ -264,7 +287,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
                     result_payload = tool_content
                 else:
                     result_payload = self._to_text(tool_content)
-                parts.append(Part.from_function_response(name=tool_name, response={"result": result_payload}))
+                part = Part.from_function_response(name=tool_name, response={"result": result_payload})
+                if msg.get("tool_call_id") in native_call_ids:
+                    part.function_response.id = msg["tool_call_id"]
+                parts.append(part)
                 contents.append(Content(role="user", parts=parts))
                 continue
 
@@ -379,12 +405,25 @@ class GeminiToolCallingProvider(ProviderAdapter):
         serialized_tool_calls: list[dict[str, Any]] = []
         id_by_index: dict[int, str] = {}
         candidates = getattr(response, "candidates", None) or []
+        native_parts: list[dict[str, Any]] = []
         if candidates:
             parts = getattr(candidates[0].content, "parts", None) or []
             for idx, part in enumerate(parts):
                 fn = getattr(part, "function_call", None)
+                if hasattr(part, "model_dump"):
+                    native_parts.append(part.model_dump(mode="json", exclude_none=True))
+                else:
+                    value: dict[str, Any] = {}
+                    if fn:
+                        value["function_call"] = {"name": fn.name, "args": fn.args}
+                    if getattr(part, "text", None):
+                        value["text"] = part.text
+                    signature = getattr(part, "thought_signature", None)
+                    if signature:
+                        value["thought_signature"] = base64.urlsafe_b64encode(signature).decode("ascii")
+                    native_parts.append(value)
                 if fn:
-                    call_id = f"gemini_call_{idx}"
+                    call_id = getattr(fn, "id", None) or f"gemini_call_{uuid4().hex}"
                     id_by_index[idx] = call_id
                     raw_args = fn.args if isinstance(fn.args, dict) else dict(fn.args)
                     normalized_args = normalize_refs(raw_args, id_by_index)
@@ -406,6 +445,8 @@ class GeminiToolCallingProvider(ProviderAdapter):
                     )
 
         response_text = self._extract_response_text(response)
+        action_meta["assistant_message"] = {"role": "assistant", "content": response_text,
+                                             "gemini_content": {"role": "model", "parts": native_parts}}
         if calls:
             plan = ExecutionPlan(
                 batches=calls_to_dependency_batches(calls),
@@ -419,6 +460,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
                         "role": "assistant",
                         "content": response_text,
                         "tool_calls": serialized_tool_calls,
+                        "gemini_content": {"role": "model", "parts": native_parts},
                     },
                 },
             )
@@ -436,6 +478,10 @@ class GeminiToolCallingProvider(ProviderAdapter):
             config=config,
         )
         self._last_finalize_usage = extract_usage_metrics(response) or None
+        candidates = getattr(response, "candidates", None) or []
+        if candidates and hasattr(candidates[0].content, "model_dump"):
+            self._last_finalize_message = {"role": "assistant", "content": self._extract_response_text(response),
+                                           "gemini_content": candidates[0].content.model_dump(mode="json", exclude_none=True)}
         text = self._extract_response_text(response)
         return text or "Done."
 

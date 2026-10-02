@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import inspect
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from .common import (
     normalize_refs,
     safe_load_arguments,
 )
+from .tool_names import ToolNameMap
 
 
 class AnthropicToolCallingProvider(ProviderAdapter):
@@ -41,6 +43,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self._tool_names = ToolNameMap()
         self._last_finalize_usage: dict[str, int] | None = None
         self._client = client or self._make_client(api_key=api_key)
 
@@ -58,7 +61,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
     def _to_anthropic_tools(self, tools: list[ToolSpec]) -> list[dict[str, Any]]:
         return [
             {
-                "name": tool.name,
+                "name": self._tool_names.wire_name(tool.name),
                 "description": tool.description,
                 "input_schema": tool.input_schema or {"type": "object", "properties": {}},
             }
@@ -129,6 +132,9 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         }
 
     def _assistant_blocks(self, msg: dict[str, Any]) -> list[dict[str, Any]]:
+        native = msg.get("anthropic_content")
+        if isinstance(native, list):
+            return [dict(block) for block in native]
         blocks: list[dict[str, Any]] = []
         text = self._to_text(msg.get("content", ""))
         if text.strip():
@@ -158,7 +164,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                     {
                         "type": "tool_use",
                         "id": call_id,
-                        "name": name,
+                        "name": self._tool_names.wire_name(name),
                         "input": call_input,
                     }
                 )
@@ -234,6 +240,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                             "type": "tool_result",
                             "tool_use_id": msg["tool_call_id"],
                             "content": tool_content,
+                            "is_error": msg.get("success") is False,
                         }
                     ],
                 })
@@ -254,11 +261,11 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         if system_prompt:
             request["system"] = system_prompt
 
-        response = self._client.messages.create(
-            **request,
-        )
+        response = self._create_message(request)
         usage = extract_usage_metrics(response)
         action_meta: dict[str, Any] = {"provider": "anthropic", "model": self.model}
+        native_blocks = [block.model_dump(mode="json", exclude_none=True) if hasattr(block, "model_dump")
+                         else vars(block).copy() for block in response.content]
         if usage:
             action_meta["usage"] = usage
 
@@ -280,7 +287,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                 calls.append(
                     ToolCall(
                         id=call_id,
-                        name=content.name,
+                        name=self._tool_names.original_name(content.name),
                         arguments=normalized_args,
                         depends_on=depends_on,
                     )
@@ -289,10 +296,12 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                     {
                         "id": call_id,
                         "type": "function",
-                        "function": {"name": content.name, "arguments": json.dumps(raw_input)},
+                        "function": {"name": self._tool_names.original_name(content.name), "arguments": json.dumps(raw_input)},
                     }
                 )
         response_text = "\n".join(response_text_parts).strip()
+        action_meta["assistant_message"] = {"role": "assistant", "content": response_text,
+                                             "anthropic_content": native_blocks}
 
         if calls:
             plan = ExecutionPlan(
@@ -307,6 +316,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
                         "role": "assistant",
                         "content": response_text,
                         "tool_calls": serialized_tool_calls,
+                        "anthropic_content": native_blocks,
                     },
                 },
             )
@@ -323,9 +333,13 @@ class AnthropicToolCallingProvider(ProviderAdapter):
         }
         if system_prompt:
             request["system"] = system_prompt
-        response = self._client.messages.create(**request)
+        response = self._create_message(request)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         texts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
+        self._last_finalize_message = {"role": "assistant", "content": "\n".join(texts).strip(),
+                                       "anthropic_content": [block.model_dump(mode="json", exclude_none=True)
+                                                             if hasattr(block, "model_dump") else vars(block).copy()
+                                                             for block in response.content]}
         if texts:
             return "\n".join(texts).strip()
         return "Done."
@@ -344,6 +358,15 @@ class AnthropicToolCallingProvider(ProviderAdapter):
             supports_native_async=False,
             allow_finalize_stream_fallback=True,
         )
+
+    def _create_message(self, request: dict[str, Any]) -> Any:
+        parameters = inspect.signature(self._client.messages.create).parameters
+        accepts_extra = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+        if "temperature" not in parameters and not accepts_extra:
+            if self.temperature != 0.0:
+                raise ValueError("The installed Anthropic SDK does not support temperature.")
+            request = {k: v for k, v in request.items() if k != "temperature"}
+        return self._client.messages.create(**request)
 
     async def anext_action(self, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> AgentAction:
         return await asyncio.to_thread(self.next_action, messages, tools)

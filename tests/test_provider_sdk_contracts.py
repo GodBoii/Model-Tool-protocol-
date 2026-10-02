@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import inspect
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -175,17 +174,6 @@ def test_real_sdk_tool_round_and_result_round(provider, class_name, request):
     client = None
     try:
         client = sdk_client(provider, f"http://127.0.0.1:{server.server_address[1]}")
-        if (
-            provider == "anthropic"
-            and "temperature"
-            not in inspect.signature(client.messages.create).parameters
-        ):
-            request.node.add_marker(
-                pytest.mark.xfail(
-                    strict=True,
-                    reason="A12: current Anthropic SDK rejects adapter's temperature argument",
-                )
-            )
         cls = getattr(
             importlib.import_module(f"mtp.providers.{provider}_provider"), class_name
         )

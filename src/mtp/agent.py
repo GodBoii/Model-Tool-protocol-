@@ -14,6 +14,7 @@ from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 from .events import EventStreamContext
+from .async_stream import async_from_sync
 from .media import Audio, File, Image, Video
 from .prompts import DEFAULT_AUTORESEARCH_SYSTEM_INSTRUCTIONS, DEFAULT_MTP_SYSTEM_INSTRUCTIONS
 from .providers.common import ProviderCapabilities, capabilities_from_any
@@ -2602,7 +2603,7 @@ class Agent:
             if stream_final and callable(finalize_stream):
                 chunks: list[str] = []
                 finalize_started = perf_counter()
-                for chunk in finalize_stream(self.messages, last_results):
+                async for chunk in async_from_sync(lambda: finalize_stream(self.messages, last_results)):
                     if self._is_cancelled(resolved_run_id):
                         yield events.emit("run_cancelled", round=max_rounds)
                         self._append_message({"role": "assistant", "content": "Run cancelled."})

@@ -363,9 +363,6 @@ def test_history_limit_preserves_complete_tool_groups():
     assert answered <= declared
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A06: Anthropic receives invalid dotted built-in tool names"
-)
 def test_anthropic_tool_names_meet_official_contract():
     from mtp.providers.anthropic_provider import AnthropicToolCallingProvider
 
@@ -374,9 +371,6 @@ def test_anthropic_tool_names_meet_official_contract():
     assert re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", tools[0]["name"])
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A07: DeepSeek reasoning models never receive tools"
-)
 def test_deepseek_reasoner_receives_tools():
     from mtp.providers.deepseek_provider import DeepSeekToolCallingProvider
 
@@ -395,9 +389,6 @@ def test_deepseek_reasoner_receives_tools():
     assert captured[0].get("tools")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A08: Gemini rebuilds model parts and loses thought signatures"
-)
 def test_gemini_preserves_function_call_thought_signature():
     from mtp.providers.gemini_provider import GeminiToolCallingProvider
 
@@ -433,9 +424,6 @@ def test_gemini_preserves_function_call_thought_signature():
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A09: Ollama streaming overwrites earlier chunks' tool calls"
-)
 def test_ollama_stream_keeps_calls_from_separate_chunks():
     from mtp.providers.ollama_provider import OllamaToolCallingProvider
 
@@ -459,10 +447,6 @@ def test_ollama_stream_keeps_calls_from_separate_chunks():
     assert sum(len(b.calls) for b in action.plan.batches) == 2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="A14: WebsiteToolkit validates only the initial URL before redirects",
-)
 def test_website_does_not_accept_a_redirect_to_private_network(monkeypatch):
     """Synthetic HTTP boundary; no external or private-network request is sent."""
     import sys
@@ -501,30 +485,24 @@ def test_website_does_not_accept_a_redirect_to_private_network(monkeypatch):
     assert validated == ["https://public.example/start", "http://127.0.0.1/private"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="A15: README's positional mtp run command is rejected"
-)
 def test_documented_cli_run_positional_path_is_accepted():
     from mtp.cli.main import build_parser
 
     assert build_parser().parse_args(["run", "my-agent"]).path == "my-agent"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="A16: async event API iterates blocking finalize stream on its event loop",
-)
 def test_async_events_leave_event_loop_responsive_during_sync_stream():
     import threading
 
     async def probe():
         started = asyncio.Event()
+        loop = asyncio.get_running_loop()
         heartbeat = threading.Event()
         observed = []
 
         class Provider(ScriptedProvider):
             def finalize_stream(self, messages, tool_results):
-                started.set()
+                loop.call_soon_threadsafe(started.set)
                 observed.append(heartbeat.wait(timeout=0.2))
                 yield "done"
 
@@ -548,10 +526,6 @@ def test_async_events_leave_event_loop_responsive_during_sync_stream():
     asyncio.run(probe())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="A17: native Fireworks wrapper shares the latest instance's global key",
-)
 def test_fireworks_native_clients_keep_their_own_keys(monkeypatch):
     import sys
     from types import ModuleType
@@ -564,6 +538,9 @@ def test_fireworks_native_clients_keep_their_own_keys(monkeypatch):
     sdk.api_key = None
     sdk.ChatCompletion = NS(create=lambda **kwargs: sdk.api_key)
     parent.client = sdk
+    parent.Fireworks = lambda api_key: NS(
+        chat=NS(completions=NS(create=lambda **kwargs: api_key))
+    )
     monkeypatch.setitem(sys.modules, "fireworks", parent)
     monkeypatch.setitem(sys.modules, "fireworks.client", sdk)
     first = FireworksAIToolCallingProvider(api_key="synthetic-first")
@@ -571,10 +548,6 @@ def test_fireworks_native_clients_keep_their_own_keys(monkeypatch):
     assert first._client.chat.completions.create() == "synthetic-first"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="A18: Cohere replays dotted names instead of the advertised sanitized names",
-)
 def test_cohere_replays_the_provider_tool_name():
     from mtp.providers.cohere_provider import CohereToolCallingProvider
 
@@ -592,6 +565,9 @@ def test_cohere_replays_the_provider_tool_name():
     )
     provider = CohereToolCallingProvider(client=NS(chat=lambda **kwargs: response))
     spec = ToolSpec("calculator.add", "add")
+    response.message.tool_calls[0].function.name = provider._to_cohere_tools([spec])[0][
+        "function"
+    ]["name"]
     action = provider.next_action([{"role": "user", "content": "add"}], [spec])
     replay = provider._to_cohere_messages([action.metadata["assistant_tool_message"]])
     assert (
