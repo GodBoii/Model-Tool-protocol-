@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtpx"
-version = "0.1.37"
+version = "0.1.38"
 description = "MTPX: Model Tool Protocol and agent runtime for Python"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Prajwal Ghadge", email = "prajwalghadge2005@gmail.com" }]
@@ -17,7 +17,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -47,7 +46,7 @@ mistral = ["mistralai"]
 ollama = ["ollama"]
 openrouter = ["openai"]
 sambanova = ["openai"]
-cerebras = ["openai"]
+cerebras = ["cerebras-cloud-sdk"]
 deepseek = ["openai"]
 togetherai = ["openai"]
 fireworksai = ["openai"]
@@ -71,6 +70,7 @@ stores-db = ["psycopg", "pymysql", "mysql-connector-python"]
 
 # Convenience aggregate extras.
 providers = [
+    "cerebras-cloud-sdk",
     "openai",
     "ollama",
     "groq",
@@ -80,6 +80,7 @@ providers = [
     "mistralai",
 ]
 all = [
+    "cerebras-cloud-sdk",
     "python-dotenv",
     "websockets",
     "openai",

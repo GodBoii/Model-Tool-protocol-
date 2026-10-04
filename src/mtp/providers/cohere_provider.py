@@ -7,6 +7,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -48,7 +49,7 @@ class CohereToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "command-a-03-2025",
+        model: str = DEFAULT_PROVIDER_MODELS["cohere"],
         api_key: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,

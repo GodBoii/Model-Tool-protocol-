@@ -6,6 +6,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -25,7 +26,7 @@ class SambaNovaToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "Meta-Llama-3.1-70B-Instruct",
+        model: str = DEFAULT_PROVIDER_MODELS["sambanova"],
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",

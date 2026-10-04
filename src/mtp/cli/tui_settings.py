@@ -12,23 +12,11 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_PROVIDER_MODELS: dict[str, str] = {
-    "openai": "gpt-4o",
-    "groq": "openai/gpt-oss-120b",
-    "claude": "claude-3-5-sonnet-20241022",
-    "gemini": "gemini-2.0-flash-exp",
-    "openrouter": "qwen/qwen-2.5-72b-instruct",
-    "mistral": "mistral-large-latest",
-    "cohere": "command-r-plus-08-2024",
-    "sambanova": "Meta-Llama-3.1-405B-Instruct",
-    "cerebras": "llama3.1-70b",
-    "deepseek": "deepseek-chat",
-    "togetherai": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    "fireworksai": "accounts/fireworks/models/llama-v3p1-70b-instruct",
-    "xiaomi": "mimo-v2.5-pro",
-    "ollama": "llama3.2:3b",  # Popular small model for local inference
-    "lmstudio": "qwen3",  # Generic default (user will select from loaded models)
-}
+from ..providers.defaults import DEFAULT_PROVIDER_MODELS as SDK_DEFAULT_PROVIDER_MODELS
+
+DEFAULT_PROVIDER_MODELS = {**SDK_DEFAULT_PROVIDER_MODELS}
+DEFAULT_PROVIDER_MODELS["claude"] = DEFAULT_PROVIDER_MODELS.pop("anthropic")
+
 
 PROVIDER_KEY_ENV: dict[str, str] = {
     "openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY", "claude": "ANTHROPIC_API_KEY",
@@ -376,7 +364,7 @@ def get_provider_models(payload: dict[str, Any], provider_name: str) -> list[str
         if model not in all_models:
             all_models.append(model)
     
-    return all_models
+    return list(dict.fromkeys(all_models))
 
 
 def set_provider_api_key(payload: dict[str, Any], provider_name: str, api_key: str) -> None:

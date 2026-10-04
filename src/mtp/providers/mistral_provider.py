@@ -7,6 +7,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -26,7 +27,7 @@ class MistralToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "mistral-large-latest",
+        model: str = DEFAULT_PROVIDER_MODELS["mistral"],
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str = "auto",
@@ -216,7 +217,7 @@ class MistralToolCallingProvider(ProviderAdapter):
         return ProviderCapabilities(
             provider="mistral",
             supports_tool_calling=True,
-            supports_parallel_tool_calls=False,
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
             input_modalities=["text"],
             supports_tool_media_output=False,
             supports_finalize_streaming=False,

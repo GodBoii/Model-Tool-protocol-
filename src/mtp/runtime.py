@@ -169,6 +169,16 @@ class ToolRegistry:
         prefixes = {name.split(".", 1)[0] for name in missing if "." in name}
         for prefix in prefixes:
             self._load_toolkit(prefix)
+        missing = set(tool_names) - self._tools.keys()
+        if missing:
+            # Toolkit loaders may advertise tools across more than one namespace.
+            for toolkit_name, loader in self._toolkit_loaders.items():
+                preview = getattr(loader, "list_tool_specs", None)
+                if toolkit_name not in self._loaded_toolkits and callable(preview) and any(spec.name in missing for spec in preview()):
+                    self._load_toolkit(toolkit_name)
+                    missing -= self._tools.keys()
+                if not missing:
+                    break
 
     def _inject_media_args(
         self,

@@ -7,6 +7,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -21,7 +22,7 @@ class GroqToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "openai/gpt-oss-120b",
+        model: str = DEFAULT_PROVIDER_MODELS["groq"],
         api_key: str | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.0,
@@ -33,6 +34,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         reasoning_format: str | None = None,
         reasoning_effort: str | None = None,
         stream_include_usage: bool = True,
+        max_completion_tokens: int | None = 512,
         client: Any | None = None,
     ) -> None:
         self.model = model
@@ -46,6 +48,9 @@ class GroqToolCallingProvider(ProviderAdapter):
         self.reasoning_format = reasoning_format
         self.reasoning_effort = reasoning_effort
         self.stream_include_usage = stream_include_usage
+        if max_completion_tokens is not None and (type(max_completion_tokens) is not int or max_completion_tokens < 1):
+            raise ValueError("max_completion_tokens must be a positive integer or None.")
+        self.max_completion_tokens = max_completion_tokens
         self._last_response: Any | None = None
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_stream_usage: dict[str, int] | None = None
@@ -63,6 +68,8 @@ class GroqToolCallingProvider(ProviderAdapter):
         return Groq(api_key=key, timeout=60.0)
 
     def _create_completion(self, request_args: dict[str, Any]) -> Any:
+        if self.max_completion_tokens is not None:
+            request_args.setdefault("max_completion_tokens", self.max_completion_tokens)
         try:
             return self._client.chat.completions.create(**request_args)
         except TypeError:
@@ -156,7 +163,7 @@ class GroqToolCallingProvider(ProviderAdapter):
         if groq_tools:
             request_args["tools"] = groq_tools
             request_args["tool_choice"] = self.tool_choice
-            request_args["parallel_tool_calls"] = self.parallel_tool_calls
+            request_args["parallel_tool_calls"] = self.capabilities().supports_parallel_tool_calls
 
         response = self._create_completion(request_args)
         self._last_response = response
@@ -261,8 +268,8 @@ class GroqToolCallingProvider(ProviderAdapter):
         return ProviderCapabilities(
             provider="groq",
             supports_tool_calling=True,
-            supports_parallel_tool_calls=bool(self.parallel_tool_calls),
-            input_modalities=["text", "image"],
+            supports_parallel_tool_calls=bool(self.parallel_tool_calls) and not self.model.startswith("openai/gpt-oss"),
+            input_modalities=["text", "image"] if "vision" in self.model or "llama-4" in self.model else ["text"],
             supports_tool_media_output=True,
             supports_finalize_streaming=True,
             usage_metrics_quality=USAGE_METRICS_RICH,

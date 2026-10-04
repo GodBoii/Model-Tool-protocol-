@@ -12,6 +12,7 @@ from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..media import File, Image
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -34,7 +35,7 @@ class AnthropicToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = DEFAULT_PROVIDER_MODELS["anthropic"],
         api_key: str | None = None,
         max_tokens: int = 1024,
         temperature: float = 0.0,

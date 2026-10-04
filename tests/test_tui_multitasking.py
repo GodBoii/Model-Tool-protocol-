@@ -110,6 +110,10 @@ def test_ctrl_g_steers_queued_message_into_the_run(tmp_path: Path, fake_runner: 
     async def scenario() -> None:
         state = _make_state(tmp_path)
         state.backend = "groq"
+        from mtp.cli.tui_settings import provider_settings_path, save_provider_settings
+        save_provider_settings(provider_settings_path(state.session_store.file_path), {
+            "providers": {"groq": {"api_key": "synthetic-test-key", "model": "synthetic-model"}},
+        })
         agent = _SteerableAgent()
         state.agent = agent
         app = MTPApp(state=state)

@@ -36,9 +36,9 @@ def build_harness_agent(
             if perms.edit[k] == "ask":
                 perms.edit[k] = "allow"
         for k in list(perms.bash.keys()):
-            if perms.bash[k] == "ask":
+            if perms.bash[k] == "ask" and sandbox_mode == "danger-full-access":
                 perms.bash[k] = "allow"
-        if perms.default == "ask":
+        if perms.default == "ask" and sandbox_mode == "danger-full-access":
             perms.default = "allow"
 
     tools = Agent.ToolRegistry(

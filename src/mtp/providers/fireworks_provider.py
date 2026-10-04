@@ -6,6 +6,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -49,7 +50,7 @@ class FireworksAIToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "accounts/fireworks/models/llama-v3p3-70b-instruct",
+        model: str = DEFAULT_PROVIDER_MODELS["fireworksai"],
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",

@@ -10,6 +10,7 @@ from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..media import Audio, File, Image, Video
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     USAGE_METRICS_RICH,
@@ -28,7 +29,7 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "qwen/qwen3.6-plus-preview:free",
+        model: str = DEFAULT_PROVIDER_MODELS["openrouter"],
         api_key: str | None = None,
         site_url: str | None = None,
         site_name: str | None = None,

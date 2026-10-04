@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
-          python -m pip install pytest
+          python -m pip install pytest pytest-asyncio
 
       - name: Run fast unit tests
         run: |
@@ -49,10 +49,10 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .[websocket]
-          python -m pip install pytest
+          python -m pip install -e .[websocket,providers]
+          python -m pip install pytest pytest-asyncio
 
       - name: Run integration tests
         run: |
-          python -c "import pytest, sys; code = pytest.main(['-q', '-m', 'integration and not live']); sys.exit(0 if code == 5 else code)"
+          python -m pytest -q -m "integration and not live"
 

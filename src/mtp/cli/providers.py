@@ -31,7 +31,7 @@ PROVIDERS: list[ProviderInfo] = [
     ProviderInfo("anthropic", "Anthropic", "AnthropicToolCallingProvider", "anthropic", "ANTHROPIC_API_KEY"),
     ProviderInfo("gemini", "Gemini", "GeminiToolCallingProvider", "google.genai", "GEMINI_API_KEY"),
     ProviderInfo("sambanova", "SambaNova", "SambaNovaToolCallingProvider", "openai", "SAMBANOVA_API_KEY"),
-    ProviderInfo("cerebras", "Cerebras", "CerebrasToolCallingProvider", "openai", "CEREBRAS_API_KEY"),
+    ProviderInfo("cerebras", "Cerebras", "CerebrasToolCallingProvider", "cerebras.cloud.sdk", "CEREBRAS_API_KEY"),
     ProviderInfo("deepseek", "DeepSeek", "DeepSeekToolCallingProvider", "openai", "DEEPSEEK_API_KEY"),
     ProviderInfo("mistral", "Mistral", "MistralToolCallingProvider", "mistralai", "MISTRAL_API_KEY"),
     ProviderInfo("cohere", "Cohere", "CohereToolCallingProvider", "cohere", "COHERE_API_KEY"),

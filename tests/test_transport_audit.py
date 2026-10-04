@@ -235,6 +235,24 @@ def test_mcp_http_rejects_untrusted_origin():
         assert error.value.code == 403
 
 
+def test_mcp_http_explicit_origin_notification_status_and_version_validation():
+    from urllib.error import HTTPError
+
+    server = MCPJsonRpcServer(tools=registry())
+    transport = MCPHTTPTransportServer(
+        "127.0.0.1", 0, server, allowed_origins={"https://agent.example"}
+    )
+    with serving_http(transport, "_http") as url:
+        headers = {"Origin": "https://agent.example"}
+        assert post(url, rpc("initialize"), headers)[0] == 200
+        assert post(
+            url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, headers
+        ) == (202, None)
+        with pytest.raises(HTTPError) as error:
+            post(url, rpc("ping"), {**headers, "MCP-Protocol-Version": "9999-01-01"})
+        assert error.value.code == 400
+
+
 def test_mcp_unknown_method_returns_jsonrpc_method_not_found():
     server = MCPJsonRpcServer(tools=registry())
     server.handle_request(rpc("initialize"))

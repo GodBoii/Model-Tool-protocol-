@@ -8,6 +8,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -31,7 +32,7 @@ class XiaomiToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "mimo-v2.5-pro",
+        model: str = DEFAULT_PROVIDER_MODELS["xiaomi"],
         api_key: str | None = None,
         base_url: str | None = None,
         temperature: float = 0.0,

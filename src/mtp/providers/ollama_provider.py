@@ -11,6 +11,7 @@ from ..async_stream import async_from_sync
 from ..agent import AgentAction, ProviderAdapter
 from ..media import Image
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -38,7 +39,7 @@ class OllamaToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "qwen3",
+        model: str = DEFAULT_PROVIDER_MODELS["ollama"],
         host: str | None = None,
         api_key: str | None = None,
         options: dict[str, Any] | None = None,

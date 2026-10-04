@@ -24,8 +24,8 @@ def _status(ok: bool) -> str:
 def _check_python() -> DoctorItem:
     version = platform.python_version()
     major, minor, *_ = platform.python_version_tuple()
-    ok = int(major) > 3 or (int(major) == 3 and int(minor) >= 10)
-    return DoctorItem("python", _status(ok), f"Python {version} (requires >= 3.10)")
+    ok = int(major) > 3 or (int(major) == 3 and int(minor) >= 11)
+    return DoctorItem("python", _status(ok), f"Python {version} (requires >= 3.11)")
 
 
 def _check_dotenv() -> DoctorItem:

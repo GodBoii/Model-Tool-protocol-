@@ -6,6 +6,8 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
+from .tool_names import ToolNameMap
 from .common import (
     ProviderCapabilities,
     USAGE_METRICS_RICH,
@@ -25,7 +27,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "gpt-4o",
+        model: str = DEFAULT_PROVIDER_MODELS["openai"],
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
@@ -36,6 +38,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         self.temperature = temperature
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
+        self._tool_names = ToolNameMap(max_length=64)
         self._last_finalize_usage: dict[str, int] | None = None
         self._last_rate_limits: dict[str, Any] | None = None
         self._last_finalize_rate_limits: dict[str, Any] | None = None
@@ -63,6 +66,10 @@ class OpenAIToolCallingProvider(ProviderAdapter):
                 allow_files=True,
             )
             if converted is not None:
+                if converted.get("role") == "assistant" and isinstance(converted.get("tool_calls"), list):
+                    converted["tool_calls"] = [{**call, "function": {
+                        **call["function"], "name": self._tool_names.wire_name(call["function"]["name"]),
+                    }} for call in converted["tool_calls"]]
                 formatted.append(converted)
         return formatted
 
@@ -71,7 +78,7 @@ class OpenAIToolCallingProvider(ProviderAdapter):
             {
                 "type": "function",
                 "function": {
-                    "name": tool.name,
+                    "name": self._tool_names.wire_name(tool.name),
                     "description": tool.description,
                     "parameters": tool.input_schema or {"type": "object", "properties": {}},
                 },
@@ -117,7 +124,10 @@ class OpenAIToolCallingProvider(ProviderAdapter):
         }
         if openai_tools:
             request_args["tools"] = openai_tools
-            request_args["tool_choice"] = self.tool_choice
+            choice = self.tool_choice
+            if isinstance(choice, dict) and isinstance(choice.get("function"), dict) and isinstance(choice["function"].get("name"), str):
+                choice = {**choice, "function": {**choice["function"], "name": self._tool_names.wire_name(choice["function"]["name"])}}
+            request_args["tool_choice"] = choice
             request_args["parallel_tool_calls"] = self.parallel_tool_calls
 
         response, rate_limits = self._create_with_raw_headers(request_args)
@@ -139,6 +149,11 @@ class OpenAIToolCallingProvider(ProviderAdapter):
                 content=message.content or "",
                 tool_call_source="native_tool_calls",
             )
+            for batch in payload["plan"].batches:
+                for call in batch.calls:
+                    call.name = self._tool_names.original_name(call.name)
+            for call in payload["metadata"]["assistant_tool_message"]["tool_calls"]:
+                call["function"]["name"] = self._tool_names.original_name(call["function"]["name"])
             return AgentAction(
                 plan=payload["plan"],
                 metadata={**action_meta, **payload["metadata"]},

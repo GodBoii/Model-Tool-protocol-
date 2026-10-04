@@ -5,6 +5,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -35,7 +36,7 @@ class CerebrasToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "llama-4-scout-17b-16e-instruct",
+        model: str = DEFAULT_PROVIDER_MODELS["cerebras"],
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",

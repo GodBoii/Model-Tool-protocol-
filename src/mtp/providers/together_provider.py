@@ -6,6 +6,7 @@ from typing import Any
 from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..protocol import ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -47,7 +48,7 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        model: str = DEFAULT_PROVIDER_MODELS["togetherai"],
         api_key: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
@@ -145,7 +146,9 @@ class TogetherAIToolCallingProvider(ProviderAdapter):
             if together_tools:
                 request_args["parallel_tool_calls"] = self.parallel_tool_calls
             response = self._client.chat.completions.create(**request_args)
-        except Exception:
+        except TypeError as exc:
+            if "parallel_tool_calls" not in str(exc):
+                raise
             request_args.pop("parallel_tool_calls", None)
             response = self._client.chat.completions.create(**request_args)
 

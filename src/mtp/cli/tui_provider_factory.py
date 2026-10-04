@@ -76,7 +76,8 @@ def _groq_builder(model: str, api_key: str | None, base_url: str | None, provide
     effort = (provider_options or {}).get("reasoning_effort")
     if efforts and effort not in efforts:
         effort = "medium"
-    return Groq(model=model, api_key=api_key, reasoning_effort=effort if efforts else None)
+    return Groq(model=model, api_key=api_key, reasoning_effort=effort if efforts else None,
+                max_completion_tokens=(provider_options or {}).get("max_completion_tokens", 512))
 
 
 def _claude_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:

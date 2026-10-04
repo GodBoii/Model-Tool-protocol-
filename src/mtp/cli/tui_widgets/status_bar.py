@@ -124,7 +124,7 @@ class StatusBar(Horizontal):
         }
         color, icon = sandbox_colors.get(sandbox_mode, ("#71717a", "?"))
         sandbox = Text()
-        sandbox.append(f"{icon} {sandbox_mode}", style=color)
+        sandbox.append(f"{icon} {'permissions ' if backend != 'codex' else ''}{sandbox_mode}", style=color)
         self.query_one("#status-sandbox", Static).update(sandbox)
 
         hints = Text()

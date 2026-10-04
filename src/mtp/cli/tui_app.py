@@ -2676,7 +2676,7 @@ class MTPApp(App):
         table.add_row("mode", s.harness_mode)
         if thinking:
             table.add_row(thinking.label, thinking.current_label)
-        table.add_row("sandbox", s.codex_sandbox_mode)
+        table.add_row("sandbox" if s.backend == "codex" else "permissions", s.codex_sandbox_mode)
         table.add_row("rounds", str(s.max_rounds))
         table.add_row("tool_details", "on" if self._show_tool_details else "off")
         table.add_row("cwd", str(s.cwd))

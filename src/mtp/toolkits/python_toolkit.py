@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import ast
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -36,15 +38,23 @@ class PythonToolkit(ToolkitLoader):
         return candidate
 
     def _run_in_subprocess(self, code: str, return_variable: str) -> Any:
+        if not self.allow_unsafe_exec:
+            for node in ast.walk(ast.parse(code)):
+                if isinstance(node, (ast.Import, ast.ImportFrom, ast.ClassDef, ast.Attribute)):
+                    raise ValueError("Imports, classes and attribute access require allow_unsafe_exec=True.")
+                if isinstance(node, ast.Name) and node.id.startswith("__"):
+                    raise ValueError("Dunder access requires allow_unsafe_exec=True.")
         wrapper = (
+            "import builtins\n"
             "import json\n"
             "import sys\n"
-            "scope = {}\n"
-            "exec(sys.argv[1], {}, scope)\n"
+            "allowed = 'abs all any bool dict enumerate float int len list max min range round set sorted str sum tuple zip'.split()\n"
+            "scope = {'__builtins__': builtins.__dict__ if sys.argv[3] == 'unsafe' else {name: getattr(builtins, name) for name in allowed}}\n"
+            "exec(sys.argv[1], scope, scope)\n"
             "print(json.dumps(scope.get(sys.argv[2], None), default=str))\n"
         )
         completed = subprocess.run(
-            ["python", "-I", "-c", wrapper, code, return_variable],
+            [sys.executable, "-I", "-c", wrapper, code, return_variable, "unsafe" if self.allow_unsafe_exec else "restricted"],
             cwd=str(self.base_dir),
             capture_output=True,
             text=True,
@@ -67,7 +77,7 @@ class PythonToolkit(ToolkitLoader):
         return [
             ToolSpec(
                 name="python.run_code",
-                description="Run Python code in a constrained execution context.",
+                description="Run restricted arithmetic/collection Python by default. Full Python requires explicit allow_unsafe_exec; subprocess execution is not an OS sandbox.",
                 input_schema={
                     "type": "object",
                     "properties": {

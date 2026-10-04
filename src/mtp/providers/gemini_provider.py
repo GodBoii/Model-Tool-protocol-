@@ -13,6 +13,7 @@ from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..media import Audio, File, Image, Video
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -34,7 +35,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "gemini-2.0-flash",
+        model: str = DEFAULT_PROVIDER_MODELS["gemini"],
         api_key: str | None = None,
         temperature: float = 0.0,
         client: Any | None = None,
@@ -425,7 +426,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
                 if fn:
                     call_id = getattr(fn, "id", None) or f"gemini_call_{uuid4().hex}"
                     id_by_index[idx] = call_id
-                    raw_args = fn.args if isinstance(fn.args, dict) else dict(fn.args)
+                    raw_args = fn.args if isinstance(fn.args, dict) else dict(fn.args or {})
                     normalized_args = normalize_refs(raw_args, id_by_index)
                     depends_on = list(dict.fromkeys(extract_refs(normalized_args)))
                     calls.append(
@@ -489,7 +490,7 @@ class GeminiToolCallingProvider(ProviderAdapter):
         return ProviderCapabilities(
             provider="gemini",
             supports_tool_calling=True,
-            supports_parallel_tool_calls=False,
+            supports_parallel_tool_calls=True,
             input_modalities=["text", "image", "audio", "video", "file"],
             supports_tool_media_output=True,
             supports_finalize_streaming=False,

@@ -8,6 +8,7 @@ from typing import Any
 from ..async_stream import async_from_sync
 from ..agent import AgentAction, ProviderAdapter
 from ..protocol import ExecutionPlan, ToolCall, ToolResult, ToolSpec
+from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
     ProviderCapabilities,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
@@ -36,7 +37,7 @@ class LMStudioToolCallingProvider(ProviderAdapter):
     def __init__(
         self,
         *,
-        model: str = "qwen3",
+        model: str = DEFAULT_PROVIDER_MODELS["lmstudio"],
         base_url: str = "http://127.0.0.1:1234/v1",
         api_key: str | None = None,
         temperature: float = 0.0,
