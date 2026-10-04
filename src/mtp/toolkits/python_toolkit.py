@@ -22,6 +22,8 @@ class PythonToolkit(ToolkitLoader):
     ) -> None:
         self.base_dir = Path(base_dir or Path.cwd()).resolve()
         self.timeout_seconds = timeout_seconds
+        if type(allow_unsafe_exec) is not bool:
+            raise TypeError("allow_unsafe_exec must be a boolean.")
         self.allow_unsafe_exec = allow_unsafe_exec
 
     def _is_under_base(self, candidate: Path) -> bool:

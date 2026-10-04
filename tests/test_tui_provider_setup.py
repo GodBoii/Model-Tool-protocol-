@@ -119,13 +119,17 @@ def test_startup_cancel_and_change_provider(tmp_path):
             key = dialog.query_one("#setup-key", Input)
             key.value = "unsaved-secret"
             dialog.query_one("#setup-change").press()
-            await pilot.pause(.1)
+            deadline = asyncio.get_running_loop().time() + 3
+            while not isinstance(app.screen, ProviderPicker) and asyncio.get_running_loop().time() < deadline:
+                await pilot.pause(.05)
             assert isinstance(app.screen, ProviderPicker)
             assert key.value == ""
             options = app.screen.query_one(OptionList)
             options.highlighted = next(i for i, o in enumerate(options.options) if o.id == "groq")
             await pilot.press("enter")
-            await pilot.pause(.2)
+            deadline = asyncio.get_running_loop().time() + 3
+            while not isinstance(app.screen, ProviderSetup) and asyncio.get_running_loop().time() < deadline:
+                await pilot.pause(.05)
             assert isinstance(app.screen, ProviderSetup)
             assert app.screen.provider == "groq"
             await pilot.press("escape")

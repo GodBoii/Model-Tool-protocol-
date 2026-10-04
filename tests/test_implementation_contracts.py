@@ -213,6 +213,10 @@ def test_python_toolkit_restricts_execution_unless_opted_in(tmp_path):
     assert tools["python.run_code"](code="result = sum(range(5))") == 10
     with pytest.raises(ValueError):
         tools["python.run_code"](code="import os")
+    with pytest.raises(ValueError):
+        tools["python.run_code"](code="result = (x for x in [1]).gi_frame.f_back")
+    with pytest.raises(TypeError):
+        PythonToolkit(base_dir=tmp_path, allow_unsafe_exec="false")
     with pytest.raises(RuntimeError):
         tools["python.run_code"](code="result = open('private.txt')")
     unsafe = PythonToolkit(base_dir=tmp_path, allow_unsafe_exec=True)

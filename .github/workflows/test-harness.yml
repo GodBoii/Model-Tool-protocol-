@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
-          python -m pip install pytest pytest-asyncio
+          python -m pip install pytest pytest-asyncio python-dotenv
 
       - name: Run fast unit tests
         run: |
@@ -50,7 +50,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .[websocket,providers]
-          python -m pip install pytest pytest-asyncio
+          python -m pip install pytest pytest-asyncio python-dotenv
 
       - name: Run integration tests
         run: |
