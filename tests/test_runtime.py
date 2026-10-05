@@ -325,7 +325,7 @@ class TestExecutePlan:
         with pytest.raises(ExecutionCancelledError):
             await reg.execute_plan(plan, cancel_checker=cancel_after_first)
 
-    async def test_parallel_dedup(self):
+    async def test_parallel_identical_reads_retain_multiplicity(self):
         reg = ToolRegistry()
         call_count = 0
         def counting_echo(text: str) -> str:
@@ -343,7 +343,7 @@ class TestExecutePlan:
             )]
         )
         results = await reg.execute_plan(plan)
-        assert call_count == 1
+        assert call_count == 2
         assert len(results) == 2
         assert results[0].output == "same"
         assert results[1].output == "same"

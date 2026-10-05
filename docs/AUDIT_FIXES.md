@@ -7,8 +7,9 @@ remain as the historical baseline.
 
 ## Execution and history
 
-- Identical writes retain their requested multiplicity. Only pure read calls
-  may share execution within a parallel batch.
+- Identical calls retain their requested multiplicity. Phase two also removed
+  automatic sharing of pure reads so each call passes its own dependency and
+  approval checks. Explicit TTL caching remains inside `execute_call`.
 - Failed prerequisites block dependent calls, including references to failed
   results. Skipped calls receive explicit failed results.
 - Prior-round results can be supplied to `ToolRegistry.execute_plan` through

@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from .exceptions import RetryAgentRun, StopAgentRun
 from .media import coerce_audios, coerce_files, coerce_images, coerce_videos
 from .policy import PolicyDecision, RiskPolicy
-from .protocol import ExecutionPlan, ToolCall, ToolOutput, ToolResult, ToolRiskLevel, ToolSpec
+from .protocol import ExecutionPlan, ToolCall, ToolOutput, ToolResult, ToolSpec
 from .schema import (
     ToolArgumentsValidationError,
     coerce_tool_arguments,
@@ -505,48 +505,15 @@ class ToolRegistry:
 
             if cancel_checker is not None and cancel_checker():
                 raise ExecutionCancelledError("Execution plan cancelled before parallel tool execution.")
-            unique_calls: dict[tuple[str, str], ToolCall] = {}
-            call_keys: dict[str, tuple[str, str]] = {}
-            self.ensure_tools_available([call.name for call in batch.calls])
-            for call in batch.calls:
-                spec = self._tools.get(call.name)
-                pure_read = spec is not None and spec.spec.risk_level == ToolRiskLevel.READ_ONLY and spec.spec.side_effects == "none"
-                # Only pure reads may share execution. Writes always retain multiplicity.
-                key = self._cache_key(call.name, call.arguments) if pure_read else (call.name, call.id)
-                call_keys[call.id] = key
-                unique_calls.setdefault(key, call)
-
-            unique_results = await asyncio.gather(
-                *[
-                    self.execute_call(
-                        call,
-                        results,
-                        media_context=media_context,
-                        cancel_checker=cancel_checker,
-                    )
-                    for call in unique_calls.values()
-                ]
-            )
-            result_by_key = dict(zip(unique_calls.keys(), unique_results, strict=True))
-            for call in batch.calls:
-                result = result_by_key[call_keys[call.id]]
-                if result.call_id != call.id:
-                    result = ToolResult(
-                        call_id=call.id,
-                        tool_name=result.tool_name,
-                        output=result.output,
-                        success=result.success,
-                        error=result.error,
-                        cached=True,
-                        approval=result.approval,
-                        skipped=result.skipped,
-                        expires_at=result.expires_at,
-                        images=result.images,
-                        videos=result.videos,
-                        audios=result.audios,
-                        files=result.files,
-                    )
-                results[call.id] = result
+            # Every call must pass its own dependency and approval checks, even
+            # when another call has identical arguments. execute_call owns TTL caching.
+            batch_results = await asyncio.gather(*[
+                self.execute_call(call, results, media_context=media_context,
+                                  cancel_checker=cancel_checker)
+                for call in batch.calls
+            ])
+            for result in batch_results:
+                results[result.call_id] = result
                 ordered.append(result)
 
         return ordered
