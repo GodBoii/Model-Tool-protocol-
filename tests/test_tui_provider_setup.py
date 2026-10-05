@@ -115,23 +115,22 @@ def test_startup_cancel_and_change_provider(tmp_path):
         state.backend = "openai"
         app = MTPApp(state=state)
         async with app.run_test(size=(100, 32)) as pilot:
-            await pilot.pause(.1)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             assert isinstance(app.screen, ProviderSetup)
             dialog = app.screen
             key = dialog.query_one("#setup-key", Input)
             key.value = "unsaved-secret"
             dialog.query_one("#setup-change").press()
-            deadline = asyncio.get_running_loop().time() + 3
-            while not isinstance(app.screen, ProviderPicker) and asyncio.get_running_loop().time() < deadline:
-                await pilot.pause(.05)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderPicker)
+                             and isinstance(app.screen.focused, OptionList))
             assert isinstance(app.screen, ProviderPicker)
             assert key.value == ""
             options = app.screen.query_one(OptionList)
             options.highlighted = next(i for i, o in enumerate(options.options) if o.id == "groq")
             await pilot.press("enter")
-            deadline = asyncio.get_running_loop().time() + 3
-            while not isinstance(app.screen, ProviderSetup) and asyncio.get_running_loop().time() < deadline:
-                await pilot.pause(.05)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             assert isinstance(app.screen, ProviderSetup)
             assert app.screen.provider == "groq"
             await pilot.press("escape")
@@ -147,7 +146,8 @@ def test_key_dialog_keyboard_save_and_shortcut_isolation(tmp_path, size):
         app = MTPApp(state=_make_state(tmp_path))
         async with app.run_test(size=size) as pilot:
             app._dispatch_command("apikey", "groq")
-            await pilot.pause(.1)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             dialog = app.screen
             assert isinstance(dialog, ProviderSetup)
             actions = dialog.query_one("#setup-actions")
@@ -161,7 +161,7 @@ def test_key_dialog_keyboard_save_and_shortcut_isolation(tmp_path, size):
             assert app.screen is dialog
             key.value = "test-secret-never-live"
             await pilot.press("enter")
-            await pilot.pause(.1)
+            await wait_until(pilot, lambda: not isinstance(app.screen, ProviderSetup))
             assert not isinstance(app.screen, ProviderSetup)
             assert app.state.backend == "codex"
             assert is_provider_configured(load_provider_settings(provider_settings_path(app.state.session_store.file_path)), "groq")
@@ -178,7 +178,8 @@ def test_existing_key_not_prefilled_and_delete_requires_confirmation(tmp_path):
         app = MTPApp(state=state)
         async with app.run_test(size=(100, 40)) as pilot:
             app._dispatch_command("apikey", "groq")
-            await pilot.pause(.1)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             dialog = app.screen
             key = dialog.query_one("#setup-key", Input)
             assert key.value == ""
@@ -196,7 +197,8 @@ def test_local_endpoint_setup_without_key(tmp_path):
         app = MTPApp(state=_make_state(tmp_path))
         async with app.run_test(size=(100, 40)) as pilot:
             app._dispatch_command("backend", "ollama")
-            await pilot.pause(.2)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             dialog = app.screen
             assert isinstance(dialog, ProviderSetup) and dialog.local
             endpoint = dialog.query_one("#setup-endpoint", Input)
@@ -221,15 +223,17 @@ def test_local_model_discovery_choice_and_cancel(tmp_path, monkeypatch):
         app = MTPApp(state=_make_state(tmp_path))
         async with app.run_test(size=(100, 40)) as pilot:
             app._dispatch_command("backend", "lmstudio")
-            await pilot.pause(.2)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             dialog = app.screen
             dialog.query_one("#setup-discover").press()
-            await pilot.pause(.2)
+            await wait_until(pilot, lambda: isinstance(app.focused, OptionList))
             assert isinstance(app.focused, OptionList)
             await pilot.press("enter")
             assert dialog.query_one("#setup-model", Input).value == "fixture-model"
             await pilot.press("enter")
-            await pilot.pause(.2)
+            await wait_until(pilot, lambda: app.state.backend == "lmstudio"
+                             and not isinstance(app.screen, ProviderSetup))
             assert app.state.backend == "lmstudio" and app.state.agent is None
     asyncio.run(scenario())
 
