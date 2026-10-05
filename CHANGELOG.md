@@ -1,6 +1,6 @@
 # MTP CLI and TUI improvement program
 
-## Release 0.1.41, pending publication
+## Release 0.1.41, 2026-10-05
 
 - Add opt-in MCP SSE progress, disconnect cancellation, identity-scoped
   subscriptions, MRTR roots/sampling/elicitation, OAuth metadata discovery,
