@@ -22,6 +22,7 @@ from .schema import (
 ToolHandler = Callable[..., Any] | Callable[..., Awaitable[Any]]
 ApprovalHandler = Callable[[ToolSpec, ToolCall, dict[str, Any]], bool | Awaitable[bool]]
 CancelChecker = Callable[[], bool]
+ArgumentValidator = Callable[[Any, dict[str, Any] | None], None]
 
 
 class ExecutionCancelledError(RuntimeError):
@@ -294,6 +295,7 @@ class ToolRegistry:
         *,
         media_context: dict[str, Any] | None = None,
         cancel_checker: CancelChecker | None = None,
+        argument_validator: ArgumentValidator | None = None,
     ) -> ToolResult:
         if cancel_checker is not None and cancel_checker():
             raise ExecutionCancelledError("Execution cancelled before tool call execution.")
@@ -315,22 +317,26 @@ class ToolRegistry:
             )
 
         resolved_args = call.arguments
-        if isinstance(resolved_args, dict):
-            resolved_args = coerce_tool_arguments(resolved_args, tool.spec.input_schema)
+        if argument_validator is None:
+            if isinstance(resolved_args, dict):
+                resolved_args = coerce_tool_arguments(resolved_args, tool.spec.input_schema)
+            try:
+                resolved_args = self._resolve_refs(resolved_args, prior_results)
+            except KeyError as exc:
+                return ToolResult(
+                    call_id=call.id,
+                    tool_name=call.name,
+                    output=None,
+                    success=False,
+                    error=str(exc),
+                )
+            if isinstance(resolved_args, dict):
+                resolved_args = coerce_tool_arguments(resolved_args, tool.spec.input_schema)
         try:
-            resolved_args = self._resolve_refs(resolved_args, prior_results)
-        except KeyError as exc:
-            return ToolResult(
-                call_id=call.id,
-                tool_name=call.name,
-                output=None,
-                success=False,
-                error=str(exc),
-            )
-        if isinstance(resolved_args, dict):
-            resolved_args = coerce_tool_arguments(resolved_args, tool.spec.input_schema)
-        try:
-            validate_tool_arguments(resolved_args, tool.spec.input_schema)
+            # A protocol adapter can validate raw JSON instead of MTP's coercion
+            # and result-reference syntax. Policy and execution still run here.
+            validator = argument_validator or validate_tool_arguments
+            validator(resolved_args, tool.spec.input_schema)
         except ToolArgumentsValidationError as exc:
             return ToolResult(
                 call_id=call.id,

@@ -64,6 +64,7 @@ _EXPORTS: dict[str, str] = {
     "Newspaper4kToolkit": ".toolkits",
     "NewspaperToolkit": ".toolkits",
     "PythonToolkit": ".toolkits",
+    "DockerPythonToolkit": ".toolkits",
     "ShellToolkit": ".toolkits",
     "WebsiteToolkit": ".toolkits",
     "WikipediaToolkit": ".toolkits",
@@ -86,6 +87,8 @@ _EXPORTS: dict[str, str] = {
     "MCPWebSocketTransportServer": ".mcp_transport",
     "run_mcp_http": ".mcp_transport",
     "run_mcp_ws": ".mcp_transport",
+    "MCPStreamableHTTPTransportServer": ".mcp_streamable_http",
+    "run_mcp_streamable_http": ".mcp_streamable_http",
 }
 
 # Exports that need an optional dependency; they are None when it is missing,
@@ -136,6 +139,7 @@ __all__ = [
     "NewspaperToolkit",
     "Newspaper4kToolkit",
     "PythonToolkit",
+    "DockerPythonToolkit",
     "ShellToolkit",
     "WebsiteToolkit",
     "WikipediaToolkit",
@@ -157,6 +161,8 @@ __all__ = [
     "MCPWebSocketTransportServer",
     "run_mcp_http",
     "run_mcp_ws",
+    "MCPStreamableHTTPTransportServer",
+    "run_mcp_streamable_http",
     "StrictViolation",
     "validate_strict_dependencies",
     "load_dotenv_if_available",

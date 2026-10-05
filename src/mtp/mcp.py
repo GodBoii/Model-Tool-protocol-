@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from . import __version__
 from .protocol import ToolCall, ToolRiskLevel, ToolSpec
-from .runtime import ToolRegistry
+from .runtime import ArgumentValidator, ToolRegistry
 
 JsonDict = dict[str, Any]
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
@@ -113,6 +113,7 @@ class MCPJsonRpcServer:
         progress_handler: ProgressHandler | None = None,
         support_progress: bool = True,
         support_cancellation: bool = True,
+        enable_modern: bool = False,
     ) -> None:
         self.tools = tools
         self.server_info = server_info or MCPServerInfo()
@@ -148,6 +149,14 @@ class MCPJsonRpcServer:
         self._progress_events: list[JsonDict] = []
         self._progress_listeners: list[ProgressListener] = []
         self._active_call_tasks: dict[str, asyncio.Task[Any]] = {}
+        if type(enable_modern) is not bool:
+            raise ValueError("enable_modern must be a boolean.")
+        self.modern_enabled = enable_modern
+        self._modern_requests = None
+        if enable_modern:
+            from .mcp_modern import ModernMCPRequests
+
+            self._modern_requests = ModernMCPRequests(self)
 
     @property
     def initialized(self) -> bool:
@@ -187,6 +196,10 @@ class MCPJsonRpcServer:
         return json.dumps(response, default=str)
 
     def handle_request(self, request: JsonDict) -> JsonDict | None:
+        from .mcp_modern import is_modern_request
+
+        if self._modern_requests is not None and is_modern_request(request):
+            return self._modern_requests.handle_sync(request)
         request_id = request.get("id")
         is_notification = "id" not in request
 
@@ -254,6 +267,10 @@ class MCPJsonRpcServer:
         return json.dumps(response, default=str)
 
     async def ahandle_request(self, request: JsonDict) -> JsonDict | None:
+        from .mcp_modern import is_modern_request
+
+        if self._modern_requests is not None and is_modern_request(request):
+            return await self._modern_requests.handle(request)
         request_id = request.get("id")
         is_notification = "id" not in request
 
@@ -363,6 +380,8 @@ class MCPJsonRpcServer:
 
     def _auth_context(self, *, method: str, request_id: Any, params: JsonDict, request: JsonDict) -> MCPAuthContext:
         metadata = request.get("meta")
+        if isinstance(params.get("_meta"), dict):
+            metadata = params["_meta"]
         if not isinstance(metadata, dict):
             metadata = {}
         return MCPAuthContext(
@@ -592,7 +611,7 @@ class MCPJsonRpcServer:
         }
         return response
 
-    async def _atools_call(self, params: JsonDict, *, request_id: Any = None) -> JsonDict:
+    async def _atools_call(self, params: JsonDict, *, request_id: Any = None, argument_validator: ArgumentValidator | None = None) -> JsonDict:
         name = params.get("name")
         if not isinstance(name, str) or not name:
             raise ValueError("tools/call requires string param `name`")
@@ -638,6 +657,7 @@ class MCPJsonRpcServer:
                 call,
                 prior_results={},
                 cancel_checker=_cancel_checker,
+                argument_validator=argument_validator,
             )
         )
         self._active_call_tasks[call_key] = task
@@ -909,6 +929,15 @@ def run_mcp_stdio(server: MCPJsonRpcServer) -> None:
     Reads one JSON request object per line and writes one JSON response object per line
     for request messages. Notifications do not emit responses.
     """
+    if server.modern_enabled:
+        from .mcp_stdio_modern import serve_modern_stdio
+
+        for stream in (sys.stdin, sys.stdout):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if callable(reconfigure):
+                reconfigure(encoding="utf-8")
+        asyncio.run(serve_modern_stdio(server, sys.stdin, sys.stdout))
+        return
     for line in sys.stdin:
         raw = line.strip()
         if not raw:
