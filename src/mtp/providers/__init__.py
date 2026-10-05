@@ -4,6 +4,11 @@ from importlib import import_module
 from typing import Any
 
 _EXPORTS: dict[str, tuple[str, str]] = {
+    "OpenAICompatibleToolCallingProvider": (".compatible_provider", "OpenAICompatibleToolCallingProvider"),
+    "OpenAIResponsesToolCallingProvider": (".responses_provider", "OpenAIResponsesToolCallingProvider"),
+    "HuggingFaceToolCallingProvider": (".hosted_compatible", "HuggingFaceToolCallingProvider"),
+    "DeepInfraToolCallingProvider": (".hosted_compatible", "DeepInfraToolCallingProvider"),
+    "DashScopeToolCallingProvider": (".hosted_compatible", "DashScopeToolCallingProvider"),
     "MockPlannerProvider": (".mock", "MockPlannerProvider"),
     "GroqToolCallingProvider": (".groq_provider", "GroqToolCallingProvider"),
     "OpenRouterToolCallingProvider": (".openrouter_provider", "OpenRouterToolCallingProvider"),
@@ -23,6 +28,11 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 _ALIASES: dict[str, str] = {
+    "OpenAICompatible": "OpenAICompatibleToolCallingProvider",
+    "OpenAIResponses": "OpenAIResponsesToolCallingProvider",
+    "HuggingFace": "HuggingFaceToolCallingProvider",
+    "DeepInfra": "DeepInfraToolCallingProvider",
+    "DashScope": "DashScopeToolCallingProvider",
     "Groq": "GroqToolCallingProvider",
     "OpenRouter": "OpenRouterToolCallingProvider",
     "OpenAI": "OpenAIToolCallingProvider",

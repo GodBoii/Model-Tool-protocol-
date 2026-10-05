@@ -1,7 +1,11 @@
 """Shared SDK and CLI defaults. Explicit saved selections are never replaced."""
 
 DEFAULT_PROVIDER_MODELS = {
+    "huggingface": "openai/gpt-oss-120b:cerebras",
+    "deepinfra": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "dashscope": "qwen-plus",
     "openai": "gpt-4o",
+    "openai_responses": "gpt-4o",
     "groq": "qwen/qwen3.8-27b",
     "anthropic": "claude-sonnet-5-5",
     "gemini": "gemini-3.8-flash",
