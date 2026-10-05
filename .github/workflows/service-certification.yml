@@ -1,0 +1,67 @@
+name: service-certification
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  databases:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: mtp_test
+          POSTGRES_PASSWORD: synthetic_ci_password
+          POSTGRES_DB: mtp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mtp_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: synthetic_ci_root
+          MYSQL_DATABASE: mtp_test
+          MYSQL_USER: mtp_test
+          MYSQL_PASSWORD: synthetic_ci_password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -psynthetic_ci_root"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e . psycopg[binary] pymysql pytest pytest-asyncio python-dotenv
+      - name: Verify production database stores
+        env:
+          MTP_TEST_POSTGRES_URL: postgresql://mtp_test:synthetic_ci_password@127.0.0.1:5432/mtp_test
+          MTP_TEST_MYSQL_HOST: 127.0.0.1
+          MTP_TEST_MYSQL_USER: mtp_test
+          MTP_TEST_MYSQL_PASSWORD: synthetic_ci_password
+          MTP_TEST_MYSQL_DATABASE: mtp_test
+        run: python -m pytest -q tests/test_phase9_databases.py
+
+  local-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e . ollama pytest pytest-asyncio python-dotenv
+      - name: Prepare isolated local inference service
+        run: |
+          docker run -d --name mtp-test-ollama -p 127.0.0.1:11434:11434 ollama/ollama
+          docker exec mtp-test-ollama ollama pull qwen3:0.6b
+      - name: Verify real local inference
+        env:
+          MTP_TEST_OLLAMA_MODEL: qwen3:0.6b
+        run: python -m pytest -q tests/test_phase9_local_inference.py
+      - name: Remove temporary service
+        if: always()
+        run: docker rm --force mtp-test-ollama
