@@ -1,6 +1,6 @@
 # MTP CLI and TUI improvement program
 
-## Release 0.1.39, pending publication
+## Release 0.1.39, 2026-10-05
 
 - Add Hugging Face Inference Providers, DeepInfra, DashScope, and a configurable
   OpenAI-compatible Chat Completions adapter with native streaming.
