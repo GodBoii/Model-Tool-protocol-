@@ -112,3 +112,5 @@ print(reply)
 ## Source
 
 `src/mtp/providers/lmstudio_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

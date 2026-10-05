@@ -95,12 +95,7 @@ print(reply)
 
 ## Recommended Models
 
-- `accounts/fireworks/models/llama-v3p3-70b-instruct` — Best overall (default)
-- `accounts/fireworks/models/llama-v3p1-405b-instruct` — Most capable
-- `accounts/fireworks/models/qwen2p5-72b-instruct` — Top reasoning
-- `accounts/fireworks/models/deepseek-v3` — Best reasoning
-- `accounts/fireworks/models/mixtral-8x22b-instruct` — Fast + smart
-- `accounts/fireworks/models/firefunction-v2` — Purpose-built for tool calling
+The SDK default is `accounts/fireworks/models/llama-v3p3-70b-instruct`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Structured Output
 
@@ -160,3 +155,5 @@ print(reply)
 ## Source
 
 `src/mtp/providers/fireworks_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

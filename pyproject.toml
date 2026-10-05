@@ -112,7 +112,7 @@ Issues = "https://github.com/GodBoii/Model-Tool-protocol-/issues"
 package-dir = { "" = "src" }
 
 [tool.setuptools.package-data]
-"mtp.cli" = ["templates/**/*.tpl", "*.tcss"]
+"mtp.cli" = ["templates/**/*.tpl", "templates/**/.env.example.tpl", "*.tcss"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

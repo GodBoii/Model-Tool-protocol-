@@ -59,7 +59,7 @@ from mtp.providers import OpenRouter
 
 Agent.load_dotenv_if_available()  # loads OPENROUTER_API_KEY from .env
 
-provider = OpenRouter(model="qwen/qwen3.6-plus-preview:free")
+provider = OpenRouter(model="qwen/qwen-2.5-72b-instruct")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"qwen/qwen3.6-plus-preview:free"` | OpenRouter model ID (format: `provider/model`) |
+| `model` | `str` | `"qwen/qwen-2.5-72b-instruct"` | OpenRouter model ID (format: `provider/model`) |
 | `api_key` | `str \| None` | `None` | API key (falls back to `OPENROUTER_API_KEY` env var) |
 | `site_url` | `str \| None` | `None` | Your site URL (sent as `HTTP-Referer` header for rankings) |
 | `site_name` | `str \| None` | `None` | Your app name (sent as `X-Title` header) |
@@ -93,7 +93,7 @@ print(reply)
 
 ## Recommended Models for Tool Calling
 
-- `qwen/qwen3.6-plus-preview:free` — Free, good tool calling (default)
+- `qwen/qwen-2.5-72b-instruct` — Free, good tool calling (default)
 - `anthropic/claude-3.5-sonnet` — Best tool calling
 - `google/gemini-2.0-flash` — Fast, cheap
 - `meta-llama/llama-3.3-70b-instruct` — Good open-source option
@@ -108,7 +108,7 @@ from mtp.providers import OpenRouter
 Agent.load_dotenv_if_available()
 
 provider = OpenRouter(
-    model="qwen/qwen3.6-plus-preview:free",
+    model="qwen/qwen-2.5-72b-instruct",
     site_url="https://myapp.com",
     site_name="My Agent App",
     temperature=0.0,
@@ -135,3 +135,5 @@ print(reply)
 ## Source
 
 `src/mtp/providers/openrouter_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

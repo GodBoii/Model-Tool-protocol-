@@ -59,7 +59,7 @@ from mtp.providers import Cohere
 
 Agent.load_dotenv_if_available()  # loads COHERE_API_KEY from .env
 
-provider = Cohere(model="command-a-03-2025")
+provider = Cohere(model="command-a-plus-05-2026")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"command-a-03-2025"` | Cohere model ID |
+| `model` | `str` | `"command-a-plus-05-2026"` | Cohere model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `COHERE_API_KEY` env var) |
 | `temperature` | `float` | `0.3` | Sampling temperature |
 | `max_tokens` | `int` | `4096` | Maximum response tokens |
@@ -93,10 +93,7 @@ print(reply)
 
 ## Recommended Models
 
-- `command-a-03-2025` — Most capable, best tool use (default)
-- `command-r-plus-08-2024` — Strong RAG + multi-step tool use
-- `command-r-08-2024` — Fast, cheaper, solid tool calling
-- `command-r7b-12-2024` — Lightweight, near-free
+The SDK default is `command-a-plus-05-2026`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Strengths
 
@@ -114,7 +111,7 @@ from mtp.providers import Cohere
 Agent.load_dotenv_if_available()
 
 provider = Cohere(
-    model="command-a-03-2025",
+    model="command-a-plus-05-2026",
     temperature=0.3,
     max_tokens=4096,
     preamble="You are a precise tool-using assistant.",
@@ -133,10 +130,14 @@ print(reply)
 ## Notes
 
 - Uses Cohere V2 API (`ClientV2`) with OpenAI-compatible message format.
-- Tool names with dots (`.`) are converted to double underscores (`__`) for Cohere compatibility, then converted back in responses.
+- Tool identifiers are mapped deterministically to valid native names and restored to their registered MTP names. Replay uses the same native identifiers as definitions.
 - The `preamble` parameter is Cohere's equivalent of a system prompt. If a system message is already in the conversation, `preamble` is not injected.
 - Text-only input (no image/audio/video/file support).
 
 ## Source
 
 `src/mtp/providers/cohere_provider.py`
+
+Restricted provider tool identifiers use a deterministic reversible mapping. Dotted MTP names remain unchanged in the registry and saved runtime calls.
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

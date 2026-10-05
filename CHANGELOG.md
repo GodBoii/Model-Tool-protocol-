@@ -1,5 +1,20 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.38, pending publication
+
+- Fix all 18 reproduced audit defects, including write multiplicity, failed
+  dependencies, prior-round references, complete tool history, and async streams.
+- Preserve provider tool identities and opaque reasoning state across saved
+  sessions; isolate native Fireworks client credentials.
+- Validate website redirects and MCP HTTP origins, version negotiation, and
+  JSON-RPC method errors. Declare supported legacy MCP revisions explicitly.
+- Add Groq output budgets, refresh shared defaults, correct Cerebras extras,
+  and raise the Python floor to 3.11. CI installs its async runner and requires
+  nonempty integration tests.
+- Default Python tools restrict imports, attribute access, and builtins. SDK TUI
+  workspace permissions do not automatically authorize arbitrary shell commands.
+  Full Python and unrestricted commands require explicit opt-in.
+
 ## Release 0.1.37, 2026-09-30
 
 - Improve provider setup, command selection and chat navigation in the TUI.

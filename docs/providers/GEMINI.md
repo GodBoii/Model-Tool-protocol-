@@ -59,7 +59,7 @@ from mtp.providers import Gemini
 
 Agent.load_dotenv_if_available()  # loads GEMINI_API_KEY from .env
 
-provider = Gemini(model="gemini-2.0-flash")
+provider = Gemini(model="gemini-3.8-flash")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"gemini-2.0-flash"` | Gemini model ID |
+| `model` | `str` | `"gemini-3.8-flash"` | Gemini model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `GEMINI_API_KEY` env var) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `client` | `Any \| None` | `None` | Pre-configured `google.genai.Client` instance |
@@ -81,7 +81,7 @@ print(reply)
 | Capability | Value |
 |---|---|
 | Tool calling | Yes |
-| Parallel tool calls | No |
+| Parallel tool calls | Yes |
 | Input modalities | text, image, audio, video, file |
 | Streaming | Fallback |
 | Usage metrics | Rich |
@@ -90,9 +90,7 @@ print(reply)
 
 ## Recommended Models
 
-- `gemini-2.0-flash` — Fast, good tool calling (default)
-- `gemini-2.5-pro` — Most capable, best reasoning
-- `gemini-2.0-flash-lite` — Cheapest option
+The SDK default is `gemini-3.8-flash`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Multimodal Support
 
@@ -129,7 +127,7 @@ from mtp.providers import Gemini
 Agent.load_dotenv_if_available()
 
 provider = Gemini(
-    model="gemini-2.0-flash",
+    model="gemini-3.8-flash",
     temperature=0.0,
 )
 
@@ -147,8 +145,10 @@ print(reply)
 
 - Gemini uses `function_declarations` in tools (not the OpenAI `function` wrapper format). MTP handles the translation automatically.
 - Tool schemas are sanitized to remove unsupported JSON Schema keys before sending to Gemini.
-- Parallel tool calls are not supported by Gemini's API as of now.
+- Gemini supports parallel native function calls. MTP preserves signed model parts when replaying tool rounds.
 
 ## Source
 
 `src/mtp/providers/gemini_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

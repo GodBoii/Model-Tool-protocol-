@@ -10,7 +10,7 @@ def main() -> None:
     tools.register_toolkit_loader("calculator", CalculatorToolkit())
 
     store = JsonSessionStore(db_path="tmp/mtp_json_db")
-    provider = Groq(model="openai/gpt-oss-120b")
+    provider = Groq(model="qwen/qwen3.8-27b")
     agent = Agent.MTPAgent(
         provider=provider,
         tools=tools,

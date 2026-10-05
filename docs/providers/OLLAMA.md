@@ -70,12 +70,7 @@ print(reply)
 
 ## Recommended Models
 
-- `qwen3:1.7b` — Lightweight, fast, good tool calling
-- `qwen3:4b` — Better quality, still fast
-- `qwen3:8b` — Strong tool calling
-- `llama3.2:3b` — Good general purpose
-- `mistral:7b` — Solid alternative
-- `deepseek-r1:1.5b` — Reasoning model with thinking traces
+The SDK default is `qwen3`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Thinking/Reasoning
 
@@ -140,3 +135,5 @@ print(reply)
 ## Source
 
 `src/mtp/providers/ollama_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

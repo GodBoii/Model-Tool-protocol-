@@ -59,7 +59,7 @@ from mtp.providers import Cerebras
 
 Agent.load_dotenv_if_available()  # loads CEREBRAS_API_KEY from .env
 
-provider = Cerebras(model="llama-4-scout-17b-16e-instruct")
+provider = Cerebras(model="qwen-3.8-27b")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"llama-4-scout-17b-16e-instruct"` | Cerebras model ID |
+| `model` | `str` | `"qwen-3.8-27b"` | Cerebras model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `CEREBRAS_API_KEY` env var) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
@@ -92,9 +92,7 @@ print(reply)
 
 ## Recommended Models
 
-- `llama-4-scout-17b-16e-instruct` — Best tool calling (default)
-- `llama-3.3-70b` — Strong general purpose
-- `llama3.1-8b` — Fastest
+The SDK default is `qwen-3.8-27b`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Full Example
 
@@ -105,7 +103,7 @@ from mtp.providers import Cerebras
 Agent.load_dotenv_if_available()
 
 provider = Cerebras(
-    model="llama-4-scout-17b-16e-instruct",
+    model="qwen-3.8-27b",
     temperature=0.0,
     parallel_tool_calls=True,
 )
@@ -122,10 +120,12 @@ print(reply)
 
 ## Notes
 
-- Cerebras uses the native `cerebras-cloud-sdk` when available, falls back to the OpenAI client pointed at Cerebras endpoint.
+- Cerebras requires the native `cerebras-cloud-sdk`. The Cerebras and aggregate provider extras install it; the CLI checks that same module.
 - Text-only input (no image/audio/video support).
 - The `parallel_tool_calls` parameter is gracefully handled if the SDK version doesn't support it.
 
 ## Source
 
 `src/mtp/providers/cerebras_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

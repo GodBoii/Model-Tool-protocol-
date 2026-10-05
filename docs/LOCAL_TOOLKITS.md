@@ -1,5 +1,9 @@
 # Local Toolkits
 
+PythonToolkit now restricts code by default. Imports, attributes, and unrestricted
+builtins require explicit `allow_unsafe_exec=True`; subprocesses are not an OS
+sandbox. See [audit fixes](AUDIT_FIXES.md) for the permission changes.
+
 MTP includes local/no-key toolkits inspired by common agent toolkit patterns:
 - calculator
 - file

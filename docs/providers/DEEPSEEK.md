@@ -144,3 +144,7 @@ DeepSeek is extremely cheap (~$0.07 / 1M input tokens for V3 as of mid-2025). Fr
 ## Source
 
 `src/mtp/providers/deepseek_provider.py`
+
+Thinking-mode models receive tools and replay `reasoning_content`, even when reasoning display capture is disabled. Thinking mode accepts only `auto` and `none` tool choice.
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

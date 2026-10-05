@@ -59,7 +59,7 @@ from mtp.providers import SambaNova
 
 Agent.load_dotenv_if_available()  # loads SAMBANOVA_API_KEY from .env
 
-provider = SambaNova(model="Meta-Llama-3.1-70B-Instruct")
+provider = SambaNova(model="Meta-Llama-3.3-70B-Instruct")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"Meta-Llama-3.1-70B-Instruct"` | SambaNova model ID |
+| `model` | `str` | `"Meta-Llama-3.3-70B-Instruct"` | SambaNova model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `SAMBANOVA_API_KEY` env var) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
@@ -91,9 +91,7 @@ print(reply)
 
 ## Recommended Models
 
-- `Meta-Llama-3.1-70B-Instruct` — Best tool calling (default)
-- `Meta-Llama-3.1-8B-Instruct` — Fastest
-- `Meta-Llama-3.1-405B-Instruct` — Most capable
+The SDK default is `Meta-Llama-3.3-70B-Instruct`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Full Example
 
@@ -104,7 +102,7 @@ from mtp.providers import SambaNova
 Agent.load_dotenv_if_available()
 
 provider = SambaNova(
-    model="Meta-Llama-3.1-70B-Instruct",
+    model="Meta-Llama-3.3-70B-Instruct",
     temperature=0.0,
 )
 
@@ -127,3 +125,5 @@ print(reply)
 ## Source
 
 `src/mtp/providers/sambanova_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

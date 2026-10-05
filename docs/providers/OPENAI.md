@@ -92,10 +92,7 @@ print(reply)
 
 ## Recommended Models
 
-- `gpt-4o` — Best overall tool calling and multimodal (default)
-- `gpt-4o-mini` — Fast, cheaper, good tool support
-- `gpt-4-turbo` — Strong reasoning
-- `gpt-3.5-turbo` — Fastest, cheapest
+The SDK default is `gpt-4o`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Full Example
 
@@ -130,3 +127,5 @@ The OpenAI provider automatically extracts rate limit headers (`x-ratelimit-*`, 
 ## Source
 
 `src/mtp/providers/openai_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

@@ -7,7 +7,7 @@ name = "{{PROJECT_NAME}}"
 version = "0.1.0"
 description = "MTP project scaffold: agent + JSON session store"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "mtpx",
   "python-dotenv",

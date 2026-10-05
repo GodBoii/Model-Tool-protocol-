@@ -83,7 +83,7 @@ print(reply)
 | Capability | Value |
 |---|---|
 | Tool calling | Yes |
-| Parallel tool calls | No |
+| Parallel tool calls | Yes |
 | Input modalities | text |
 | Streaming | Fallback |
 | Usage metrics | Basic |
@@ -92,9 +92,7 @@ print(reply)
 
 ## Recommended Models
 
-- `mistral-large-latest` — Best tool calling (default)
-- `mistral-small-latest` — Fast, cheaper
-- `codestral-latest` — Code-focused
+The SDK default is `mistral-large-latest`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Full Example
 
@@ -129,3 +127,5 @@ print(reply)
 ## Source
 
 `src/mtp/providers/mistral_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

@@ -59,7 +59,7 @@ from mtp.providers import TogetherAI
 
 Agent.load_dotenv_if_available()  # loads TOGETHER_API_KEY from .env
 
-provider = TogetherAI(model="meta-llama/Llama-4-Scout-17B-16E-Instruct")
+provider = TogetherAI(model="meta-llama/Llama-3.3-70B-Instruct-Turbo")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"meta-llama/Llama-4-Scout-17B-16E-Instruct"` | Together AI model ID (format: `org/model`) |
+| `model` | `str` | `"meta-llama/Llama-3.3-70B-Instruct-Turbo"` | Together AI model ID (format: `org/model`) |
 | `api_key` | `str \| None` | `None` | API key (falls back to `TOGETHER_API_KEY` env var) |
 | `temperature` | `float` | `0.0` | Sampling temperature |
 | `tool_choice` | `str \| dict` | `"auto"` | Tool selection strategy |
@@ -93,7 +93,7 @@ print(reply)
 
 ## Recommended Models for Tool Calling
 
-- `meta-llama/Llama-4-Scout-17B-16E-Instruct` — Best tool use (default)
+- `meta-llama/Llama-3.3-70B-Instruct-Turbo` — Best tool use (default)
 - `meta-llama/Llama-3.3-70B-Instruct-Turbo` — Fast, reliable
 - `Qwen/Qwen2.5-72B-Instruct-Turbo` — Excellent reasoning
 - `deepseek-ai/DeepSeek-V3` — Top-tier reasoning
@@ -108,7 +108,7 @@ from mtp.providers import TogetherAI
 Agent.load_dotenv_if_available()
 
 provider = TogetherAI(
-    model="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+    model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
     temperature=0.0,
     max_tokens=4096,
 )
@@ -126,10 +126,12 @@ print(reply)
 ## Notes
 
 - Together AI prefers the native `together` SDK when available, falls back to OpenAI client at `https://api.together.xyz/v1`.
-- Model IDs use the format `org/model-name` (e.g., `meta-llama/Llama-4-Scout-17B-16E-Instruct`).
+- Model IDs use the format `org/model-name` (e.g., `meta-llama/Llama-3.3-70B-Instruct-Turbo`).
 - Widest model selection of any provider — great for comparing model performance on the same task.
 - Competitive pricing (~$0.18/1M tokens for 70B models).
 
 ## Source
 
 `src/mtp/providers/together_provider.py`
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

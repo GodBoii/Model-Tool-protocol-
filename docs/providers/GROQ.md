@@ -99,10 +99,7 @@ print(reply)
 
 ## Recommended Models
 
-- `llama-3.3-70b-versatile` — Best balance of speed and tool calling (default)
-- `llama-3.1-8b-instant` — Fastest, good for simple tasks
-- `mixtral-8x7b-32768` — Large context window
-- `gemma2-9b-it` — Lightweight option
+The SDK default is `qwen/qwen3.8-27b`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Full Example with Streaming
 
@@ -135,3 +132,7 @@ for event in agent.run_loop_events(
 ## Source
 
 `src/mtp/providers/groq_provider.py`
+
+`max_completion_tokens` defaults to 512 and accepts a positive integer or `None`. It applies to planning and final streaming. GPT-OSS reports no parallel support; image input is enabled only for recognized vision models.
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

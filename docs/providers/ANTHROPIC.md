@@ -59,7 +59,7 @@ from mtp.providers import Anthropic
 
 Agent.load_dotenv_if_available()  # loads ANTHROPIC_API_KEY from .env
 
-provider = Anthropic(model="claude-3-5-sonnet-20241022")
+provider = Anthropic(model="claude-sonnet-5-5")
 tools = Agent.ToolRegistry()
 agent = Agent(provider=provider, tools=tools)
 
@@ -71,7 +71,7 @@ print(reply)
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `model` | `str` | `"claude-3-5-sonnet-20241022"` | Anthropic model ID |
+| `model` | `str` | `"claude-sonnet-5-5"` | Anthropic model ID |
 | `api_key` | `str \| None` | `None` | API key (falls back to `ANTHROPIC_API_KEY` env var) |
 | `max_tokens` | `int` | `1024` | Maximum tokens in the response |
 | `temperature` | `float` | `0.0` | Sampling temperature |
@@ -91,9 +91,7 @@ print(reply)
 
 ## Recommended Models
 
-- `claude-3-5-sonnet-20241022` — Best balance of speed and capability (default)
-- `claude-3-5-haiku-20241022` — Fastest, cheapest
-- `claude-3-opus-20240229` — Most capable, slowest
+The SDK default is `claude-sonnet-5-5`. Verify availability, tools, and modalities in the provider catalog for your account. Explicit saved selections are preserved.
 
 ## Multimodal Support
 
@@ -102,7 +100,7 @@ Anthropic supports images and files (PDFs, documents) natively:
 ```python
 from mtp.media import Image, File
 
-provider = Anthropic(model="claude-3-5-sonnet-20241022")
+provider = Anthropic(model="claude-sonnet-5-5")
 agent = Agent(provider=provider, tools=tools)
 
 # With image
@@ -127,7 +125,7 @@ from mtp.providers import Anthropic
 Agent.load_dotenv_if_available()
 
 provider = Anthropic(
-    model="claude-3-5-sonnet-20241022",
+    model="claude-sonnet-5-5",
     max_tokens=4096,
     temperature=0.0,
 )
@@ -150,3 +148,9 @@ print(reply)
 ## Source
 
 `src/mtp/providers/anthropic_provider.py`
+
+Modern Anthropic SDKs omit sampling temperature. MTP omits its default `0.0` when unsupported and rejects explicit non-default values instead of ignoring them. Signed native blocks are preserved in history.
+
+Restricted provider tool identifiers use a deterministic reversible mapping. Dotted MTP names remain unchanged in the registry and saved runtime calls.
+
+These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.

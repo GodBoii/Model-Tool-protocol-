@@ -1,7 +1,7 @@
 # MTPX
 
 [![PyPI version](https://badge.fury.io/py/mtpx.svg)](https://pypi.org/project/mtpx/)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 MTPX is a Python SDK and CLI for building agents that can use tools without turning your application into a pile of prompt glue.
