@@ -1,0 +1,71 @@
+{
+  "release": "0.1.38",
+  "date": "2026-10-05",
+  "all_18_original_repros": "passing without xfail marks",
+  "non_live_suite": {
+    "passed": 723,
+    "failed": 0,
+    "skipped": 1,
+    "live_deselected": 11
+  },
+  "live_groq_batches": [
+    {
+      "model": "qwen/qwen3.8-27b",
+      "case": "parallel",
+      "passed": true,
+      "first_plan_modes": [
+        "parallel"
+      ],
+      "observed_overlap": true
+    },
+    {
+      "model": "qwen/qwen3.8-27b",
+      "case": "sequential_refs",
+      "passed": true,
+      "first_plan_modes": [
+        "sequential",
+        "sequential",
+        "sequential",
+        "sequential"
+      ],
+      "observed_overlap": false
+    },
+    {
+      "model": "qwen/qwen3.8-27b",
+      "case": "mixed",
+      "passed": true,
+      "first_plan_modes": [
+        "parallel",
+        "sequential"
+      ],
+      "observed_overlap": true
+    }
+  ],
+  "live_stream_and_session_passed": true,
+  "wheel": {
+    "css": true,
+    "templates": 12,
+    "env_templates": 3
+  },
+  "clean_wheel_cli_smoke": "29 passed",
+  "clean_ci_collection": "no collection errors",
+  "browser_visual_verification": "capture unavailable; final live TUI turn not certified",
+  "pilot_sizes": [
+    [
+      120,
+      40
+    ],
+    [
+      40,
+      15
+    ]
+  ],
+  "pypi_published": false,
+  "new_providers_added": false,
+  "clean_ci_fast_suite": {
+    "passed": 698,
+    "failed": 0,
+    "skipped": 2,
+    "deselected": 35
+  }
+}

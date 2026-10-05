@@ -1,5 +1,9 @@
 # CLI, SDK, and provider audit
 
+Implementation update: all 18 original repros have been fixed in the 0.1.38
+source. See [the implementation report](../../AUDIT_FIXES.md). The findings and
+results below describe the original audited revision.
+
 Audit date: 2026-10-03, Asia/Calcutta. Package: MTPX 0.1.37. Starting commit:
 `72ffb74`. Work stayed on `main`.
 
