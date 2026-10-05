@@ -13,6 +13,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..protocol import ToolRiskLevel, ToolSpec
 from ..runtime import RegisteredTool, ToolkitLoader
@@ -184,9 +185,48 @@ class DockerPythonToolkit(ToolkitLoader):
             )
         return executable
 
-    def _inspect(self, executable: str) -> str:
+    def _inspect(self, executable: str) -> tuple[str, str]:
+        context = _bounded_run(
+            [
+                executable,
+                "context",
+                "inspect",
+                "--format",
+                "{{json .Endpoints.docker.Host}}",
+            ],
+            timeout=5,
+            output_limit=16384,
+        )
+        if context.returncode:
+            raise RuntimeError("Docker could not inspect its current local context.")
+        try:
+            endpoint = json.loads(context.stdout)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError(
+                "Docker returned invalid context endpoint metadata."
+            ) from exc
+        if not isinstance(endpoint, str):
+            raise TypeError("Docker returned invalid context endpoint metadata.")
+        parsed = urlsplit(endpoint)
+        local_unix = (
+            endpoint.startswith("unix:///")
+            and parsed.scheme == "unix"
+            and not parsed.netloc
+            and parsed.path.startswith("/")
+            and len(parsed.path) > 1
+            and not parsed.query
+            and not parsed.fragment
+            and not any(ord(char) < 32 for char in endpoint)
+        )
+        local_pipe = re.fullmatch(r"npipe:////\./pipe/[A-Za-z0-9._-]+", endpoint)
+        if not local_unix and not local_pipe:
+            raise RuntimeError(
+                "Docker execution requires a local Unix socket or local Windows named pipe; remote contexts are refused."
+            )
+        # Pin every following command to this validated endpoint. A concurrently
+        # changed current context must not send source to a remote engine.
         info = _bounded_run(
-            [executable, "info", "--format", "{{json .}}"],
+            [executable, "--host", endpoint, "info", "--format", "{{json .}}"],
             timeout=5,
             output_limit=65536,
         )
@@ -211,7 +251,7 @@ class DockerPythonToolkit(ToolkitLoader):
                 "Docker must provide Linux memory, PID, CPU and cgroup limits."
             )
         inspected = _bounded_run(
-            [executable, "image", "inspect", self.image],
+            [executable, "--host", endpoint, "image", "inspect", self.image],
             timeout=5,
             output_limit=65536,
         )
@@ -238,13 +278,21 @@ class DockerPythonToolkit(ToolkitLoader):
         image_id = image.get("Id", "")
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
             raise RuntimeError("Docker returned an invalid immutable image ID.")
-        return image_id
+        return endpoint, image_id
 
     def _run_argv(
-        self, executable: str, image_id: str, name: str, code: str, variable: str
+        self,
+        executable: str,
+        endpoint: str,
+        image_id: str,
+        name: str,
+        code: str,
+        variable: str,
     ) -> list[str]:
         return [
             executable,
+            "--host",
+            endpoint,
             "run",
             "--rm",
             "--pull=never",
@@ -292,11 +340,13 @@ class DockerPythonToolkit(ToolkitLoader):
                 "return_variable must be a Python identifier of at most 128 characters."
             )
         executable = self._docker()
-        image_id = self._inspect(executable)
+        endpoint, image_id = self._inspect(executable)
         name = "mtp-python-" + uuid.uuid4().hex
         try:
             completed = _bounded_run(
-                self._run_argv(executable, image_id, name, code, return_variable),
+                self._run_argv(
+                    executable, endpoint, image_id, name, code, return_variable
+                ),
                 timeout=self.timeout_seconds,
                 output_limit=self.output_limit_bytes,
             )
@@ -304,7 +354,9 @@ class DockerPythonToolkit(ToolkitLoader):
             # Also clean up after cancellation or a keyboard interruption.
             try:
                 cleanup = _bounded_run(
-                    [executable, "rm", "--force", name], timeout=5, output_limit=16384
+                    [executable, "--host", endpoint, "rm", "--force", name],
+                    timeout=5,
+                    output_limit=16384,
                 )
             except (OSError, ExecutionLimitError) as exc:
                 raise RuntimeError(

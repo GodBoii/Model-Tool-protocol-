@@ -34,6 +34,12 @@ Each call starts a fresh container with:
 
 MTP checks that the engine reports Linux CPU, memory, PID, and cgroup limit
 support before running code. Engines without those capabilities fail closed.
+MTP first reads the current Docker context's endpoint from local configuration.
+Only an absolute local Unix socket or a local Windows named pipe is accepted.
+SSH, TCP, remote named pipes, and other endpoints are rejected before contacting
+the daemon or sending code. Every engine command pins the validated endpoint
+with `--host`, so a subsequent context change cannot redirect source or cleanup
+to another engine.
 The Docker CLI receives only selected operating-system path and local context
 variables. MTP does not forward host API keys into the container. Environment
 values baked into the caller's image remain part of that trusted image.
@@ -47,8 +53,8 @@ registry approval policy.
 
 `timeout_seconds`, `memory_mb`, `cpus`, `pids_limit`, `tmpfs_mb`,
 `output_limit_bytes`, and `source_limit_bytes` can be set explicitly within
-validated upper limits. The execution timeout starts after engine and image
-checks, which each have a separate five-second deadline. Failure cleanup can
+validated upper limits. The execution timeout starts after context, engine, and
+image checks, which each have a separate five-second deadline. Failure cleanup can
 take another five seconds. Normal completion uses Docker's `--rm`. On a timeout,
 output limit, or interruption MTP also attempts `docker rm --force` using the
 unique container name. A failed cleanup identifies the name for manual removal.
@@ -92,5 +98,6 @@ an image itself.
 
 The flags and capability assumptions follow Docker's
 [container run reference](https://docs.docker.com/reference/cli/docker/container/run/),
+[context inspection reference](https://docs.docker.com/reference/cli/docker/context/inspect/),
 [none network driver](https://docs.docker.com/engine/network/drivers/none/), and
 [rootless resource-limit requirements](https://docs.docker.com/engine/security/rootless/tips/).

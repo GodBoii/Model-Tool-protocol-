@@ -9,10 +9,13 @@ import pytest
 from mtp.toolkits import isolated_python as isolated
 
 IMAGE_ID = "sha256:" + "a" * 64
+LOCAL_ENDPOINT = "unix:///var/run/docker.sock"
 
 
 def _metadata_reply(argv, **kwargs):
-    if "info" in argv:
+    if "context" in argv:
+        payload = LOCAL_ENDPOINT
+    elif "info" in argv:
         payload = {
             "OSType": "linux",
             "MemoryLimit": True,
@@ -55,7 +58,7 @@ def test_container_flags_and_no_environment_forwarding(monkeypatch):
     monkeypatch.setenv("DOCKER_HOST", "tcp://untrusted.example:1234")
     toolkit = isolated.DockerPythonToolkit(image="python:3.13-slim")
     argv = toolkit._run_argv(
-        "docker", IMAGE_ID, "mtp-python-test", "result = 42", "result"
+        "docker", LOCAL_ENDPOINT, IMAGE_ID, "mtp-python-test", "result = 42", "result"
     )
     for flag in (
         "--pull=never",
@@ -88,8 +91,77 @@ def test_missing_docker_never_executes_host(monkeypatch):
         isolated.DockerPythonToolkit(image="python:3.13-slim").run_code("result = 42")
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "ssh://user@remote.example",
+        "tcp://remote.example:2376",
+        "tcp://127.0.0.1:2375",
+        "https://remote.example",
+        "unix://remote.example/docker.sock",
+        "unix://relative.sock",
+        "unix:///run/docker.sock?redirect=tcp",
+        "unix:///run/docker.sock#fragment",
+        "npipe:////remote-machine/pipe/docker_engine",
+        "npipe:////./pipe/../remote",
+    ],
+)
+def test_remote_context_rejected_before_engine_or_source_access(monkeypatch, endpoint):
+    calls = []
+
+    def reply(argv, **kwargs):
+        calls.append(argv)
+        return isolated._ProcessResult(0, json.dumps(endpoint).encode(), b"")
+
+    monkeypatch.setattr(isolated.shutil, "which", lambda name: "docker")
+    monkeypatch.setattr(isolated, "_bounded_run", reply)
+    with pytest.raises(RuntimeError, match="remote contexts are refused"):
+        isolated.DockerPythonToolkit(image="python:3.13-slim").run_code("result = 42")
+    assert len(calls) == 1
+    assert calls[0] == [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+    ]
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "unix:///var/run/docker.sock",
+        "unix:///home/user/.docker/desktop/docker.sock",
+        "npipe:////./pipe/dockerDesktopLinuxEngine",
+    ],
+)
+def test_local_endpoint_pinned_for_all_engine_commands(monkeypatch, endpoint):
+    calls = []
+
+    def reply(argv, **kwargs):
+        calls.append(argv)
+        if "context" in argv:
+            return isolated._ProcessResult(0, json.dumps(endpoint).encode(), b"")
+        if "run" in argv:
+            return isolated._ProcessResult(0, b"\nMTP_RESULT=42\n", b"")
+        return _metadata_reply(argv, **kwargs)
+
+    monkeypatch.setattr(isolated.shutil, "which", lambda name: "docker")
+    monkeypatch.setattr(isolated, "_bounded_run", reply)
+    assert (
+        isolated.DockerPythonToolkit(image="python:3.13-slim").run_code("result = 42")[
+            "result"
+        ]
+        == 42
+    )
+    assert all(argv[1:3] == ["--host", endpoint] for argv in calls[1:])
+    assert sum("context" in argv for argv in calls) == 1
+
+
 def test_inspect_requires_resource_enforcement(monkeypatch):
     def reply(argv, **kwargs):
+        if "context" in argv:
+            return _metadata_reply(argv, **kwargs)
         return isolated._ProcessResult(
             0, b'{"OSType": "linux", "MemoryLimit": false}', b""
         )
@@ -109,7 +181,7 @@ def test_inspect_requires_resource_enforcement(monkeypatch):
 )
 def test_inspect_rejects_volume_images_or_mutable_ids(monkeypatch, metadata):
     def reply(argv, **kwargs):
-        if "info" in argv:
+        if "context" in argv or "info" in argv:
             return _metadata_reply(argv, **kwargs)
         return isolated._ProcessResult(0, json.dumps([metadata]).encode(), b"")
 
@@ -162,7 +234,7 @@ def test_timeout_removes_container(monkeypatch, cleanup_code, cleanup_stderr):
             "while True: pass"
         )
     name = calls[-2][calls[-2].index("--name") + 1]
-    assert calls[-1] == ["docker", "rm", "--force", name]
+    assert calls[-1] == ["docker", "--host", LOCAL_ENDPOINT, "rm", "--force", name]
 
 
 def test_cleanup_failure_is_visible(monkeypatch):
@@ -262,10 +334,15 @@ def test_interruption_also_removes_container(monkeypatch):
 
 @pytest.mark.parametrize("payload", [b"not json", b"[]"])
 def test_invalid_engine_metadata_is_rejected(monkeypatch, payload):
+    def reply(argv, **kwargs):
+        if "context" in argv:
+            return _metadata_reply(argv, **kwargs)
+        return isolated._ProcessResult(0, payload, b"")
+
     monkeypatch.setattr(
         isolated,
         "_bounded_run",
-        lambda *args, **kwargs: isolated._ProcessResult(0, payload, b""),
+        reply,
     )
     with pytest.raises((RuntimeError, TypeError), match="invalid engine metadata"):
         isolated.DockerPythonToolkit(image="python:3.13-slim")._inspect("docker")
@@ -325,11 +402,13 @@ result = {
     with pytest.raises(RuntimeError):
         toolkit.run_code("open('/mtp-forbidden', 'w').write('bad')")
     launched_names = []
+    launched_endpoints = []
     original_run = isolated._bounded_run
 
     def recording_run(argv, **kwargs):
         if "run" in argv:
             launched_names.append(argv[argv.index("--name") + 1])
+            launched_endpoints.append(argv[argv.index("--host") + 1])
         return original_run(argv, **kwargs)
 
     monkeypatch.setattr(isolated, "_bounded_run", recording_run)
@@ -338,7 +417,14 @@ result = {
             "while True: pass"
         )
     inspected = original_run(
-        [toolkit._docker(), "container", "inspect", launched_names[-1]],
+        [
+            toolkit._docker(),
+            "--host",
+            launched_endpoints[-1],
+            "container",
+            "inspect",
+            launched_names[-1],
+        ],
         timeout=5,
         output_limit=16384,
     )
