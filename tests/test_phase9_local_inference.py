@@ -30,7 +30,7 @@ def test_real_ollama_chat_and_stream():
     provider = Ollama(model=model, client=client, think=False, options={"num_predict":64, "temperature":0})
     # Exercise the production adapter, including its actual stream decoder.
     events = list(
-        provider.next_action_stream(
+        provider.stream_next_action(
             [{"role": "user", "content": "/no_think\nReply with the word ready."}], []
         )
     )
