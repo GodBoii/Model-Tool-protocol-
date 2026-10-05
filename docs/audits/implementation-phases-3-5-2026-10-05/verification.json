@@ -1,0 +1,41 @@
+{
+  "version": "0.1.40",
+  "date": "2026-10-05",
+  "implementation_and_test_commit": "982eb995ede1ec976b724c4387a09b75ef8e759b",
+  "parallel_agents": ["mcp_http", "execution_isolation", "provider_hardening"],
+  "full_local_non_live_suite": {"passed": 1029, "skipped": 2, "deselected": 11},
+  "isolated_installed_wheel": {"passed": 241, "skipped": 1},
+  "provider_focused_contracts": {"passed": 160},
+  "modern_mcp_focused_contracts": {"passed": 89},
+  "isolation_and_existing_toolkits": {"passed": 80, "skipped": 1},
+  "real_docker_ci_tests": {"passed": 48},
+  "tui_readiness_followup": {"passed": 84},
+  "ci": {
+    "test_matrix_run": 37307415317,
+    "jobs_passed": 6,
+    "platforms": ["linux", "windows", "macos"],
+    "docs_run": 37307415294,
+    "mcp_smoke_run": 37307415316
+  },
+  "docker_test_image": {
+    "reference": "python:3.13-slim",
+    "observed_digest": "sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f",
+    "runtime_image_policy": "trusted installed Linux image only; immutable ID; no automatic pull",
+    "runtime_endpoint_policy": "pinned local Unix socket or local Windows pipe; no remote context"
+  },
+  "groq": {
+    "model": "qwen/qwen3.8-27b",
+    "max_tokens": 512,
+    "parallel": "passed",
+    "mixed": "passed",
+    "sequential_first_attempt": "PlanValidationError",
+    "sequential_unchanged_prompt_retry": "passed"
+  },
+  "scope_limits": [
+    "Modern MCP HTTP uses JSON replies; no SSE, subscriptions, MRTR, progress delivery, or disconnect cancellation",
+    "Synchronous stdio workers need cooperative cancellation",
+    "Docker toolkit is opt-in; existing host toolkit and CLI defaults are unchanged",
+    "Live inference on providers other than Groq is unverified"
+  ],
+  "publication": "pending"
+}

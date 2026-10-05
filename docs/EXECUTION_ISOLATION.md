@@ -96,6 +96,10 @@ the test instead of skipping it. The Linux Docker CI job installs its trusted
 test image explicitly before invoking this test; the toolkit still never pulls
 an image itself.
 
+The final [Linux Docker CI job](https://github.com/GodBoii/Model-Tool-protocol-/actions/runs/37307415317)
+passed all 48 isolation tests, including the real container checks. The local
+host's daemon remains stopped; CI supplies the live enforcement evidence.
+
 The flags and capability assumptions follow Docker's
 [container run reference](https://docs.docker.com/reference/cli/docker/container/run/),
 [context inspection reference](https://docs.docker.com/reference/cli/docker/context/inspect/),

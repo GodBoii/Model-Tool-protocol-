@@ -1,0 +1,20 @@
+[
+  {
+    "case": "sequential_refs",
+    "attempt": 1,
+    "outputs": [
+      12,
+      48,
+      16.0,
+      31.0
+    ],
+    "passed": true,
+    "modes": [
+      "sequential",
+      "sequential",
+      "sequential",
+      "sequential"
+    ],
+    "plans": []
+  }
+]

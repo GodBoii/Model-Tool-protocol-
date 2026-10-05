@@ -1,0 +1,34 @@
+[
+  {
+    "case": "parallel",
+    "outputs": [
+      42,
+      42,
+      91
+    ],
+    "modes": [
+      "parallel"
+    ],
+    "completed": true,
+    "passed": true
+  },
+  {
+    "case": "sequential_refs",
+    "passed": false,
+    "error_type": "PlanValidationError"
+  },
+  {
+    "case": "mixed",
+    "outputs": [
+      42,
+      91,
+      84
+    ],
+    "modes": [
+      "parallel",
+      "sequential"
+    ],
+    "completed": true,
+    "passed": true
+  }
+]
