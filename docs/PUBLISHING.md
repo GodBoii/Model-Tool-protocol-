@@ -112,7 +112,7 @@ python -m build
 python -m twine check dist/*
 
 # Step 4: Upload to PyPI
-python -m twine upload dist/release-0.1.39/mtpx-0.1.39-py3-none-any.whl dist/release-0.1.39/mtpx-0.1.39.tar.gz
+python -m twine upload dist/release-0.1.40/mtpx-0.1.40-py3-none-any.whl dist/release-0.1.40/mtpx-0.1.40.tar.gz
 
 
 pip install -e .
