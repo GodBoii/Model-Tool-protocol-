@@ -2,7 +2,7 @@
 
 This guide documents the release workflow for the `mtpx` package.
 
-## Prepared 0.1.41 release
+## Release 0.1.41
 
 The remaining implementation phases produce version 0.1.41. Build and verify
 only that version's files, preserving older artifacts:
@@ -21,9 +21,9 @@ publishing. When that access is available, upload these exact files:
 python -m twine upload --non-interactive dist/release-0.1.41/mtpx-0.1.41-py3-none-any.whl dist/release-0.1.41/mtpx-0.1.41.tar.gz
 ```
 
-No usable publishing credential was found in the task environment, `.pypirc`,
-or the PyPI keyring entry during release preparation. The artifacts are ready;
-PyPI publication is pending access. Do not put tokens in source or command text.
+Supply publishing credentials through a hidden token prompt, a temporary process
+environment, or configured trusted publishing. Do not put tokens in source or
+command text.
 
 ## Prerequisites
 
@@ -135,7 +135,7 @@ python -m build
 python -m twine check dist/*
 
 # Step 4: Upload to PyPI
-python -m twine upload dist/release-0.1.40/mtpx-0.1.40-py3-none-any.whl dist/release-0.1.40/mtpx-0.1.40.tar.gz
+python -m twine upload dist/release-0.1.41/mtpx-0.1.41-py3-none-any.whl dist/release-0.1.41/mtpx-0.1.41.tar.gz
 
 
 pip install -e .
