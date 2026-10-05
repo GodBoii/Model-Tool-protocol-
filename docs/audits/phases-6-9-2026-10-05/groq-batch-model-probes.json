@@ -1,0 +1,831 @@
+[
+  {
+    "model": "qwen/qwen3.8-27b",
+    "case": "parallel",
+    "expected_outputs": [
+      42,
+      42,
+      91
+    ],
+    "final_text": "Results:\n- 17 + 25 = 42\n- 6 \u00d7 7 = 42\n- 100 \u2212 9 = 91",
+    "tool_results": [
+      {
+        "call_id": "tntqnd307",
+        "tool_name": "audit_calculate",
+        "output": 42,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:04.714820+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "f2h6pvyx5",
+        "tool_name": "audit_calculate",
+        "output": 42,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:04.714841+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "n7vk5hsj7",
+        "tool_name": "audit_calculate",
+        "output": 91,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:04.714853+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      }
+    ],
+    "actions": [
+      {
+        "plan": {
+          "batches": [
+            {
+              "mode": "parallel",
+              "calls": [
+                {
+                  "id": "tntqnd307",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 17,
+                    "b": 25,
+                    "operation": "add",
+                    "reasoning": "Compute 17+25"
+                  },
+                  "depends_on": [],
+                  "reasoning": null
+                },
+                {
+                  "id": "f2h6pvyx5",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 6,
+                    "b": 7,
+                    "operation": "multiply",
+                    "reasoning": "Compute 6*7"
+                  },
+                  "depends_on": [],
+                  "reasoning": null
+                },
+                {
+                  "id": "n7vk5hsj7",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 100,
+                    "b": 9,
+                    "operation": "subtract",
+                    "reasoning": "Compute 100-9"
+                  },
+                  "depends_on": [],
+                  "reasoning": null
+                }
+              ]
+            }
+          ],
+          "metadata": {
+            "provider": "groq",
+            "model": "qwen/qwen3.8-27b"
+          }
+        },
+        "usage": {
+          "input_tokens": 1754,
+          "output_tokens": 209,
+          "total_tokens": 1963
+        },
+        "response_text": null
+      },
+      {
+        "plan": null,
+        "usage": {
+          "input_tokens": 2008,
+          "output_tokens": 40,
+          "total_tokens": 2048
+        },
+        "response_text": "Results:\n- 17 + 25 = 42\n- 6 \u00d7 7 = 42\n- 100 \u2212 9 = 91"
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "at": 237428.8321976
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 6,
+        "b": 7,
+        "at": 237428.8322095
+      },
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 100,
+        "b": 9,
+        "at": 237428.8322148
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "at": 237428.9972393
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 42,
+        "at": 237428.9972519
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 91,
+        "at": 237428.9972594
+      }
+    ],
+    "observed_overlap": true,
+    "first_plan_modes": [
+      "parallel"
+    ],
+    "first_plan_call_count": 3,
+    "outputs_match": true,
+    "single_response_batch_verified": true,
+    "passed": true,
+    "elapsed_seconds": 1.417
+  },
+  {
+    "model": "qwen/qwen3.8-27b",
+    "case": "sequential_refs",
+    "expected_outputs": [
+      12,
+      48,
+      16,
+      31
+    ],
+    "final_text": "The result of ((18-6)*4)/3+15 is **31**.\n\nSteps:\n1. 18 - 6 = 12\n2. 12 * 4 = 48\n3. 48 / 3 = 16\n4. 16 + 15 = 31",
+    "tool_results": [
+      {
+        "call_id": "ps9csshxy",
+        "tool_name": "audit_calculate",
+        "output": 12,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:08.443957+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "hyz2gavp3",
+        "tool_name": "audit_calculate",
+        "output": 48,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:08.600621+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "hd4r51hf8",
+        "tool_name": "audit_calculate",
+        "output": 16.0,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:08.758388+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "jytmb19e9",
+        "tool_name": "audit_calculate",
+        "output": 31.0,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:08.913703+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      }
+    ],
+    "actions": [
+      {
+        "plan": {
+          "batches": [
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "ps9csshxy",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 18,
+                    "b": 6,
+                    "operation": "subtract",
+                    "reasoning": "Step 1: compute 18-6"
+                  },
+                  "depends_on": [],
+                  "reasoning": null
+                }
+              ]
+            },
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "hyz2gavp3",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": {
+                      "$ref": "ps9csshxy"
+                    },
+                    "b": 4,
+                    "operation": "multiply",
+                    "reasoning": "Step 2: multiply the subtraction result by 4"
+                  },
+                  "depends_on": [
+                    "ps9csshxy"
+                  ],
+                  "reasoning": null
+                }
+              ]
+            },
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "hd4r51hf8",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": {
+                      "$ref": "hyz2gavp3"
+                    },
+                    "b": 3,
+                    "operation": "divide",
+                    "reasoning": "Step 3: divide the multiplication result by 3"
+                  },
+                  "depends_on": [
+                    "hyz2gavp3"
+                  ],
+                  "reasoning": null
+                }
+              ]
+            },
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "jytmb19e9",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": {
+                      "$ref": "hd4r51hf8"
+                    },
+                    "b": 15,
+                    "operation": "add",
+                    "reasoning": "Step 4: add 15 to the division result"
+                  },
+                  "depends_on": [
+                    "hd4r51hf8"
+                  ],
+                  "reasoning": null
+                }
+              ]
+            }
+          ],
+          "metadata": {
+            "provider": "groq",
+            "model": "qwen/qwen3.8-27b"
+          }
+        },
+        "usage": {
+          "input_tokens": 1777,
+          "output_tokens": 312,
+          "total_tokens": 2089
+        },
+        "response_text": null
+      },
+      {
+        "plan": null,
+        "usage": {
+          "input_tokens": 2149,
+          "output_tokens": 77,
+          "total_tokens": 2226
+        },
+        "response_text": "The result of ((18-6)*4)/3+15 is **31**.\n\nSteps:\n1. 18 - 6 = 12\n2. 12 * 4 = 48\n3. 48 / 3 = 16\n4. 16 + 15 = 31"
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 18,
+        "b": 6,
+        "at": 237432.5607209
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 12,
+        "at": 237432.7264182
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 12,
+        "b": 4,
+        "at": 237432.7267291
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 48,
+        "at": 237432.883087
+      },
+      {
+        "phase": "start",
+        "operation": "divide",
+        "a": 48,
+        "b": 3,
+        "at": 237432.8833419
+      },
+      {
+        "phase": "end",
+        "operation": "divide",
+        "output": 16.0,
+        "at": 237433.0408271
+      },
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 16.0,
+        "b": 15,
+        "at": 237433.0411966
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 31.0,
+        "at": 237433.1961659
+      }
+    ],
+    "observed_overlap": false,
+    "first_plan_modes": [
+      "sequential",
+      "sequential",
+      "sequential",
+      "sequential"
+    ],
+    "first_plan_call_count": 4,
+    "outputs_match": true,
+    "single_response_batch_verified": true,
+    "passed": true,
+    "elapsed_seconds": 3.091
+  },
+  {
+    "model": "qwen/qwen3.8-27b",
+    "case": "mixed",
+    "expected_outputs": [
+      42,
+      91,
+      84
+    ],
+    "final_text": "Results:\n1. 17 + 25 = 42\n2. 100 \u2212 9 = 91\n3. 42 \u00d7 2 = 84 (first result referenced via `{\"$ref\": 0}`, not hardcoded)",
+    "tool_results": [
+      {
+        "call_id": "hbt46ydek",
+        "tool_name": "audit_calculate",
+        "output": 42,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:26.704411+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "g3yfhpwea",
+        "tool_name": "audit_calculate",
+        "output": 91,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:26.704424+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      },
+      {
+        "call_id": "a64fc763e",
+        "tool_name": "audit_calculate",
+        "output": 84,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:26.861049+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      }
+    ],
+    "actions": [
+      {
+        "plan": {
+          "batches": [
+            {
+              "mode": "parallel",
+              "calls": [
+                {
+                  "id": "hbt46ydek",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 17,
+                    "b": 25,
+                    "operation": "add",
+                    "reasoning": "Compute 17+25 as the first result."
+                  },
+                  "depends_on": [],
+                  "reasoning": null
+                },
+                {
+                  "id": "g3yfhpwea",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 100,
+                    "b": 9,
+                    "operation": "subtract",
+                    "reasoning": "Independently compute 100-9."
+                  },
+                  "depends_on": [],
+                  "reasoning": null
+                }
+              ]
+            },
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "a64fc763e",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": {
+                      "$ref": "hbt46ydek"
+                    },
+                    "b": 2,
+                    "operation": "multiply",
+                    "reasoning": "Multiply the first result by 2 using a reference to call 0."
+                  },
+                  "depends_on": [
+                    "hbt46ydek"
+                  ],
+                  "reasoning": null
+                }
+              ]
+            }
+          ],
+          "metadata": {
+            "provider": "groq",
+            "model": "qwen/qwen3.8-27b"
+          }
+        },
+        "usage": {
+          "input_tokens": 1771,
+          "output_tokens": 233,
+          "total_tokens": 2004
+        },
+        "response_text": null
+      },
+      {
+        "plan": null,
+        "usage": {
+          "input_tokens": 2049,
+          "output_tokens": 60,
+          "total_tokens": 2109
+        },
+        "response_text": "Results:\n1. 17 + 25 = 42\n2. 100 \u2212 9 = 91\n3. 42 \u00d7 2 = 84 (first result referenced via `{\"$ref\": 0}`, not hardcoded)"
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "at": 237450.8292799
+      },
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 100,
+        "b": 9,
+        "at": 237450.8292868
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "at": 237450.9868745
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 91,
+        "at": 237450.986882
+      },
+      {
+        "phase": "start",
+        "operation": "multiply",
+        "a": 42,
+        "b": 2,
+        "at": 237450.9871367
+      },
+      {
+        "phase": "end",
+        "operation": "multiply",
+        "output": 84,
+        "at": 237451.1434854
+      }
+    ],
+    "observed_overlap": true,
+    "first_plan_modes": [
+      "parallel",
+      "sequential"
+    ],
+    "first_plan_call_count": 3,
+    "outputs_match": true,
+    "single_response_batch_verified": true,
+    "passed": true,
+    "elapsed_seconds": 30.673
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "case": "parallel",
+    "expected_outputs": [
+      42,
+      42,
+      91
+    ],
+    "passed": false,
+    "error_type": "RuntimeError",
+    "cause_type": "BadRequestError",
+    "actions": [],
+    "timeline": [],
+    "elapsed_seconds": 1.541
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "case": "sequential_refs",
+    "expected_outputs": [
+      12,
+      48,
+      16,
+      31
+    ],
+    "final_text": "Done.",
+    "tool_results": [
+      {
+        "call_id": "fc_99043870-07ad-424d-905b-d39f52a7e502",
+        "tool_name": "audit_calculate",
+        "output": 12,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:49:51.227764+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      }
+    ],
+    "actions": [
+      {
+        "plan": {
+          "batches": [
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "fc_99043870-07ad-424d-905b-d39f52a7e502",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 18,
+                    "b": 6,
+                    "operation": "subtract",
+                    "reasoning": "First step of expression"
+                  },
+                  "depends_on": [],
+                  "reasoning": "We need to produce a native tool_calls response with four calls: subtract, multiply, divide, add using the function audit_calculate. The schema: a, b, operation, optional reasoning. We need to reference previous calls using $ref with zero-based index of preceding call. However the spec says $ref uses call_id, but also earlier instruction says use {\"$ref\": <index>} where index is 0-based position of tool call you want to use. In strict dependency mode, they said reference using JSON object {\"$ref\": <index>}. So we should use that.\n\nThus first call subtract: a=18, b=6, operation=\"subtract\". No dependencies.\n\nSecond call multiply: a=4, b={\"$ref\":0} (result of subtract). operation=\"multiply\".\n\nThird call divide: a={\"$ref\":1} (result of multiply), b=3, operation=\"divide\".\n\nFourth call add: a=15, b={\"$ref\":2} (result of divide), operation=\"add\".\n\nWe need to output in the required shape: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[ ... ]}}]}. Each tool call item: {\"id\":\"call_0\",\"type\":\"function\",\"function\":{\"name\":\"audit_calculate\",\"arguments\":\"...\"}}\n\nWe need to assign IDs. Use call_0, call_1, call_2, call_3.\n\nArguments must be JSON string. So we need to JSON.stringify the arguments object.\n\nFor each, include reasoning maybe optional.\n\nWe'll produce the final response accordingly."
+                }
+              ]
+            }
+          ],
+          "metadata": {
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b"
+          }
+        },
+        "usage": {
+          "input_tokens": 1526,
+          "output_tokens": 379,
+          "total_tokens": 1905,
+          "reasoning_tokens": 326
+        },
+        "response_text": null
+      },
+      {
+        "plan": null,
+        "usage": {
+          "input_tokens": 1570,
+          "output_tokens": 512,
+          "total_tokens": 2082,
+          "reasoning_tokens": 510
+        },
+        "response_text": ""
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "subtract",
+        "a": 18,
+        "b": 6,
+        "at": 237475.3480314
+      },
+      {
+        "phase": "end",
+        "operation": "subtract",
+        "output": 12,
+        "at": 237475.5102366
+      }
+    ],
+    "observed_overlap": false,
+    "first_plan_modes": [
+      "sequential"
+    ],
+    "first_plan_call_count": 1,
+    "outputs_match": false,
+    "single_response_batch_verified": false,
+    "passed": false,
+    "elapsed_seconds": 5.022
+  },
+  {
+    "model": "openai/gpt-oss-120b",
+    "case": "mixed",
+    "expected_outputs": [
+      42,
+      91,
+      84
+    ],
+    "final_text": "Done.",
+    "tool_results": [
+      {
+        "call_id": "fc_04eab67b-708c-47ef-b7ef-65bdab038256",
+        "tool_name": "audit_calculate",
+        "output": 42,
+        "success": true,
+        "error": null,
+        "cached": false,
+        "approval": "allow",
+        "skipped": false,
+        "created_at": "2026-10-05 16:50:04.514659+00:00",
+        "expires_at": null,
+        "images": null,
+        "videos": null,
+        "audios": null,
+        "files": null
+      }
+    ],
+    "actions": [
+      {
+        "plan": {
+          "batches": [
+            {
+              "mode": "sequential",
+              "calls": [
+                {
+                  "id": "fc_04eab67b-708c-47ef-b7ef-65bdab038256",
+                  "name": "audit_calculate",
+                  "arguments": {
+                    "a": 17,
+                    "b": 25,
+                    "operation": "add",
+                    "reasoning": "First addition of 17 and 25"
+                  },
+                  "depends_on": [],
+                  "reasoning": "We need to produce a native tool_calls response with three calls. The first call: add 17+25. Second: subtract 100-9. Third: multiply using a reference to first result. Use $ref referencing the first call's result. According to strict dependency mode, we need to reference by call ID, not index. The instruction says use {\"$ref\":0} for a, but in MTP we need to reference call ID. However the developer instruction earlier said use {\"$ref\": <index>} where index is 0-based position of tool call you want to use. So we can use {\"$ref\":0}. The tool schema expects a and b can be number or object with $ref. So we can set a: {\"$ref\":0}, b:2.\n\nWe need to include reasoning optional. Provide reasoning strings.\n\nWe need to output the provider payload format: {\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[...]}}]}. Each tool call has id, type, function with name and arguments JSON string.\n\nWe need three calls: call_1, call_2, call_3.\n\nLet's construct arguments:\n\ncall_1: name \"functions.audit_calculate\". arguments: {\"a\":17,\"b\":25,\"operation\":\"add\",\"reasoning\":\"First addition\"}\n\ncall_2: operation \"subtract\", a 100, b 9.\n\ncall_3: operation \"multiply\", a {\"$ref\":0}, b 2, reasoning \"Multiply first result by 2\".\n\nMake sure JSON string for arguments includes proper quoting.\n\nThus final answer is the JSON payload."
+                }
+              ]
+            }
+          ],
+          "metadata": {
+            "provider": "groq",
+            "model": "openai/gpt-oss-120b"
+          }
+        },
+        "usage": {
+          "input_tokens": 1518,
+          "output_tokens": 393,
+          "total_tokens": 1911,
+          "reasoning_tokens": 336,
+          "cached_input_tokens": 1280
+        },
+        "response_text": null
+      },
+      {
+        "plan": null,
+        "usage": {
+          "input_tokens": 1566,
+          "output_tokens": 512,
+          "total_tokens": 2078,
+          "reasoning_tokens": 510
+        },
+        "response_text": ""
+      }
+    ],
+    "timeline": [
+      {
+        "phase": "start",
+        "operation": "add",
+        "a": 17,
+        "b": 25,
+        "at": 237488.6328571
+      },
+      {
+        "phase": "end",
+        "operation": "add",
+        "output": 42,
+        "at": 237488.7971001
+      }
+    ],
+    "observed_overlap": false,
+    "first_plan_modes": [
+      "sequential"
+    ],
+    "first_plan_call_count": 1,
+    "outputs_match": false,
+    "single_response_batch_verified": false,
+    "passed": false,
+    "elapsed_seconds": 25.165
+  }
+]

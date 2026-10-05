@@ -14,8 +14,10 @@ by in-flight request ID, and shutdown on EOF. Cancellation stops async work and
 suppresses further replies; synchronous worker functions must cooperate to stop
 their underlying work. Modern input arguments use JSON Schema 2020-12 without
 MTP coercion or result-reference substitution. External schema fetches are
-disabled. MRTR, subscriptions, modern progress streaming, and SSE are not
-implemented or advertised.
+disabled. Version 0.1.41 adds opt-in request-scoped SSE, progress, subscriptions,
+and MRTR interactions through `ModernMCPFeatures`, plus configured OAuth
+discovery metadata. See the modern guides for state bounds and authorizer
+requirements. JSON responses remain the default.
 
 ## Overview
 

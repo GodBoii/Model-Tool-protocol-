@@ -1,0 +1,40 @@
+[
+  {
+    "provider": "groq",
+    "model": "qwen/qwen3.8-27b",
+    "status": "passed",
+    "tool_calls": 1,
+    "final_event": "run_completed",
+    "outputs": [
+      42
+    ]
+  },
+  {
+    "provider": "openai_responses",
+    "model": "gpt-4o",
+    "status": "failed",
+    "error_type": "AuthenticationError",
+    "status_code": 401
+  },
+  {
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "status": "failed",
+    "error_type": "ServerError",
+    "status_code": 503
+  },
+  {
+    "provider": "openrouter",
+    "model": "qwen/qwen-2.5-72b-instruct",
+    "status": "failed",
+    "error_type": "APIStatusError",
+    "status_code": 402
+  },
+  {
+    "provider": "xiaomi",
+    "model": "mimo-v2.5-pro",
+    "status": "failed",
+    "error_type": "AuthenticationError",
+    "status_code": 401
+  }
+]

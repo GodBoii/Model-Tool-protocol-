@@ -1,0 +1,12 @@
+[
+  {
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "status": "passed",
+    "tool_calls": 1,
+    "final_event": "run_completed",
+    "outputs": [
+      42
+    ]
+  }
+]

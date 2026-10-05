@@ -31,6 +31,10 @@ pip install "mtpx[deepseek]"
 pip install "mtpx[togetherai]"
 pip install "mtpx[fireworksai]"
 pip install "mtpx[xiaomi]"
+pip install "mtpx[azure-openai]"
+pip install "mtpx[xai]"
+pip install "mtpx[bedrock]"
+pip install "mtpx[vertex]"
 pip install "mtpx[huggingface]"
 pip install "mtpx[deepinfra]"
 pip install "mtpx[dashscope]"
@@ -45,6 +49,12 @@ pip install "mtpx[providers]"
 ```
 
 ## Capability contract (enforceable)
+
+Version 0.1.41 exposes native async opt-ins, Responses image/file inputs, and
+native JSON schemas through selected adapters. See [SDK capabilities](SDK_CAPABILITIES.md)
+for precise support and [enterprise providers](ENTERPRISE_PROVIDERS.md) for
+deployment names and cloud credential chains. Unsupported capabilities remain
+explicit rather than inferred from the provider brand.
 
 Each provider adapter exposes:
 

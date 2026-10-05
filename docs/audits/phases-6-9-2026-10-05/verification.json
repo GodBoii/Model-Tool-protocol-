@@ -1,0 +1,101 @@
+{
+  "version": "0.1.41",
+  "date": "2026-10-05",
+  "scope": "MCP features, native SDK capabilities, enterprise adapters, free-tier and service certification",
+  "paid_inference": "not pursued after user specified free-tier-only testing",
+  "publication": {
+    "status": "blocked",
+    "reason": "No usable PyPI publishing credential or configured trusted publisher in this task",
+    "current_pypi_version_verified": "0.1.40"
+  },
+  "local_non_live_suite_before_final_tui_race_fix": {
+    "passed": 1214,
+    "skipped": 8,
+    "deselected": 11
+  },
+  "isolated_installed_wheel_before_final_tui_race_fix": {
+    "passed": 373,
+    "skipped": 10
+  },
+  "focused_checks": {
+    "mcp_features_and_official_client": 108,
+    "native_sdk": 46,
+    "media_session": 8,
+    "enterprise_and_cli": 76,
+    "minimum_textual": 28,
+    "streamlit_streaming": 5,
+    "resumed_lifetime_review": 27,
+    "complete_tui_suite": 201,
+    "azure_typed_auth_followup": 13
+  },
+  "dependency_versions": {
+    "openai": "3.24.0",
+    "groq": "1.7.0",
+    "google-genai": "2.28.0",
+    "boto3": "1.43.108",
+    "mcp": "2.3.0",
+    "textual": "8.2.8",
+    "streamlit": "1.65.0"
+  },
+  "free_tier_live": {
+    "groq": "passed",
+    "groq_native_async": "passed",
+    "groq_qwen_parallel_sequential_mixed": "passed",
+    "groq_gpt_oss_batch_contract": "not certified; lacks declared parallel support and did not satisfy requested batch expectations",
+    "gemini": "passed after one503retry",
+    "openrouter": "passed on publicly listed zero-price qwen/qwen3.8-27b:free",
+    "initial_openai": "401 authentication failure",
+    "initial_xiaomi": "401 authentication failure",
+    "initial_openrouter_paid_default": "402 account failure; no further paid route requests"
+  },
+  "scope_limits": [
+    "Enterprise paid live accounts unverified by user preference",
+    "OAuth token verification and issuance delegated to configured identity provider",
+    "MCP resume state process-local",
+    "Synchronous workers need cooperative cancellation"
+  ],
+  "tui": {
+    "enterprise_forms": "40x15 and100x35 persistence tests passed",
+    "browser": "Bedrock form rendering inspected; keyboard forwarding not consistently delivered; Pilot used for behavior certification"
+  },
+  "ci_before_final_tui_race_fix": {
+    "implementation_commit": "aa62f22127d83787dd9fa12649ec11cd93f119f3",
+    "test_harness": 37343196808,
+    "jobs_passed": 13,
+    "service_certification": 37343196769,
+    "release_validation": 37343196898,
+    "docs": 37343196919,
+    "mcp_smoke": 37343196939
+  },
+  "local_non_live_suite_after_tui_race_fix": {
+    "passed": 1216,
+    "skipped": 8,
+    "deselected": 11
+  },
+  "isolated_installed_wheel_after_tui_race_fix": {
+    "passed": 373,
+    "skipped": 10
+  },
+  "final_ci": {
+    "implementation_commit": "859e61116ee9962eab9af77e7b4d5b1fc2a55a6e",
+    "test_harness": 37345691181,
+    "jobs_passed": 13,
+    "service_certification": 37345691109,
+    "release_validation": 37345691567,
+    "docs": 37345691210,
+    "mcp_smoke": 37345691199
+  },
+  "worker_race": {
+    "discovered_by_run": 37343578842,
+    "failing_job": 111876456911,
+    "fix_commit": "d5af92add6f420a475b659f619be762c938928b2",
+    "regression": "deliberately withhold live event delivery until worker failure/cancellation",
+    "tui_tests_passed": 201
+  },
+  "phase_status": {
+    "6": "implemented and verified within documented deployment boundaries",
+    "7": "implemented and verified within declared adapter capabilities",
+    "8": "implemented and SDK/CLI verified; paid live accounts excluded by user preference",
+    "9": "verification and release artifacts complete; PyPI upload blocked pending credentials"
+  }
+}

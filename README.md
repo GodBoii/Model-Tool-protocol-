@@ -222,6 +222,7 @@ python -m pytest -q tests/test_e2e_xiaomi.py
 - [Native Async, Media, and Structured Outputs](docs/SDK_CAPABILITIES.md)
 - [Enterprise Providers](docs/ENTERPRISE_PROVIDERS.md)
 - [Implementation Phases 3 through 5 and Verification](docs/IMPLEMENTATION_PHASES_3_5.md)
+- [Implementation Phases 6 through 9 and Verification](docs/IMPLEMENTATION_PHASES_6_9.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing](docs/TESTING.md)
 - [Publishing](docs/PUBLISHING.md)

@@ -1,0 +1,9 @@
+{
+  "provider": "groq",
+  "native_async": true,
+  "passed": true,
+  "outputs": [
+    42
+  ],
+  "final_event": "run_completed"
+}

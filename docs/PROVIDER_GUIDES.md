@@ -21,6 +21,12 @@ Normal chat should use `autoresearch=False`. Autoresearch is persistent mode: di
 
 ## Hosted integrations and OpenAI Responses
 
+For version 0.1.41 enterprise backends, use [Azure](providers/AZURE.md),
+[xAI](providers/XAI.md), [Bedrock](providers/BEDROCK.md), and [Vertex](providers/VERTEX.md).
+They require explicit models/deployments and platform configuration. Native
+async, Responses media, and output schemas are documented in
+[SDK capabilities](SDK_CAPABILITIES.md).
+
 Version 0.1.39 adds [Hugging Face](providers/HUGGINGFACE.md), [DeepInfra](providers/DEEPINFRA.md), and [DashScope](providers/DASHSCOPE.md). These adapters share streaming, tool-name mapping, JSON argument validation, usage extraction, and native tool-result replay. They declare text input by default.
 
 [OpenAI Responses](providers/OPENAI_RESPONSES.md) adds a separate stateless API path with encrypted reasoning replay. Existing `OpenAI` callers keep Chat Completions. Use [OpenAICompatible](COMPATIBLE_PROVIDERS.md) for an explicitly configured SDK endpoint.
