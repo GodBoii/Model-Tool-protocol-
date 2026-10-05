@@ -1,6 +1,6 @@
 # MTP CLI and TUI improvement program
 
-## Release 0.1.40, pending publication
+## Release 0.1.40, 2026-10-05
 
 - Add opt-in MCP 2026-07-28 discovery and per-request metadata alongside the
   legacy handshake, with JSON Schema 2020-12 validation and no external fetches.
