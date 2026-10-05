@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import re
 from pathlib import Path
 import time
+import threading
 from typing import Any, Callable, TypeVar
 from uuid import uuid4
 
@@ -98,6 +99,34 @@ class LiveEventBatch(Message):
         self.events = events
 
 
+class _PendingLiveEvents:
+    """Keep emitted events until the UI applies them, independent of queue order."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._events: list[LiveEvent] = []
+        self._closed = False
+
+    def emit(self, kind: str, payload: Any) -> bool:
+        with self._lock:
+            if self._closed:
+                return False
+            if kind in {"text", "reasoning"} and isinstance(payload, str) and self._events:
+                last_kind, last_payload = self._events[-1]
+                if kind == last_kind and isinstance(last_payload, str):
+                    self._events[-1] = (kind, last_payload + payload)
+                    return True
+            self._events.append((kind, payload))
+            return True
+
+    def drain(self, *, close: bool = False) -> list[LiveEvent]:
+        with self._lock:
+            pending, self._events = self._events, []
+            if close:
+                self._closed = True
+            return pending
+
+
 class IndexReady(Message):
     """An autocomplete index finished building. Posted from its loader thread."""
 
@@ -170,6 +199,7 @@ class MTPApp(App):
         self._next_number = 2
         # run_id -> conversation, for routing events from worker threads.
         self._runs: dict[str, Conversation] = {}
+        self._pending_live_events: dict[str, _PendingLiveEvents] = {}
         self._history_index: int | None = None
         self._history_draft: str = ""
         self._pending_attachments: list[str] = []  # Track the raw prompt for recording
@@ -543,6 +573,9 @@ class MTPApp(App):
         for conv in self._conversations:
             conv.queue.clear()
             self._request_interrupt(conv)
+        for pending in self._pending_live_events.values():
+            pending.drain(close=True)
+        self._pending_live_events.clear()
         self.session_saver.close()
 
     def _focus_input(self) -> None:
@@ -1273,6 +1306,7 @@ class MTPApp(App):
 
         conv.run_id = f"run-{uuid4().hex[:12]}"
         self._runs[conv.run_id] = conv
+        self._pending_live_events[conv.run_id] = _PendingLiveEvents()
         conv.codex_handle = CodexRunHandle() if conv.state.backend == "codex" else None
         conv.worker = self.run_worker(
             self._run_llm_worker(conv, expanded, attachments, att_warnings),
@@ -1297,19 +1331,26 @@ class MTPApp(App):
         # post_message is thread-safe and non-blocking, so the model stream
         # never waits on the UI; the batcher merges token chunks.
         batcher = LiveEventBatcher(lambda batch: self.post_message(LiveEventBatch(run_id, batch)))
+        pending = self._pending_live_events[run_id]
         state = conv.state
+
+        def emit(kind: str, payload: Any) -> None:
+            # Record before the non-blocking notification. A worker can finish
+            # before that notification is handled, or be cancelled before flush.
+            if pending.emit(kind, payload):
+                batcher.emit(kind, payload)
 
         def run() -> ChatResult:
             try:
                 return run_prompt_blocking(
                     state,
                     expanded_prompt,
-                    emit_callback=batcher.emit,
+                    emit_callback=emit,
                     run_id=run_id,
                     codex_handle=codex_handle,
                 )
             finally:
-                # Flushed before the worker result, so the UI sees every chunk first.
+                # Notify the UI; terminal state handling also drains emitted events.
                 batcher.close()
 
         result = await asyncio.to_thread(run)
@@ -1461,7 +1502,9 @@ class MTPApp(App):
         conv = self._runs.get(message.run_id or "")
         if conv is None or conv.run_id != message.run_id or conv.live is None:
             return
-        for kind, payload in message.events:
+        pending = self._pending_live_events.get(message.run_id or "")
+        events = pending.drain() if pending is not None else message.events
+        for kind, payload in events:
             self._handle_live_event(conv, kind, payload)
         self._render_live_preview(conv)
 
@@ -1578,6 +1621,11 @@ class MTPApp(App):
         if conv is None or conv.live is None:
             # A superseded or closed run finishing late must not touch any chat.
             return
+        if event.state in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
+            pending = self._pending_live_events.get(conv.run_id or "")
+            if pending is not None:
+                for kind, payload in pending.drain(close=True):
+                    self._handle_live_event(conv, kind, payload)
         if event.state == WorkerState.SUCCESS:
             self._finish_turn(conv, event.worker.result)
         elif event.state == WorkerState.ERROR:
@@ -1598,6 +1646,7 @@ class MTPApp(App):
         assert live is not None
         if conv.run_id is not None:
             self._runs.pop(conv.run_id, None)
+            self._pending_live_events.pop(conv.run_id, None)
         conv.end_run()
         conv.view.spinner.stop()
         if live.blocks and not result.assistant_blocks:

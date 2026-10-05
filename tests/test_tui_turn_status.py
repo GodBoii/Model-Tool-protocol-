@@ -74,7 +74,7 @@ pytest.importorskip("textual")
 from mtp.cli import tui_app  # noqa: E402
 from mtp.cli.tui_app import MTPApp  # noqa: E402
 
-from test_tui_app_lifecycle import FakeRunner, _make_state  # noqa: E402
+from test_tui_app_lifecycle import _make_state  # noqa: E402
 
 
 def _status_texts(app: MTPApp) -> list[str]:
@@ -123,3 +123,131 @@ def test_crashing_worker_saves_live_output_as_failed(tmp_path: Path, monkeypatch
             assert turn.error == "RuntimeError: worker blew up"
 
     asyncio.run(scenario())
+
+
+def test_crash_drains_emitted_output_before_delayed_live_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from textual.worker import WorkerFailed
+    from tui_test_helpers import wait_until
+    from mtp.cli.tui_widgets.stream_markdown import MarkdownBlock, StreamingMarkdown
+
+    class DelayedLiveApp(MTPApp):
+        CSS_PATH = Path(tui_app.__file__).with_name("tui_app.tcss")
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.delayed = []
+            self.saved_turn_counts = []
+
+        def post_message(self, message):
+            if isinstance(message, tui_app.LiveEventBatch):
+                self.delayed.append(message)
+                return True
+            return super().post_message(message)
+
+        def _save_session(self, conv=None):
+            owner = conv or self._active
+            if owner.state.transcript:
+                self.saved_turn_counts.append(len(owner.state.transcript))
+            super()._save_session(conv)
+
+    emitters = []
+    def crash(state, prompt, *, emit_callback, **kwargs):
+        emitters.append(emit_callback)
+        if prompt == "again":
+            emit_callback("text", "next answer")
+            return ChatResult(text="next answer", tool_events=[], attachments=[], warnings=[], usage_lines=[])
+        emit_callback("text", "streamed before ")
+        emit_callback("reasoning", "checking")
+        emit_callback("text", "the crash")
+        emit_callback("warn", "warning before crash")
+        raise RuntimeError("worker blew up")
+    monkeypatch.setattr(tui_app, "run_prompt_blocking", crash)
+
+    async def scenario():
+        state = _make_state(tmp_path)
+        app = DelayedLiveApp(state=state)
+        async with app.run_test(size=(120, 40)) as pilot:
+            app._send_prompt("go")
+            worker = app._active.worker
+            with pytest.raises(WorkerFailed):
+                await worker.wait()
+            await wait_until(pilot, lambda: len(state.transcript) == 1)
+            [turn] = state.transcript
+            assert (turn.status, turn.response, turn.error) == (TURN_FAILED, "streamed before the crash", "RuntimeError: worker blew up")
+            assert turn.thinking_text == "checking"
+            assert turn.warnings == ["warning before crash"]
+            await wait_until(pilot, lambda: any("Run failed" in text for text in _status_texts(app)))
+            assert any("Run failed" in text for text in _status_texts(app))
+            visible = list(app.query(MarkdownBlock)) + list(app.query(StreamingMarkdown))
+            assert "streamed before the crash" in "".join(widget.text for widget in visible)
+            assert "streamed before the crash" in turn.history_reply()
+            await asyncio.to_thread(app.session_saver.flush)
+            saved = state.session_store.get_session(state.session_id, user_id=state.user_id)
+            [persisted] = saved.metadata["tui"]["transcript"]
+            assert persisted["response"] == "streamed before the crash" and persisted["status"] == TURN_FAILED
+            assert app.saved_turn_counts == [1]
+            assert not app._pending_live_events
+
+            # Queued notifications and a cancelled thread's late callback cannot
+            # duplicate the failed turn or enter the next run's conversation.
+            for message in app.delayed:
+                app.on_live_event_batch(message)
+            await asyncio.to_thread(emitters[0], "text", " late leaked output")
+            assert state.transcript == [turn]
+            assert turn.response == "streamed before the crash"
+            assert app.saved_turn_counts == [1]
+            app._send_prompt("again")
+            await asyncio.to_thread(emitters[0], "text", " output for the wrong turn")
+            await app._active.worker.wait()
+            await wait_until(pilot, lambda: len(state.transcript) == 2)
+            assert [item.response for item in state.transcript] == ["streamed before the crash", "next answer"]
+            assert app.saved_turn_counts == [1, 2]
+    asyncio.run(scenario())
+
+
+def test_cancellation_drains_tokens_before_batcher_notifies_ui(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+    from textual.worker import WorkerCancelled
+    from tui_test_helpers import wait_until
+
+    started = threading.Event()
+    release = threading.Event()
+    callbacks = []
+    delayed = []
+    original = MTPApp.post_message
+    def postpone(self, message):
+        if isinstance(message, tui_app.LiveEventBatch):
+            delayed.append(message)
+            return True
+        return original(self, message)
+    def blocking(state, prompt, *, emit_callback, **kwargs):
+        callbacks.append(emit_callback)
+        emit_callback("text", "partial before cancellation")
+        started.set()
+        release.wait(5)
+        emit_callback("text", "late after cancellation")
+        return ChatResult(text="late result", tool_events=[], attachments=[], warnings=[], usage_lines=[])
+    monkeypatch.setattr(MTPApp, "post_message", postpone)
+    monkeypatch.setattr(tui_app, "run_prompt_blocking", blocking)
+
+    async def scenario():
+        app = MTPApp(state=_make_state(tmp_path))
+        async with app.run_test(size=(120, 40)) as pilot:
+            app._send_prompt("go")
+            assert await asyncio.to_thread(started.wait, 5)
+            worker = app._active.worker
+            worker.cancel()
+            with pytest.raises(WorkerCancelled):
+                await worker.wait()
+            await wait_until(pilot, lambda: len(app.state.transcript) == 1)
+            [turn] = app.state.transcript
+            assert (turn.status, turn.response) == (TURN_CANCELLED, "partial before cancellation")
+            await asyncio.to_thread(callbacks[0], "text", " stale output")
+            release.set()
+            for message in delayed:
+                app.on_live_event_batch(message)
+            assert turn.response == "partial before cancellation"
+            assert not app._pending_live_events
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
