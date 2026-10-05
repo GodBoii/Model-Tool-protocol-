@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 
 SUPPORTED_TUI_PROVIDERS: tuple[str, ...] = (
+    "huggingface", "deepinfra", "dashscope", "openai_responses",
     "openai",
     "groq",
     "claude",
@@ -26,6 +27,7 @@ SUPPORTED_TUI_PROVIDERS: tuple[str, ...] = (
 )
 
 _PROVIDER_ALIASES: dict[str, str] = {
+    "hf": "huggingface", "alibaba": "dashscope", "openai-responses": "openai_responses",
     "anthropic": "claude",
     "together": "togetherai",
     "fireworks": "fireworksai",
@@ -62,6 +64,25 @@ class ProviderSelection:
 
 
 _ProviderBuilder = Callable[[str, str | None, str | None, dict[str, Any] | None], Any]
+
+
+def _hosted_builder(provider_name: str) -> _ProviderBuilder:
+    def build(model, api_key, base_url, provider_options=None):
+        import mtp.providers as providers
+        cls = getattr(providers, {"huggingface": "HuggingFace", "deepinfra": "DeepInfra", "dashscope": "DashScope",
+                                 "openai_responses": "OpenAIResponses"}[provider_name])
+        options = provider_options or {}
+        allowed = {"temperature", "parallel_tool_calls", "max_tokens", "timeout_seconds", "stream_include_usage"}
+        if provider_name == "dashscope":
+            allowed |= {"region", "workspace_id", "enable_thinking"}
+        if provider_name == "openai_responses":
+            allowed -= {"max_tokens", "stream_include_usage"}
+            allowed |= {"max_output_tokens", "reasoning_effort"}
+        kwargs = {key:value for key,value in options.items() if key in allowed}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return cls(model=model, api_key=api_key, **kwargs)
+    return build
 
 
 def _openai_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
@@ -177,6 +198,7 @@ def _lmstudio_builder(model: str, api_key: str | None, base_url: str | None, pro
 
 
 PROVIDER_BUILDERS: dict[str, _ProviderBuilder] = {
+    **{name: _hosted_builder(name) for name in ("huggingface", "deepinfra", "dashscope", "openai_responses")},
     "openai": _openai_builder,
     "groq": _groq_builder,
     "claude": _claude_builder,

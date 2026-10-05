@@ -103,6 +103,7 @@ class ProviderSetup(ModalScreen[str | None]):
         self.settings_path = settings_path
         self.switching = switching
         self.local = provider in {"ollama", "lmstudio"}
+        self.hosted_endpoint = provider in {"huggingface", "deepinfra", "dashscope", "openai_responses"}
         self._delete_confirmed = False
         self._refresh_models = refresh_models
         self._discovered_models: list[str] = []
@@ -128,6 +129,13 @@ class ProviderSetup(ModalScreen[str | None]):
                     yield Input(str(entry.get("base_url") or default_url), id="setup-endpoint")
                     yield Button("Load models from server", id="setup-discover")
                     yield OptionList(id="discovered-models")
+                if self.hosted_endpoint:
+                    from ..tui_model_catalog import MODEL_ENDPOINTS
+                    yield Label("API endpoint, use the region matching your key", markup=False)
+                    yield Input(str(entry.get("base_url") or MODEL_ENDPOINTS[self.provider].removesuffix("/models")), id="setup-endpoint")
+                    yield Label("Maximum output tokens", markup=False)
+                    budget_key = "max_output_tokens" if self.provider == "openai_responses" else "max_tokens"
+                    yield Input(str(entry.get(budget_key) or 1024), id="setup-budget")
                 yield Label("API key (optional)" if self.local else "API key", markup=False)
                 yield Input(password=True, placeholder="Paste a key; leave empty to keep the existing key", id="setup-key")
                 yield Button("Show key", id="key-visibility")
@@ -187,6 +195,17 @@ class ProviderSetup(ModalScreen[str | None]):
                 return
             entry["base_url"] = endpoint
             entry["deployment_type"] = "local"
+        elif self.hosted_endpoint:
+            from mtp.providers.compatible_provider import validate_endpoint
+            try:
+                entry["base_url"] = validate_endpoint(self.query_one("#setup-endpoint", Input).value.strip())
+                budget = int(self.query_one("#setup-budget", Input).value.strip())
+                if budget < 1 or budget > 1_000_000:
+                    raise ValueError("Choose an output limit between 1 and 1000000.")
+            except ValueError as exc:
+                self._error(str(exc))
+                return
+            entry["max_output_tokens" if self.provider == "openai_responses" else "max_tokens"] = budget
         entry["model"] = model
         if self._discovered_models:
             entry["models"] = list(dict.fromkeys([*entry["models"], *self._discovered_models]))

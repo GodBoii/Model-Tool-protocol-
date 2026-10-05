@@ -167,6 +167,8 @@ class OpenAIResponsesToolCallingProvider(OpenAICompatibleToolCallingProvider):
                         text.append(part.get("refusal", ""))
             elif kind != "reasoning":
                 raise ValueError(f"Unsupported Responses output item: {kind!r}")
+        if not calls and not text:
+            raise ValueError("Responses returned no text, refusal, or executable calls.")
         action = self._action(
             "".join(text), calls, None, extract_usage_metrics(response)
         )

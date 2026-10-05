@@ -51,6 +51,10 @@ deepseek = ["openai"]
 togetherai = ["openai"]
 fireworksai = ["openai"]
 xiaomi = ["openai"]
+huggingface = ["openai"]
+deepinfra = ["openai"]
+dashscope = ["openai"]
+openai-responses = ["openai"]
 
 # Toolkit extras.
 toolkits-web = [

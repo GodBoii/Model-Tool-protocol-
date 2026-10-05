@@ -298,6 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     tui_cmd.add_argument(
         "--backend",
         choices=[
+            "huggingface", "deepinfra", "dashscope", "openai_responses",
             "codex",
             "openai",
             "groq",

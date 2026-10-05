@@ -16,6 +16,10 @@ from .tui_settings import ensure_provider_entry, provider_api_key
 # Metadata endpoints only. Fireworks lists its public publisher account; private
 # account model IDs can always be entered manually.
 MODEL_ENDPOINTS = {
+    "huggingface":"https://router.huggingface.co/v1/models",
+    "deepinfra":"https://api.deepinfra.com/v1/openai/models",
+    "dashscope":"https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+    "openai_responses":"https://api.openai.com/v1/models",
     "groq": "https://api.groq.com/openai/v1/models",
     "openai": "https://api.openai.com/v1/models",
     "openrouter": "https://openrouter.ai/api/v1/models",
@@ -83,13 +87,22 @@ def _model_ids(provider: str, payload: Any) -> list[str]:
         if provider == "gemini":
             model = model.removeprefix("models/")
         # These endpoints also return specialized models the chat TUI cannot use.
-        if provider in {"groq", "openai"} and any(word in model.lower() for word in (
+        if provider in {"groq", "openai", "openai_responses"} and any(word in model.lower() for word in (
             "whisper", "embedding", "tts", "orpheus", "transcribe", "realtime",
             "moderation", "safeguard", "prompt-guard", "dall-e", "gpt-image",
         )):
             continue
         if model not in ids:
             ids.append(model)
+        if provider == "huggingface":
+            for route in row.get("providers") or []:
+                if not isinstance(route, dict) or route.get("status") != "live" or route.get("supports_tools") is False:
+                    continue
+                name = route.get("provider")
+                if isinstance(name, str) and name and not any(c.isspace() for c in name):
+                    routed = f"{model}:{name}"
+                    if routed not in ids:
+                        ids.append(routed)
     return ids
 
 
@@ -113,6 +126,14 @@ def discover_provider_models(provider: str, settings: dict[str, Any], *, timeout
     if not key and provider != "openrouter":
         return ModelCatalog(source=source, error=f"Set a {provider} key to refresh models, or enter a model ID manually.")
     headers = {"Accept": "application/json", "User-Agent": "MTP-model-catalog"}
+    if provider in {"huggingface", "deepinfra", "dashscope", "openai_responses"}:
+        custom_url = ensure_provider_entry(settings, provider).get("base_url")
+        if custom_url:
+            from mtp.providers.compatible_provider import validate_endpoint
+            try:
+                endpoint = validate_endpoint(custom_url) + "/models"
+            except ValueError:
+                return ModelCatalog(source=source, error="Invalid provider endpoint. Fix it in provider setup.")
     if provider == "claude":
         headers.update({"x-api-key": key or "", "anthropic-version": "2023-06-01"})
     elif provider == "gemini":

@@ -24,6 +24,10 @@ class ProviderInfo:
 
 
 PROVIDERS: list[ProviderInfo] = [
+    ProviderInfo("huggingface", "HuggingFace", "HuggingFaceToolCallingProvider", "openai", "HF_TOKEN"),
+    ProviderInfo("deepinfra", "DeepInfra", "DeepInfraToolCallingProvider", "openai", "DEEPINFRA_API_KEY"),
+    ProviderInfo("dashscope", "DashScope", "DashScopeToolCallingProvider", "openai", "DASHSCOPE_API_KEY"),
+    ProviderInfo("openai_responses", "OpenAIResponses", "OpenAIResponsesToolCallingProvider", "openai", "OPENAI_API_KEY"),
     ProviderInfo("mock", "MockPlannerProvider", "MockPlannerProvider", None, None, "local deterministic planner"),
     ProviderInfo("groq", "Groq", "GroqToolCallingProvider", "groq", "GROQ_API_KEY"),
     ProviderInfo("openai", "OpenAI", "OpenAIToolCallingProvider", "openai", "OPENAI_API_KEY"),

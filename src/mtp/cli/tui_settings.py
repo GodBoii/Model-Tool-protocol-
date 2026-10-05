@@ -19,6 +19,8 @@ DEFAULT_PROVIDER_MODELS["claude"] = DEFAULT_PROVIDER_MODELS.pop("anthropic")
 
 
 PROVIDER_KEY_ENV: dict[str, str] = {
+    "huggingface":"HF_TOKEN", "deepinfra":"DEEPINFRA_API_KEY", "dashscope":"DASHSCOPE_API_KEY",
+    "openai_responses":"OPENAI_API_KEY",
     "openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY", "claude": "ANTHROPIC_API_KEY",
     "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY", "mistral": "MISTRAL_API_KEY",
     "cohere": "COHERE_API_KEY", "sambanova": "SAMBANOVA_API_KEY", "cerebras": "CEREBRAS_API_KEY",

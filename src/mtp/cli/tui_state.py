@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 # ── Constants ────────────────────────────────────────────────────────────────
 
 BACKENDS = {
+    "huggingface", "deepinfra", "dashscope", "openai_responses",
     "codex", "openai", "groq", "claude", "gemini", "openrouter",
     "mistral", "cohere", "sambanova", "cerebras", "deepseek",
     "togetherai", "fireworksai", "xiaomi", "ollama", "lmstudio",

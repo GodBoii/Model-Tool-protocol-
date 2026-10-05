@@ -91,7 +91,8 @@ def completion(output, *, responses, call, model):
 
 @pytest.mark.parametrize("cls", [HuggingFace, DeepInfra, DashScope, OpenAIResponses])
 @pytest.mark.parametrize("stream", [False, True])
-def test_real_sdk_native_round_trip(cls, stream):
+@pytest.mark.parametrize("max_rounds", [1, 2])
+def test_real_sdk_native_round_trip(cls, stream, max_rounds):
     openai = pytest.importorskip("openai")
     requests = []
     responses = cls is OpenAIResponses
@@ -221,7 +222,7 @@ def test_real_sdk_native_round_trip(cls, stream):
                 return [
                     e
                     async for e in agent.arun_loop_events(
-                        "echo 7", max_rounds=2, stream_tool_results=True
+                        "echo 7", max_rounds=max_rounds, stream_tool_results=True
                     )
                 ]
 
@@ -231,7 +232,7 @@ def test_real_sdk_native_round_trip(cls, stream):
             assert events[-1]["final_text"] == "result 7"
             assert any(e["type"] == "text_chunk" for e in events)
         else:
-            result = agent.run_output("echo 7", max_rounds=2)
+            result = agent.run_output("echo 7", max_rounds=max_rounds)
             assert (
                 result.final_text == "result 7" and result.tool_results[0].output == 7
             )
