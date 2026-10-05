@@ -10,14 +10,14 @@ from ..agent import AgentAction, ProviderAdapter
 from ..config import require_env
 from ..media import Audio, File, Image, Video
 from ..protocol import ToolResult, ToolSpec
-from .defaults import DEFAULT_PROVIDER_MODELS
 from .common import (
-    ProviderCapabilities,
-    USAGE_METRICS_RICH,
     STRUCTURED_OUTPUT_CLIENT_VALIDATED,
+    USAGE_METRICS_RICH,
+    ProviderCapabilities,
     extract_usage_metrics,
     openai_like_tool_call_plan_payload,
 )
+from .defaults import DEFAULT_PROVIDER_MODELS
 
 
 class OpenRouterToolCallingProvider(ProviderAdapter):
@@ -35,11 +35,15 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         site_name: str | None = None,
         temperature: float = 0.0,
         tool_choice: str | dict[str, Any] = "auto",
+        max_tokens: int | None = None,
         client: Any | None = None,
     ) -> None:
+        if max_tokens is not None and (type(max_tokens) is not int or max_tokens < 1):
+            raise ValueError("max_tokens must be a positive integer or None.")
         self.model = model
         self.temperature = temperature
         self.tool_choice = tool_choice
+        self.max_tokens = max_tokens
         self.site_url = site_url
         self.site_name = site_name
         self._last_finalize_usage: dict[str, int] | None = None
@@ -51,7 +55,7 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         except ImportError as exc:
             raise ImportError(
                 "`openai` not installed. For OpenRouter, install dependencies with "
-                "`pip install openai` and `pip install openrouter`."
+                "`pip install 'mtpx[openrouter]'`."
             ) from exc
 
         key = api_key or require_env("OPENROUTER_API_KEY")
@@ -262,6 +266,8 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
         if openai_tools:
             request_args["tools"] = openai_tools
             request_args["tool_choice"] = self.tool_choice
+        if self.max_tokens is not None:
+            request_args["max_tokens"] = self.max_tokens
 
         response = self._client.chat.completions.create(**request_args)
         message = response.choices[0].message
@@ -288,11 +294,14 @@ class OpenRouterToolCallingProvider(ProviderAdapter):
 
     def finalize(self, messages: list[dict[str, Any]], tool_results: list[ToolResult]) -> str:
         openrouter_messages = self._to_openrouter_messages(messages)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=openrouter_messages,
-            temperature=self.temperature,
-        )
+        request_args: dict[str, Any] = {
+            "model": self.model,
+            "messages": openrouter_messages,
+            "temperature": self.temperature,
+        }
+        if self.max_tokens is not None:
+            request_args["max_tokens"] = self.max_tokens
+        response = self._client.chat.completions.create(**request_args)
         self._last_finalize_usage = extract_usage_metrics(response) or None
         message = response.choices[0].message
         if getattr(message, "tool_calls", None):

@@ -108,7 +108,8 @@ def _claude_builder(model: str, api_key: str | None, base_url: str | None, provi
 
 def _openrouter_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:
     from mtp.providers import OpenRouter
-    return OpenRouter(model=model, api_key=api_key)
+    options = provider_options or {}
+    return OpenRouter(model=model, api_key=api_key, max_tokens=options.get("max_tokens"))
 
 
 def _gemini_builder(model: str, api_key: str | None, base_url: str | None, provider_options: dict[str, Any] | None = None) -> Any:

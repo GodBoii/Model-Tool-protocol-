@@ -412,6 +412,8 @@ def _run_mtp(
             ) if entry.get(key) is not None}
         if state.backend == "groq":
             provider_options = {"reasoning_effort": entry.get("reasoning_effort")}
+        if state.backend == "openrouter":
+            provider_options = {"max_tokens": entry.get("max_tokens")}
         if state.backend == "xiaomi":
             provider_options = {}
             if entry.get("thinking_mode"):

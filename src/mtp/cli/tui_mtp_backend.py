@@ -530,7 +530,7 @@ def run_mtp_prompt(
             assistant_blocks=assistant_blocks,
             thinking_text=thinking_text.strip(),
             status=str(outcome["status"]),
-            error=_describe_error(failure) if isinstance(failure, BaseException) else None,
+            error=_describe_error(failure, provider_name) if isinstance(failure, BaseException) else None,
             unapplied_steering=_take_unapplied_steering(agent, run_id),
         )
 
@@ -546,14 +546,41 @@ def run_mtp_prompt(
             assistant_blocks=assistant_blocks,
             thinking_text=thinking_text.strip(),
             status="failed",
-            error=_describe_error(exc),
+            error=_describe_error(exc, provider_name),
             unapplied_steering=_take_unapplied_steering(agent, run_id),
         )
 
 
-def _describe_error(exc: BaseException) -> str:
+def _describe_error(exc: BaseException, provider_name: str | None = None) -> str:
     message = str(exc).strip()
-    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+    description = f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+    if provider_name != "openrouter":
+        return description
+    status = getattr(exc, "status_code", None)
+    hint = ""
+    if status == 401:
+        hint = (
+            "OpenRouter rejected the credentials. Replace the key with /apikey openrouter. "
+            "A saved key takes priority over OPENROUTER_API_KEY. Free models still require a valid key."
+        )
+    elif status == 402:
+        body = getattr(exc, "body", None)
+        error = body.get("error", body) if isinstance(body, dict) else {}
+        metadata = error.get("metadata") if isinstance(error, dict) else None
+        source = metadata.get("limit_source") if isinstance(metadata, dict) else None
+        if source == "openrouter_key_limit":
+            hint = "The OpenRouter key's spending cap is exhausted. Check its limit and reset time."
+        elif source == "openrouter_in_flight_budget":
+            hint = "OpenRouter's in-flight budget is full. Wait for the Retry-After interval before retrying."
+        else:
+            hint = (
+                "Check the OpenRouter account balance and the exact model's current pricing. "
+                "A key's spending cap does not add account credits. For paid requests, lower max_tokens "
+                "or add credits. If the selected model is free, verify the account/key with GET /api/v1/key."
+            )
+    elif status == 429:
+        hint = "OpenRouter or its model provider is rate limited. Check the free quota and Retry-After interval."
+    return f"{description}\n{hint}" if hint else description
 
 
 def _stream_until_failure(events: Any, outcome: dict[str, Any]) -> Any:
