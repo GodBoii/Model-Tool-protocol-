@@ -405,10 +405,11 @@ def _run_mtp(
         api_key = provider_api_key(settings, state.backend)
         base_url = entry.get("base_url")
         provider_options: dict[str, Any] | None = None
-        if state.backend in {"huggingface", "deepinfra", "dashscope", "openai_responses"}:
+        if state.backend in {"huggingface", "deepinfra", "dashscope", "openai_responses", "azure_openai", "xai", "bedrock", "vertex"}:
             provider_options = {key:entry[key] for key in (
                 "temperature", "parallel_tool_calls", "max_tokens", "timeout_seconds", "stream_include_usage",
-                "region", "workspace_id", "enable_thinking", "max_output_tokens", "reasoning_effort",
+                "region", "profile", "project", "location", "use_entra",
+                "workspace_id", "enable_thinking", "max_output_tokens", "reasoning_effort",
             ) if entry.get(key) is not None}
         if state.backend == "groq":
             provider_options = {"reasoning_effort": entry.get("reasoning_effort")}

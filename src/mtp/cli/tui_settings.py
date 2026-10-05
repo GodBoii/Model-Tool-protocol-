@@ -19,6 +19,7 @@ DEFAULT_PROVIDER_MODELS["claude"] = DEFAULT_PROVIDER_MODELS.pop("anthropic")
 
 
 PROVIDER_KEY_ENV: dict[str, str] = {
+    "azure_openai": "AZURE_OPENAI_API_KEY", "xai": "XAI_API_KEY",
     "huggingface":"HF_TOKEN", "deepinfra":"DEEPINFRA_API_KEY", "dashscope":"DASHSCOPE_API_KEY",
     "openai_responses":"OPENAI_API_KEY",
     "openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY", "claude": "ANTHROPIC_API_KEY",
@@ -56,6 +57,10 @@ def provider_setup_status(payload: dict[str, Any], provider_name: str) -> str:
     """Describe readiness without exposing credential content."""
     if provider_name == "codex":
         return "Uses Codex CLI login"
+    if provider_name in {"bedrock", "vertex"}:
+        return "Uses AWS credential chain" if provider_name == "bedrock" else "Uses Google ADC"
+    if provider_name == "azure_openai" and ensure_provider_entry(payload, provider_name).get("use_entra"):
+        return "Uses Azure Entra credentials"
     if provider_name in {"ollama", "lmstudio"}:
         return "Endpoint configured" if is_provider_configured(payload, provider_name) else "Needs endpoint setup"
     entry = ensure_provider_entry(payload, provider_name)
@@ -300,6 +305,14 @@ def is_provider_configured(payload: dict[str, Any], provider_name: str) -> bool:
     
     entry = ensure_provider_entry(payload, provider_name)
     has_model = bool(preferred_model_for_provider(payload, provider_name))
+    if provider_name == "bedrock":
+        return bool(has_model and (entry.get("region") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")))
+    if provider_name == "vertex":
+        return bool(has_model and (entry.get("project") or os.getenv("GOOGLE_CLOUD_PROJECT"))
+                    and (entry.get("location") or os.getenv("GOOGLE_CLOUD_LOCATION")))
+    if provider_name == "azure_openai":
+        return bool(has_model and (entry.get("base_url") or os.getenv("AZURE_OPENAI_ENDPOINT"))
+                    and (entry.get("use_entra") or provider_api_key(payload, provider_name)))
     
     # Local providers don't require API keys
     if is_local_capable_provider(provider_name):

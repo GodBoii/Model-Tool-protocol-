@@ -24,6 +24,10 @@ class ProviderInfo:
 
 
 PROVIDERS: list[ProviderInfo] = [
+    ProviderInfo("azure_openai", "AzureOpenAI", "AzureOpenAIResponsesToolCallingProvider", "openai", "AZURE_OPENAI_API_KEY", "Explicit Azure deployment and endpoint; Entra credentials supported"),
+    ProviderInfo("xai", "XAI", "XAIResponsesToolCallingProvider", "openai", "XAI_API_KEY", "Explicit Responses model"),
+    ProviderInfo("bedrock", "Bedrock", "BedrockConverseToolCallingProvider", "boto3", None, "AWS credential chain; explicit region and model"),
+    ProviderInfo("vertex", "Vertex", "VertexGeminiToolCallingProvider", "google.genai", None, "Google ADC; explicit project/location/model"),
     ProviderInfo("huggingface", "HuggingFace", "HuggingFaceToolCallingProvider", "openai", "HF_TOKEN"),
     ProviderInfo("deepinfra", "DeepInfra", "DeepInfraToolCallingProvider", "openai", "DEEPINFRA_API_KEY"),
     ProviderInfo("dashscope", "DashScope", "DashScopeToolCallingProvider", "openai", "DASHSCOPE_API_KEY"),

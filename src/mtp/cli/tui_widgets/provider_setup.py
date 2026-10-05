@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 import asyncio
+import os
 from urllib.parse import urlsplit
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, OptionList, Static
+from textual.widgets import Button, Checkbox, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 from rich.text import Text
 
@@ -104,6 +105,7 @@ class ProviderSetup(ModalScreen[str | None]):
         self.switching = switching
         self.local = provider in {"ollama", "lmstudio"}
         self.hosted_endpoint = provider in {"huggingface", "deepinfra", "dashscope", "openai_responses"}
+        self.cloud_credentials = provider in {"bedrock", "vertex"}
         self._delete_confirmed = False
         self._refresh_models = refresh_models
         self._discovered_models: list[str] = []
@@ -118,7 +120,8 @@ class ProviderSetup(ModalScreen[str | None]):
             yield Static("Enter saves. Tab moves fields. Esc cancels.")
             with VerticalScroll(id="setup-fields"):
                 yield Static(
-                    "Set your server and model. Local servers usually do not need a key."
+                    "Set the cloud location and model. Credentials use your platform SDK's credential chain."
+                    if self.cloud_credentials else "Set your server and model. Local servers usually do not need a key."
                     if self.local else "Paste your API key below, or choose Providers to change provider.",
                     id="setup-message",
                 )
@@ -136,10 +139,27 @@ class ProviderSetup(ModalScreen[str | None]):
                     yield Label("Maximum output tokens", markup=False)
                     budget_key = "max_output_tokens" if self.provider == "openai_responses" else "max_tokens"
                     yield Input(str(entry.get(budget_key) or 1024), id="setup-budget")
-                yield Label("API key (optional)" if self.local else "API key", markup=False)
+                if self.provider == "azure_openai":
+                    yield Label("Azure resource endpoint", markup=False)
+                    yield Input(str(entry.get("base_url") or os.getenv("AZURE_OPENAI_ENDPOINT", "")), id="setup-endpoint")
+                    yield Checkbox("Use Azure Entra credential chain", value=bool(entry.get("use_entra")), id="setup-entra")
+                if self.provider == "bedrock":
+                    yield Label("AWS region", markup=False)
+                    yield Input(str(entry.get("region") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "")), id="setup-region")
+                    yield Label("AWS profile, optional", markup=False)
+                    yield Input(str(entry.get("profile") or ""), id="setup-profile")
+                if self.provider == "vertex":
+                    yield Label("Google Cloud project", markup=False)
+                    yield Input(str(entry.get("project") or os.getenv("GOOGLE_CLOUD_PROJECT", "")), id="setup-project")
+                    yield Label("Google Cloud location", markup=False)
+                    yield Input(str(entry.get("location") or os.getenv("GOOGLE_CLOUD_LOCATION", "")), id="setup-location")
+                if not self.cloud_credentials:
+                    yield Label("API key (optional)" if self.local else "API key", markup=False)
                 yield Input(password=True, placeholder="Paste a key; leave empty to keep the existing key", id="setup-key")
                 yield Button("Show key", id="key-visibility")
-                yield Static(f"Environment variable: {PROVIDER_KEY_ENV[self.provider]}")
+                yield Static(f"Environment variable: {PROVIDER_KEY_ENV[self.provider]}" if self.provider in PROVIDER_KEY_ENV else "Credentials come from the platform SDK's credential chain.")
+                if self.cloud_credentials:
+                    yield Static("Do not paste cloud credentials here. Configure AWS or Google ADC before connecting.")
                 yield Label("Model", markup=False)
                 yield Input(preferred_model_for_provider(settings, self.provider), id="setup-model")
                 yield Static("Keys are saved locally, outside chat history.")
@@ -151,7 +171,12 @@ class ProviderSetup(ModalScreen[str | None]):
                 yield Button("Cancel", id="setup-cancel")
 
     def on_mount(self) -> None:
-        self.query_one("#setup-endpoint" if self.local else "#setup-key", Input).focus()
+        selector = "#setup-region" if self.provider == "bedrock" else "#setup-project" if self.provider == "vertex" else "#setup-endpoint" if self.local else "#setup-key"
+        self.query_one(selector, Input).focus()
+        if self.cloud_credentials:
+            self.query_one("#setup-key", Input).disabled = True
+            self.query_one("#setup-key", Input).display = False
+            self.query_one("#key-visibility", Button).display = False
         if self.local and self._refresh_models:
             self.call_after_refresh(self._begin_model_load)
         if self._delete_key and self.query("#setup-delete"):
@@ -184,7 +209,9 @@ class ProviderSetup(ModalScreen[str | None]):
             except ValueError as exc:
                 self._error(str(exc), "#setup-key")
                 return
-        elif not self.local and not provider_api_key(settings, self.provider):
+        elif not self.local and not self.cloud_credentials and not (
+            self.provider == "azure_openai" and self.query_one("#setup-entra", Checkbox).value
+        ) and not provider_api_key(settings, self.provider):
             self._error("Paste an API key, or choose another provider.", "#setup-key")
             return
         if self.local:
@@ -206,6 +233,27 @@ class ProviderSetup(ModalScreen[str | None]):
                 self._error(str(exc))
                 return
             entry["max_output_tokens" if self.provider == "openai_responses" else "max_tokens"] = budget
+        if self.provider == "azure_openai":
+            from mtp.providers.azure_provider import azure_v1_endpoint
+            try:
+                entry["base_url"] = azure_v1_endpoint(self.query_one("#setup-endpoint", Input).value.strip())
+            except ValueError as exc:
+                self._error(str(exc), "#setup-endpoint")
+                return
+            entry["use_entra"] = self.query_one("#setup-entra", Checkbox).value
+            if entry["use_entra"] and key:
+                self._error("Leave the API key empty when using Entra credentials.", "#setup-key")
+                return
+            if entry["use_entra"]:
+                delete_provider_api_key(settings, self.provider)
+        if self.cloud_credentials:
+            names = ("region", "profile") if self.provider == "bedrock" else ("project", "location")
+            for name in names:
+                value = self.query_one(f"#setup-{name}", Input).value.strip()
+                if (not value and name != "profile") or any(char.isspace() or ord(char) < 32 for char in value):
+                    self._error(f"Enter a valid {name}.", f"#setup-{name}")
+                    return
+                entry[name] = value or None
         entry["model"] = model
         if self._discovered_models:
             entry["models"] = list(dict.fromkeys([*entry["models"], *self._discovered_models]))

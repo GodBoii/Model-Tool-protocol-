@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 
 SUPPORTED_TUI_PROVIDERS: tuple[str, ...] = (
+    "azure_openai", "xai", "bedrock", "vertex",
     "huggingface", "deepinfra", "dashscope", "openai_responses",
     "openai",
     "groq",
@@ -27,6 +28,7 @@ SUPPORTED_TUI_PROVIDERS: tuple[str, ...] = (
 )
 
 _PROVIDER_ALIASES: dict[str, str] = {
+    "azure": "azure_openai", "azure-openai": "azure_openai", "grok": "xai",
     "hf": "huggingface", "alibaba": "dashscope", "openai-responses": "openai_responses",
     "anthropic": "claude",
     "together": "togetherai",
@@ -64,6 +66,25 @@ class ProviderSelection:
 
 
 _ProviderBuilder = Callable[[str, str | None, str | None, dict[str, Any] | None], Any]
+
+
+def _enterprise_builder(provider_name: str) -> _ProviderBuilder:
+    def build(model, api_key, base_url, provider_options=None):
+        from mtp import providers
+
+        options = provider_options or {}
+        if provider_name == "azure_openai":
+            return providers.AzureOpenAI(model=model, api_key=None if options.get("use_entra") else api_key, endpoint=base_url,
+                                         use_entra=bool(options.get("use_entra", False)),
+                                         max_output_tokens=options.get("max_output_tokens", 1024))
+        if provider_name == "xai":
+            kwargs = {"base_url": base_url} if base_url else {}
+            return providers.XAI(model=model, api_key=api_key, max_output_tokens=options.get("max_output_tokens", 1024), **kwargs)
+        if provider_name == "bedrock":
+            return providers.Bedrock(model=model, region=options.get("region"), profile=options.get("profile"), max_tokens=options.get("max_tokens", 1024))
+        return providers.Vertex(model=model, project=options.get("project"), location=options.get("location"), max_output_tokens=options.get("max_output_tokens",1024))
+
+    return build
 
 
 def _hosted_builder(provider_name: str) -> _ProviderBuilder:
@@ -199,6 +220,7 @@ def _lmstudio_builder(model: str, api_key: str | None, base_url: str | None, pro
 
 
 PROVIDER_BUILDERS: dict[str, _ProviderBuilder] = {
+    **{name: _enterprise_builder(name) for name in ("azure_openai", "xai", "bedrock", "vertex")},
     **{name: _hosted_builder(name) for name in ("huggingface", "deepinfra", "dashscope", "openai_responses")},
     "openai": _openai_builder,
     "groq": _groq_builder,

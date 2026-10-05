@@ -1,6 +1,10 @@
 """Shared SDK and CLI defaults. Explicit saved selections are never replaced."""
 
 DEFAULT_PROVIDER_MODELS = {
+    "azure_openai": "",
+    "xai": "",
+    "bedrock": "",
+    "vertex": "",
     "huggingface": "openai/gpt-oss-120b:cerebras",
     "deepinfra": "deepseek-ai/DeepSeek-V4-Flash-0731",
     "dashscope": "qwen-plus",

@@ -299,6 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--backend",
         choices=[
             "huggingface", "deepinfra", "dashscope", "openai_responses",
+            "azure_openai", "xai", "bedrock", "vertex",
             "codex",
             "openai",
             "groq",

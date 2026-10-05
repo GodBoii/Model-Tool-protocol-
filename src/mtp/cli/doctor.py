@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import platform
-from pathlib import Path
 from dataclasses import dataclass
-import importlib.util
+from pathlib import Path
 
 from ..config import load_dotenv_if_available
 from .providers import ProviderInfo, list_providers
@@ -49,6 +49,9 @@ def _check_provider(info: ProviderInfo, settings: dict) -> list[DoctorItem]:
         provider = "claude" if info.name == "anthropic" else info.name
         present = bool(provider_api_key(settings, provider))
         source = provider_setup_status(settings, provider)
+        if provider == "azure_openai" and settings.get("providers", {}).get(provider, {}).get("use_entra"):
+            present = True
+            source = "Entra credential chain configured; account access is unverified"
         items.append(
             DoctorItem(
                 f"{info.name}.credentials",
@@ -56,6 +59,18 @@ def _check_provider(info: ProviderInfo, settings: dict) -> list[DoctorItem]:
                 f"{source}. Environment variable: {info.env_var}",
             )
         )
+    if info.name in {"azure_openai", "bedrock", "vertex"}:
+        from .tui_settings import ensure_provider_entry
+        entry = ensure_provider_entry(settings, info.name)
+        rows = {
+            "azure_openai": {"endpoint":entry.get("base_url") or os.getenv("AZURE_OPENAI_ENDPOINT"), "model":entry.get("model")},
+            "bedrock": {"region":entry.get("region") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"), "model":entry.get("model")},
+            "vertex": {"project":entry.get("project") or os.getenv("GOOGLE_CLOUD_PROJECT"), "location":entry.get("location") or os.getenv("GOOGLE_CLOUD_LOCATION"), "model":entry.get("model")},
+        }[info.name]
+        for name, configured in rows.items():
+            items.append(DoctorItem(f"{info.name}.{name}", _status(bool(configured)), "configured" if configured else "missing; use provider setup"))
+        if info.name in {"bedrock", "vertex"}:
+            items.append(DoctorItem(f"{info.name}.credentials", "INFO", "SDK credential chain; account access is unverified"))
     return items
 
 

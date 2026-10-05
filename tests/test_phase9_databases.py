@@ -17,6 +17,27 @@ from mtp.session_store import (
 pytestmark = pytest.mark.integration
 
 
+def test_binary_media_round_trip_on_real_database(store):
+    from mtp.media import File, Image
+
+    record = SessionRecord(
+        session_id="phase9-media",
+        user_id="synthetic-user",
+        messages=[
+            {
+                "role": "user",
+                "content": "inspect",
+                "images": [Image(content=b"\x89PNG\x00\xff", mime_type="image/png")],
+                "files": [File(content=b"%PDF\x00\xff", filename="synthetic.pdf")],
+            }
+        ],
+    )
+    store.upsert_session(record)
+    loaded = store.get_session(record.session_id, user_id="synthetic-user")
+    assert loaded.messages[0]["images"][0].get_content_bytes() == b"\x89PNG\x00\xff"
+    assert loaded.messages[0]["files"][0].get_content_bytes() == b"%PDF\x00\xff"
+
+
 @pytest.fixture(params=["postgres", "mysql"])
 def store(request):
     if request.param == "postgres":

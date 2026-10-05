@@ -4,6 +4,10 @@ from importlib import import_module
 from typing import Any
 
 _EXPORTS: dict[str, tuple[str, str]] = {
+    "AzureOpenAIResponsesToolCallingProvider": (".azure_provider", "AzureOpenAIResponsesToolCallingProvider"),
+    "XAIResponsesToolCallingProvider": (".xai_provider", "XAIResponsesToolCallingProvider"),
+    "BedrockConverseToolCallingProvider": (".bedrock_provider", "BedrockConverseToolCallingProvider"),
+    "VertexGeminiToolCallingProvider": (".vertex_provider", "VertexGeminiToolCallingProvider"),
     "OpenAICompatibleToolCallingProvider": (".compatible_provider", "OpenAICompatibleToolCallingProvider"),
     "OpenAIResponsesToolCallingProvider": (".responses_provider", "OpenAIResponsesToolCallingProvider"),
     "HuggingFaceToolCallingProvider": (".hosted_compatible", "HuggingFaceToolCallingProvider"),
@@ -28,6 +32,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 }
 
 _ALIASES: dict[str, str] = {
+    "AzureOpenAI": "AzureOpenAIResponsesToolCallingProvider",
+    "XAI": "XAIResponsesToolCallingProvider",
+    "Bedrock": "BedrockConverseToolCallingProvider",
+    "Vertex": "VertexGeminiToolCallingProvider",
     "OpenAICompatible": "OpenAICompatibleToolCallingProvider",
     "OpenAIResponses": "OpenAIResponsesToolCallingProvider",
     "HuggingFace": "HuggingFaceToolCallingProvider",

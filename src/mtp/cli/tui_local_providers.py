@@ -17,6 +17,7 @@ import json
 
 LOCAL_CAPABLE_PROVIDERS = {"ollama", "lmstudio"}
 CLOUD_ONLY_PROVIDERS = {
+    "azure_openai", "xai", "bedrock", "vertex",
     "huggingface", "deepinfra", "dashscope", "openai_responses", "xiaomi",
     "openai", "groq", "claude", "gemini", "openrouter",
     "mistral", "cohere", "sambanova", "cerebras", "deepseek",
