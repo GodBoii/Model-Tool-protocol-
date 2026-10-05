@@ -1,0 +1,46 @@
+[
+  {
+    "case": "parallel",
+    "outputs": [
+      42,
+      42,
+      91
+    ],
+    "modes": [
+      "parallel"
+    ],
+    "completed": true,
+    "passed": true
+  },
+  {
+    "case": "sequential_refs",
+    "outputs": [
+      12,
+      48,
+      16.0,
+      31.0
+    ],
+    "modes": [
+      "sequential",
+      "sequential",
+      "sequential",
+      "sequential"
+    ],
+    "completed": true,
+    "passed": true
+  },
+  {
+    "case": "mixed",
+    "outputs": [
+      42,
+      91,
+      84
+    ],
+    "modes": [
+      "parallel",
+      "sequential"
+    ],
+    "completed": true,
+    "passed": true
+  }
+]

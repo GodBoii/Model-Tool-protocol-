@@ -12,6 +12,8 @@
   identical read's dependency and approval checks; retain explicit TTL caching.
 - Verify new contracts against the installed SDK's JSON/SSE handling on
   loopback servers and the compatible adapter against authorized live Groq.
+- Reject executable paths before platform-specific shell parsing and wait for
+  observable TUI readiness in tests on slower CI runners.
 
 ## Release 0.1.38, 2026-10-05
 

@@ -1,0 +1,14 @@
+{
+  "version": "0.1.39",
+  "date": "2026-10-05",
+  "implementation_commit": "d842522220b486276b9f4958e4b419518299f778",
+  "non_live_suite": {"passed": 804, "skipped": 1, "deselected": 11},
+  "minimal_dependency_ci_suite": {"passed": 759, "skipped": 6, "deselected": 51},
+  "phase2_provider_setup_tests": {"passed": 56},
+  "shell_and_tui_ci_regressions": {"passed": 117},
+  "installed_wheel_wire_contracts": {"passed": 16},
+  "groq_live": {"model": "qwen/qwen3.8-27b", "max_tokens": 512, "cases_passed": 3},
+  "github_matrix": {"run_id": 37250532071, "jobs_passed": 5, "platforms": ["linux", "windows", "macos"]},
+  "publication": "pending",
+  "live_inference_not_verified": ["huggingface", "deepinfra", "dashscope", "openai_responses"]
+}

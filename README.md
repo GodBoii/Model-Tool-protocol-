@@ -207,6 +207,7 @@ python -m pytest -q tests/test_e2e_xiaomi.py
 - [Providers](docs/PROVIDERS.md)
 - [Provider Guides](docs/PROVIDER_GUIDES.md)
 - [Compatible Provider Configuration](docs/COMPATIBLE_PROVIDERS.md)
+- [Provider Phase 2 Implementation and Verification](docs/PROVIDER_PHASE2.md)
 - [OpenAI Responses](docs/providers/OPENAI_RESPONSES.md)
 - [Local Inference](docs/LOCAL_INFERENCE.md)
 - [Local Toolkits](docs/LOCAL_TOOLKITS.md)
