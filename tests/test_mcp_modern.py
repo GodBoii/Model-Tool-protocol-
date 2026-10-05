@@ -237,6 +237,25 @@ def test_null_params_are_malformed():
     assert make_server().handle_request(value)["error"]["code"] == -32602
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), object()])
+def test_non_json_request_values_fail_before_execution(value):
+    response = make_server().handle_request(
+        request("tools/call", name="echo", arguments={"value": value})
+    )
+    assert response["error"]["code"] == -32602
+
+
+def test_non_finite_tool_outputs_fail_as_internal_errors():
+    tools = ToolRegistry()
+    tools.register_tool(
+        ToolSpec("bad_output", "bad output", input_schema={"type": "object"}),
+        lambda: float("nan"),
+    )
+    server = MCPJsonRpcServer(tools=tools, enable_modern=True)
+    response = server.handle_request(request("tools/call", name="bad_output"))
+    assert response["error"]["code"] == -32603
+
+
 def test_notifications_have_no_rpc_response():
     value = request("notifications/example")
     del value["id"]

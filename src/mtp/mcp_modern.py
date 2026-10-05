@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import uuid
 from typing import Any
@@ -69,6 +70,14 @@ class ModernMCPRequests:
         params = request.get("params", {})
         if not isinstance(params, dict):
             return error(request_id, -32602, "Modern request params must be an object.")
+        try:
+            json.dumps(params, allow_nan=False)
+        except (TypeError, ValueError):
+            return error(
+                request_id,
+                -32602,
+                "Modern request params must contain valid JSON values.",
+            )
         meta = params.get("_meta")
         if not isinstance(meta, dict):
             return error(request_id, -32602, "Required per-request _meta is missing.")
@@ -201,7 +210,7 @@ class ModernMCPRequests:
         return response
 
     def _complete(self, result: dict[str, Any]) -> dict[str, Any]:
-        result = copy.deepcopy(result)
+        result = json.loads(json.dumps(result, default=str, allow_nan=False))
         result["resultType"] = "complete"
         meta = result.setdefault("_meta", {})
         meta[SERVER_INFO_KEY] = self._info()
@@ -264,7 +273,13 @@ class ModernMCPRequests:
             return self.server._error_response(
                 request_id, -32603, "Internal MCP request failure."
             )
-        return {"jsonrpc": "2.0", "id": request_id, "result": self._complete(result)}
+        try:
+            completed = self._complete(result)
+        except (TypeError, ValueError):
+            return self.server._error_response(
+                request_id, -32603, "Result cannot be serialized as valid JSON."
+            )
+        return {"jsonrpc": "2.0", "id": request_id, "result": completed}
 
     def handle_sync(self, request: dict[str, Any]) -> dict[str, Any] | None:
         return self.server._run_coro_sync(self.handle(request))

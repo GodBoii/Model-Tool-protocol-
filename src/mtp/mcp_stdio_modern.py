@@ -13,6 +13,9 @@ async def serve_modern_stdio(server: Any, reader: TextIO, writer: TextIO) -> Non
     pending: dict[tuple[type, str | int], asyncio.Task[None]] = {}
     cancelled: set[tuple[type, str | int]] = set()
 
+    def reject_constant(value: str) -> None:
+        raise ValueError("Non-finite JSON numbers are unsupported.")
+
     def write(response: dict[str, Any] | None) -> None:
         if response is not None:
             writer.write(json.dumps(response, ensure_ascii=True, default=str) + "\n")
@@ -32,8 +35,8 @@ async def serve_modern_stdio(server: Any, reader: TextIO, writer: TextIO) -> Non
     try:
         while line := await asyncio.to_thread(reader.readline):
             try:
-                request = json.loads(line)
-            except (json.JSONDecodeError, UnicodeError):
+                request = json.loads(line, parse_constant=reject_constant)
+            except (ValueError, UnicodeError):
                 write(server._error_response(None, -32700, "Invalid JSON payload."))
                 continue
             if not isinstance(request, dict):
