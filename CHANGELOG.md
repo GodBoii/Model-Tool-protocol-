@@ -1,6 +1,6 @@
 # MTP CLI and TUI improvement program
 
-## Release 0.1.38, pending publication
+## Release 0.1.38, 2026-10-05
 
 - Fix all 18 reproduced audit defects, including write multiplicity, failed
   dependencies, prior-round references, complete tool history, and async streams.
