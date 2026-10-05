@@ -6,6 +6,12 @@ MTP provides a first-party CLI:
 mtp --help
 ```
 
+Enterprise backends `azure_openai`, `xai`, `bedrock`, and `vertex` accept explicit
+model/deployment selections. Their setup forms store Azure endpoints/Entra choice,
+AWS region/profile, or Google project/location. AWS and Google credentials remain
+in their SDK credential chains. `mtp doctor --provider bedrock` checks required
+configuration without contacting the cloud or claiming the account is authorized.
+
 ## Commands
 
 ## `mtp new <name>`

@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.1.40"
+__version__ = "0.1.41"
 
 # Public name -> submodule that defines it.
 _EXPORTS: dict[str, str] = {
@@ -89,6 +89,12 @@ _EXPORTS: dict[str, str] = {
     "run_mcp_ws": ".mcp_transport",
     "MCPStreamableHTTPTransportServer": ".mcp_streamable_http",
     "run_mcp_streamable_http": ".mcp_streamable_http",
+    "configure_modern_mcp": ".mcp_features",
+    "ModernMCPFeatures": ".mcp_features",
+    "MCPInputRequired": ".mcp_features",
+    "MCPRequestContext": ".mcp_features",
+    "current_mcp_context": ".mcp_features",
+    "MCPOAuthMetadata": ".mcp_features",
 }
 
 # Exports that need an optional dependency; they are None when it is missing,
@@ -163,6 +169,12 @@ __all__ = [
     "run_mcp_ws",
     "MCPStreamableHTTPTransportServer",
     "run_mcp_streamable_http",
+    "configure_modern_mcp",
+    "ModernMCPFeatures",
+    "MCPInputRequired",
+    "MCPRequestContext",
+    "current_mcp_context",
+    "MCPOAuthMetadata",
     "StrictViolation",
     "validate_strict_dependencies",
     "load_dotenv_if_available",

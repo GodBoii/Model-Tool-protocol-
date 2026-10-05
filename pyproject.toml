@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtpx"
-version = "0.1.40"
+version = "0.1.41"
 description = "MTPX: Model Tool Protocol and agent runtime for Python"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,11 +19,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "textual>=1.0.0",
+    "textual>=8.2.8",
 ]
 
 [project.scripts]
@@ -33,6 +34,7 @@ mtp = "mtp.cli.main:main"
 dotenv = ["python-dotenv"]
 websocket = ["websockets"]
 mcp-modern = ["jsonschema>=4.18"]
+structured-output = ["jsonschema>=4.18"]
 ui-streamlit = ["streamlit"]
 # tui = ["textual>=1.0.0"] (moved to core)
 
@@ -56,6 +58,10 @@ huggingface = ["openai"]
 deepinfra = ["openai"]
 dashscope = ["openai"]
 openai-responses = ["openai"]
+azure-openai = ["openai", "azure-identity"]
+xai = ["openai"]
+bedrock = ["boto3"]
+vertex = ["google-genai", "google-auth"]
 
 # Toolkit extras.
 toolkits-web = [
@@ -75,6 +81,8 @@ stores-db = ["psycopg", "pymysql", "mysql-connector-python"]
 
 # Convenience aggregate extras.
 providers = [
+    "boto3",
+    "azure-identity",
     "cerebras-cloud-sdk",
     "openai",
     "ollama",
@@ -85,6 +93,9 @@ providers = [
     "mistralai",
 ]
 all = [
+    "boto3",
+    "azure-identity",
+    "jsonschema>=4.18",
     "cerebras-cloud-sdk",
     "python-dotenv",
     "websockets",

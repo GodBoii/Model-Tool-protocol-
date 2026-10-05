@@ -1,5 +1,18 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.41, pending publication
+
+- Add opt-in MCP SSE progress, disconnect cancellation, identity-scoped
+  subscriptions, MRTR roots/sampling/elicitation, OAuth metadata discovery,
+  and official-client interoperability checks.
+- Add native AsyncOpenAI/AsyncGroq requests and streaming, owned JSON schemas,
+  Responses image/file input, and exact binary media persistence.
+- Add Azure/Foundry, xAI, Bedrock Converse, and Vertex adapters with CLI/TUI
+  configuration and explicit deployments, regions, and credential chains.
+- Certify real PostgreSQL/MySQL stores, local Ollama inference, Python 3.11–3.13,
+  distribution installation, and the declared Textual minimum. Correct the
+  unsupported Textual 1.0 dependency floor to tested 8.2.8.
+
 ## Release 0.1.40, 2026-10-05
 
 - Add opt-in MCP 2026-07-28 discovery and per-request metadata alongside the

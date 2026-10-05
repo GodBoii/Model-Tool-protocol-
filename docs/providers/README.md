@@ -2,6 +2,19 @@
 
 Detailed documentation for each MTP provider. Each guide covers installation, API key setup, parameters, capabilities, and working examples.
 
+## Explicit cloud deployments
+
+| Provider | Extra | Required configuration | Guide |
+|---|---|---|---|
+| Azure OpenAI / Foundry | `azure-openai` | Deployment, endpoint, API key or Entra | [Azure](AZURE.md) |
+| xAI | `xai` | Explicit model and XAI_API_KEY | [xAI](XAI.md) |
+| Amazon Bedrock | `bedrock` | Model, region, AWS credential chain | [Bedrock](BEDROCK.md) |
+| Vertex AI | `vertex` | Model, project, location, Google ADC | [Vertex](VERTEX.md) |
+
+These providers require explicit model/deployment selection. MTP does not provision
+accounts or enable billable resources. [Enterprise setup](../ENTERPRISE_PROVIDERS.md)
+describes SDK behavior; the TUI supports all four backends.
+
 ## Cloud Providers
 
 | Provider | Install | Env Var | Default Model | Docs |

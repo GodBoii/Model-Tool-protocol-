@@ -219,6 +219,8 @@ python -m pytest -q tests/test_e2e_xiaomi.py
 - [Modern MCP Core and Stdio](docs/MCP_MODERN.md)
 - [Python Execution Isolation](docs/EXECUTION_ISOLATION.md)
 - [Provider Boundary Hardening](docs/PROVIDER_HARDENING.md)
+- [Native Async, Media, and Structured Outputs](docs/SDK_CAPABILITIES.md)
+- [Enterprise Providers](docs/ENTERPRISE_PROVIDERS.md)
 - [Implementation Phases 3 through 5 and Verification](docs/IMPLEMENTATION_PHASES_3_5.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing](docs/TESTING.md)

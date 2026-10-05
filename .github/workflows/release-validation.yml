@@ -1,0 +1,32 @@
+name: release-validation
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  distribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - name: Build distributable artifacts
+        run: python -m build
+      - name: Validate metadata and rendered description
+        run: python -m twine check dist/*
+      - name: Verify installed wheel and bundled templates
+        run: |
+          python -m venv wheel-env
+          wheel-env/bin/python -m pip install dist/*.whl
+          wheel-env/bin/python -I -c "import mtp; from mtp import MCPStreamableHTTPTransportServer, ModernMCPFeatures, DockerPythonToolkit; print(mtp.__version__)"
+          wheel-env/bin/mtp new release_fixture --template mcp-streamable-http --dir /tmp/mtp-release-check
+          test -f /tmp/mtp-release-check/release_fixture/.env.example
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mtpx-distributions
+          path: dist/

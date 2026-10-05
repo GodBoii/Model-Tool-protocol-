@@ -6,6 +6,17 @@ on:
     branches: ["main", "master"]
 
 jobs:
+  minimum-textual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e . textual==8.2.8 pytest pytest-asyncio python-dotenv
+      - name: Verify declared minimum UI dependency
+        run: python -m pytest -q tests/test_tui_provider_setup.py tests/test_tui_app_lifecycle.py
+
   isolated-python:
     runs-on: ubuntu-latest
     steps:
@@ -30,6 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,7 +49,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
 
       - name: Install
         run: |
@@ -67,7 +79,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .[websocket,providers,mcp-modern]
+          python -m pip install -e .[websocket,providers,mcp-modern,structured-output,azure-openai,xai,bedrock,vertex]
+          python -m pip install mcp
           python -m pip install pytest pytest-asyncio python-dotenv
 
       - name: Run integration tests
