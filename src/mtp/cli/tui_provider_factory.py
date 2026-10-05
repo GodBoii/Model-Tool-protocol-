@@ -74,8 +74,8 @@ def _enterprise_builder(provider_name: str) -> _ProviderBuilder:
 
         options = provider_options or {}
         if provider_name == "azure_openai":
-            return providers.AzureOpenAI(model=model, api_key=None if options.get("use_entra") else api_key, endpoint=base_url,
-                                         use_entra=bool(options.get("use_entra", False)),
+            return providers.AzureOpenAI(model=model, api_key=None if options.get("use_entra") is True else api_key, endpoint=base_url,
+                                         use_entra=options.get("use_entra", False),
                                          max_output_tokens=options.get("max_output_tokens", 1024))
         if provider_name == "xai":
             kwargs = {"base_url": base_url} if base_url else {}

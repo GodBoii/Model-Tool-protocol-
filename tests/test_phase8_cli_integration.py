@@ -9,6 +9,33 @@ from test_tui_app_lifecycle import _make_state
 from textual.widgets import Checkbox, Input
 from tui_test_helpers import wait_until
 
+
+def test_azure_factory_does_not_coerce_invalid_authentication_flags(monkeypatch):
+    from mtp import providers
+    from mtp.cli.tui_provider_factory import ProviderSelection, build_tui_provider
+
+    captured = []
+
+    def construct(**kwargs):
+        captured.append(kwargs)
+        if type(kwargs["use_entra"]) is not bool:
+            raise TypeError("use_entra must be a boolean")
+
+    monkeypatch.setattr(providers, "AzureOpenAI", construct)
+    with pytest.raises(TypeError, match="boolean"):
+        build_tui_provider(
+            ProviderSelection(
+                "azure_openai",
+                "deployment",
+                "synthetic-key",
+                "https://azure.example",
+                {"use_entra": "false"},
+            )
+        )
+    assert captured[0]["use_entra"] == "false"
+    assert captured[0]["api_key"] == "synthetic-key"
+
+
 from mtp.cli.main import build_parser
 from mtp.cli.providers import get_provider
 from mtp.cli.tui_app import MTPApp
