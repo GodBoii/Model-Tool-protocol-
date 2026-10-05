@@ -143,6 +143,10 @@ Supported adapters include:
 - Ollama
 - LM Studio
 - Mock planner for deterministic tests
+- Hugging Face Inference Providers
+- DeepInfra
+- Alibaba Cloud Model Studio / DashScope
+- OpenAI Responses as an opt-in API path
 
 Xiaomi MiMo uses `MIMO_API_KEY`. You can override its endpoint with `MIMO_BASE_URL`, and live tests require both `MIMO_API_KEY` and `RUN_LIVE_XIAOMI=1`.
 
@@ -202,6 +206,8 @@ python -m pytest -q tests/test_e2e_xiaomi.py
 - [Storage and Sessions](docs/STORAGE.md)
 - [Providers](docs/PROVIDERS.md)
 - [Provider Guides](docs/PROVIDER_GUIDES.md)
+- [Compatible Provider Configuration](docs/COMPATIBLE_PROVIDERS.md)
+- [OpenAI Responses](docs/providers/OPENAI_RESPONSES.md)
 - [Local Inference](docs/LOCAL_INFERENCE.md)
 - [Local Toolkits](docs/LOCAL_TOOLKITS.md)
 - [Creating Tools](docs/CREATING_TOOLS.md)

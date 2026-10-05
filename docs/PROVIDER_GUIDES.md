@@ -11,13 +11,19 @@ from mtp import Agent
 from mtp.providers import Groq
 
 tools = Agent.ToolRegistry()
-provider = Groq(model="llama-3.3-70b-versatile")
+provider = Groq(model="qwen/qwen3.8-27b")
 agent = Agent.MTPAgent(provider=provider, tools=tools)
 ```
 
 Provider adapters convert provider-native tool calls into MTP `ExecutionPlan` objects. The runtime, not the provider, executes tools. See [TOOL_CALL_SYNTAX.md](TOOL_CALL_SYNTAX.md) for exact tool-call syntax.
 
 Normal chat should use `autoresearch=False`. Autoresearch is persistent mode: direct model text is progress, and completion is expected through `agent.terminate`.
+
+## Hosted integrations and OpenAI Responses
+
+Version 0.1.39 adds [Hugging Face](providers/HUGGINGFACE.md), [DeepInfra](providers/DEEPINFRA.md), and [DashScope](providers/DASHSCOPE.md). These adapters share streaming, tool-name mapping, JSON argument validation, usage extraction, and native tool-result replay. They declare text input by default.
+
+[OpenAI Responses](providers/OPENAI_RESPONSES.md) adds a separate stateless API path with encrypted reasoning replay. Existing `OpenAI` callers keep Chat Completions. Use [OpenAICompatible](COMPATIBLE_PROVIDERS.md) for an explicitly configured SDK endpoint.
 
 ## Mock
 
@@ -35,7 +41,7 @@ The mock provider is not a general LLM. It only returns deterministic plans/text
 - Class: `GroqToolCallingProvider`
 - Extra: `pip install "mtpx[groq]"`
 - Env var: `GROQ_API_KEY`
-- Default model: `llama-3.3-70b-versatile`
+- Default model: `qwen/qwen3.8-27b`
 - Tool calling: native Groq tool calls only
 - Streaming: finalize streaming with usage capture when supported
 
@@ -71,7 +77,7 @@ OpenRouter routes to many model families. Tool reliability depends on the select
 - Class: `AnthropicToolCallingProvider`
 - Extra: `pip install "mtpx[anthropic]"`
 - Env var: `ANTHROPIC_API_KEY`
-- Default model: `claude-3-5-sonnet-20241022`
+- Default model: `claude-sonnet-5-5`
 - Tool calling: Anthropic tool-use blocks
 
 Anthropic uses a different native message shape internally, but MTP still exposes the same event stream and `ExecutionPlan` runtime semantics.
@@ -82,7 +88,7 @@ Anthropic uses a different native message shape internally, but MTP still expose
 - Class: `GeminiToolCallingProvider`
 - Extra: `pip install "mtpx[gemini]"`
 - Env var: `GEMINI_API_KEY`
-- Default model: `gemini-2.0-flash-exp`
+- Default model: `gemini-3.8-flash`
 - Tool calling: Gemini function calls
 - Multimodal: supports provider-specific media paths where capability checks allow them
 
@@ -105,7 +111,7 @@ Use recent Mistral models for better structured tool output.
 - Class: `CohereToolCallingProvider`
 - Extra: `pip install "mtpx[cohere]"`
 - Env var: `COHERE_API_KEY`
-- Default model: `command-r-plus-08-2024`
+- Default model: `command-a-plus-05-2026`
 - Tool calling: Cohere-compatible chat/tool calls
 
 Cohere is useful for command-style reasoning and retrieval-like tasks. Keep schemas small and descriptive.
@@ -116,7 +122,7 @@ Cohere is useful for command-style reasoning and retrieval-like tasks. Keep sche
 - Class: `SambaNovaToolCallingProvider`
 - Extra: `pip install "mtpx[sambanova]"`
 - Env var: `SAMBANOVA_API_KEY`
-- Default model: `Meta-Llama-3.1-405B-Instruct`
+- Default model: `Meta-Llama-3.3-70B-Instruct`
 - Tool calling: OpenAI-compatible where model supports it
 
 SambaNova model names can change by account/endpoint. Confirm your available model id before use.
@@ -127,7 +133,7 @@ SambaNova model names can change by account/endpoint. Confirm your available mod
 - Class: `CerebrasToolCallingProvider`
 - Extra: `pip install "mtpx[cerebras]"`
 - Env var: `CEREBRAS_API_KEY`
-- Default model: `llama3.1-70b`
+- Default model: `qwen-3.8-27b`
 - Tool calling: OpenAI-compatible
 
 Cerebras is optimized for fast hosted inference. Tool behavior is best with concise tool descriptions.
@@ -149,7 +155,7 @@ Prefer `deepseek-chat` or another tool-capable endpoint for agent workflows.
 - Class: `TogetherAIToolCallingProvider`
 - Extra: `pip install "mtpx[togetherai]"`
 - Env var: `TOGETHER_API_KEY`
-- Default model: `meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo`
+- Default model: `meta-llama/Meta-Llama-3.3-70B-Instruct-Turbo`
 - Tool calling: OpenAI-compatible for supported models
 
 TogetherAI exposes many models. Tool quality varies by model family.
@@ -160,7 +166,7 @@ TogetherAI exposes many models. Tool quality varies by model family.
 - Class: `FireworksAIToolCallingProvider`
 - Extra: `pip install "mtpx[fireworksai]"`
 - Env var: `FIREWORKS_API_KEY`
-- Default model: `accounts/fireworks/models/llama-v3p1-70b-instruct`
+- Default model: `accounts/fireworks/models/llama-v3p3-70b-instruct`
 - Tool calling: OpenAI-compatible for supported models
 
 Use account-qualified model ids when required by Fireworks.
@@ -185,13 +191,13 @@ The adapter automatically manages thinking mode for planning/finalization and di
 - Extra: `pip install "mtpx[ollama]"`
 - Env var: optional `OLLAMA_API_KEY` for secured hosts
 - Default host: `http://localhost:11434`
-- Default model: `llama3.2:3b`
+- Default model: `qwen3`
 - Tool calling: native Ollama chat tool calls when supported by the local model
 
 Install Ollama, pull a model, and verify the server:
 
 ```bash
-ollama pull llama3.2:3b
+ollama pull qwen3
 ollama list
 ```
 

@@ -6,12 +6,13 @@ Detailed documentation for each MTP provider. Each guide covers installation, AP
 
 | Provider | Install | Env Var | Default Model | Docs |
 |---|---|---|---|---|
-| **Groq** | `pip install "mtpx[groq]"` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | [GROQ.md](GROQ.md) |
+| **Groq** | `pip install "mtpx[groq]"` | `GROQ_API_KEY` | `qwen/qwen3.8-27b` | [GROQ.md](GROQ.md) |
 | **OpenAI** | `pip install "mtpx[openai]"` | `OPENAI_API_KEY` | `gpt-4o` | [OPENAI.md](OPENAI.md) |
-| **Anthropic** | `pip install "mtpx[anthropic]"` | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-20241022` | [ANTHROPIC.md](ANTHROPIC.md) |
-| **Gemini** | `pip install "mtpx[gemini]"` | `GEMINI_API_KEY` | `gemini-2.0-flash` | [GEMINI.md](GEMINI.md) |
+| **OpenAI Responses** | `pip install "mtpx[openai-responses]"` | `OPENAI_API_KEY` | `gpt-4o` | [OPENAI_RESPONSES.md](OPENAI_RESPONSES.md) |
+| **Anthropic** | `pip install "mtpx[anthropic]"` | `ANTHROPIC_API_KEY` | `claude-sonnet-5-5` | [ANTHROPIC.md](ANTHROPIC.md) |
+| **Gemini** | `pip install "mtpx[gemini]"` | `GEMINI_API_KEY` | `gemini-3.8-flash` | [GEMINI.md](GEMINI.md) |
 | **Mistral** | `pip install "mtpx[mistral]"` | `MISTRAL_API_KEY` | `mistral-large-latest` | [MISTRAL.md](MISTRAL.md) |
-| **Cohere** | `pip install "mtpx[cohere]"` | `COHERE_API_KEY` | `command-a-03-2025` | [COHERE.md](COHERE.md) |
+| **Cohere** | `pip install "mtpx[cohere]"` | `COHERE_API_KEY` | `command-a-plus-05-2026` | [COHERE.md](COHERE.md) |
 | **DeepSeek** | `pip install "mtpx[deepseek]"` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [DEEPSEEK.md](DEEPSEEK.md) |
 | **Xiaomi MiMo** | `pip install "mtpx[xiaomi]"` | `MIMO_API_KEY` | `mimo-v2.5-pro` | [XIAOMI.md](XIAOMI.md) |
 
@@ -19,12 +20,17 @@ Detailed documentation for each MTP provider. Each guide covers installation, AP
 
 These providers use the OpenAI SDK under the hood with custom base URLs.
 
+The reusable [compatible adapter](../COMPATIBLE_PROVIDERS.md) also accepts an explicit SDK endpoint. Model tool support and optional parameters depend on the selected endpoint.
+
 | Provider | Install | Env Var | Default Model | Docs |
 |---|---|---|---|---|
-| **OpenRouter** | `pip install "mtpx[openrouter]"` | `OPENROUTER_API_KEY` | `qwen/qwen3.6-plus-preview:free` | [OPENROUTER.md](OPENROUTER.md) |
-| **SambaNova** | `pip install "mtpx[sambanova]"` | `SAMBANOVA_API_KEY` | `Meta-Llama-3.1-70B-Instruct` | [SAMBANOVA.md](SAMBANOVA.md) |
-| **Cerebras** | `pip install "mtpx[cerebras]"` | `CEREBRAS_API_KEY` | `llama-4-scout-17b-16e-instruct` | [CEREBRAS.md](CEREBRAS.md) |
-| **Together AI** | `pip install "mtpx[togetherai]"` | `TOGETHER_API_KEY` | `meta-llama/Llama-4-Scout-17B-16E-Instruct` | [TOGETHER.md](TOGETHER.md) |
+| **Hugging Face** | `pip install "mtpx[huggingface]"` | `HF_TOKEN` | `openai/gpt-oss-120b:cerebras` | [HUGGINGFACE.md](HUGGINGFACE.md) |
+| **DeepInfra** | `pip install "mtpx[deepinfra]"` | `DEEPINFRA_API_KEY` | `deepseek-ai/DeepSeek-V4-Flash-0731` | [DEEPINFRA.md](DEEPINFRA.md) |
+| **DashScope** | `pip install "mtpx[dashscope]"` | `DASHSCOPE_API_KEY` | `qwen-plus` | [DASHSCOPE.md](DASHSCOPE.md) |
+| **OpenRouter** | `pip install "mtpx[openrouter]"` | `OPENROUTER_API_KEY` | `qwen/qwen-2.5-72b-instruct` | [OPENROUTER.md](OPENROUTER.md) |
+| **SambaNova** | `pip install "mtpx[sambanova]"` | `SAMBANOVA_API_KEY` | `Meta-Llama-3.3-70B-Instruct` | [SAMBANOVA.md](SAMBANOVA.md) |
+| **Cerebras** | `pip install "mtpx[cerebras]"` | `CEREBRAS_API_KEY` | `qwen-3.8-27b` | [CEREBRAS.md](CEREBRAS.md) |
+| **Together AI** | `pip install "mtpx[togetherai]"` | `TOGETHER_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | [TOGETHER.md](TOGETHER.md) |
 | **Fireworks AI** | `pip install "mtpx[fireworksai]"` | `FIREWORKS_API_KEY` | `accounts/fireworks/models/llama-v3p3-70b-instruct` | [FIREWORKS.md](FIREWORKS.md) |
 
 ## Local Providers
@@ -94,6 +100,9 @@ print(reply)
    TOGETHER_API_KEY=your_key_here
    FIREWORKS_API_KEY=fw_your_key_here
    MIMO_API_KEY=your_key_here
+   HF_TOKEN=your_key_here
+   DEEPINFRA_API_KEY=your_key_here
+   DASHSCOPE_API_KEY=your_key_here
    ```
 
 3. Call `Agent.load_dotenv_if_available()` **before** creating any provider. This reads the `.env` file and sets environment variables that the provider picks up automatically.
@@ -106,6 +115,11 @@ Each provider has a short alias and a full class name:
 |---|---|
 | `Groq` | `GroqToolCallingProvider` |
 | `OpenAI` | `OpenAIToolCallingProvider` |
+| `OpenAIResponses` | `OpenAIResponsesToolCallingProvider` |
+| `OpenAICompatible` | `OpenAICompatibleToolCallingProvider` |
+| `HuggingFace` | `HuggingFaceToolCallingProvider` |
+| `DeepInfra` | `DeepInfraToolCallingProvider` |
+| `DashScope` | `DashScopeToolCallingProvider` |
 | `Anthropic` | `AnthropicToolCallingProvider` |
 | `Gemini` | `GeminiToolCallingProvider` |
 | `Ollama` | `OllamaToolCallingProvider` |

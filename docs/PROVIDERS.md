@@ -31,7 +31,12 @@ pip install "mtpx[deepseek]"
 pip install "mtpx[togetherai]"
 pip install "mtpx[fireworksai]"
 pip install "mtpx[xiaomi]"
+pip install "mtpx[huggingface]"
+pip install "mtpx[deepinfra]"
+pip install "mtpx[dashscope]"
 ```
+
+See the [provider index](providers/README.md) for current defaults and setup instructions. The [compatible adapter](COMPATIBLE_PROVIDERS.md) accepts an explicit endpoint through the SDK. [OpenAI Responses](providers/OPENAI_RESPONSES.md) is opt-in through `OpenAIResponses` or `mtp tui --backend openai_responses`.
 
 Install most provider SDKs at once:
 
@@ -70,7 +75,7 @@ This prevents providers from silently over-promising features in production.
 ```python
 from mtp.providers import Groq
 
-provider = Groq(model="llama-3.3-70b-versatile")
+provider = Groq(model="qwen/qwen3.8-27b")
 ```
 
 ## Built-in usage (explicit style)
@@ -78,7 +83,7 @@ provider = Groq(model="llama-3.3-70b-versatile")
 ```python
 from mtp.providers import GroqToolCallingProvider
 
-provider = GroqToolCallingProvider(model="llama-3.3-70b-versatile")
+provider = GroqToolCallingProvider(model="qwen/qwen3.8-27b")
 ```
 
 ## Add a new provider

@@ -482,8 +482,9 @@ def test_hf_catalog_preserves_explicit_routing_choices():
 @pytest.mark.parametrize(
     "provider", ["huggingface", "deepinfra", "dashscope", "openai_responses"]
 )
+@pytest.mark.parametrize("terminal_size", [(40, 15), (80, 24), (120, 40)])
 def test_tui_endpoint_budget_setup_keeps_models_and_credentials_local(
-    tmp_path, provider, monkeypatch
+    tmp_path, provider, monkeypatch, terminal_size
 ):
     from test_tui_app_lifecycle import _make_state
     from textual.widgets import Input
@@ -502,7 +503,7 @@ def test_tui_endpoint_budget_setup_keeps_models_and_credentials_local(
         state = _make_state(tmp_path)
         state.backend = provider
         app = MTPApp(state=state)
-        async with app.run_test(size=(80, 24)) as pilot:
+        async with app.run_test(size=terminal_size) as pilot:
             await pilot.pause()
             dialog = app.screen
             assert isinstance(dialog, ProviderSetup)
@@ -547,6 +548,7 @@ def test_cli_registration_and_tui_constructor(provider, alias, env):
     info = get_provider(provider)
     assert info.alias == alias and info.env_var == env
     assert build_parser().parse_args(["tui", "--backend", provider]).backend == provider
+    pytest.importorskip("openai")
     instance = build_tui_provider(
         ProviderSelection(provider, "fixture-model", "synthetic-key", None)
     )

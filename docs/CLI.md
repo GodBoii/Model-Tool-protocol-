@@ -77,6 +77,17 @@ Output columns:
 - SDK module and install status
 - API key env var
 
+Version 0.1.39 adds `huggingface`, `deepinfra`, `dashscope`, and `openai_responses` to provider listing, doctor checks, and TUI backend selection:
+
+```bash
+mtp tui --backend huggingface
+mtp tui --backend deepinfra
+mtp tui --backend dashscope
+mtp tui --backend openai_responses
+```
+
+Their setup forms save the model, API endpoint, and positive output-token budget with the provider key. For DashScope, use the region or workspace endpoint matching your key. Responses stores the budget as `max_output_tokens`; the compatible providers use `max_tokens`. Keys stay outside chat history. See the [provider guides](providers/README.md) for endpoints and installation extras.
+
 ## `mtp codebase memory`
 
 Enable or disable project codebase memory and indexing.

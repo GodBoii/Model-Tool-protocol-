@@ -1,5 +1,18 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.39, pending publication
+
+- Add Hugging Face Inference Providers, DeepInfra, DashScope, and a configurable
+  OpenAI-compatible Chat Completions adapter with native streaming.
+- Add opt-in OpenAI Responses with stateless replay of output items, encrypted
+  reasoning, and function-call IDs through saved sessions.
+- Integrate hosted endpoints, credentials, regional URLs, output budgets, and
+  model catalogs into CLI/TUI setup; preserve Hugging Face routing suffixes.
+- Reject incomplete tool streams and duplicate IDs before execution. Keep every
+  identical read's dependency and approval checks; retain explicit TTL caching.
+- Verify new contracts against the installed SDK's JSON/SSE handling on
+  loopback servers and the compatible adapter against authorized live Groq.
+
 ## Release 0.1.38, 2026-10-05
 
 - Fix all 18 reproduced audit defects, including write multiplicity, failed
