@@ -11,6 +11,7 @@ import math
 import re
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -21,6 +22,15 @@ _VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
 _FIELD_TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+\Z")
 _SAFE_INTEGER = 2**53 - 1
 _LOG = logging.getLogger(__name__)
+
+
+class _HTTPServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        # HTTPServer resolves getfqdn here even for numeric loopback addresses.
+        # This transport needs the bound address, never a reverse DNS name.
+        TCPServer.server_bind(self)
+        self.server_name = str(self.server_address[0])
+        self.server_port = int(self.server_address[1])
 
 
 def _error(request: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
@@ -551,7 +561,7 @@ class MCPStreamableHTTPTransportServer:
             def log_message(self, format: str, *args: Any) -> None:
                 return
 
-        self._http = ThreadingHTTPServer((self.host, self.port), Handler)
+        self._http = _HTTPServer((self.host, self.port), Handler)
         self._http.daemon_threads = True
         try:
             self._http.serve_forever(poll_interval=0.05)

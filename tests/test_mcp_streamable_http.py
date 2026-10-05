@@ -415,6 +415,15 @@ def test_modern_opt_in_required():
         )
 
 
+def test_loopback_startup_never_resolves_reverse_dns(serving, monkeypatch):
+    def unexpected_lookup(*args, **kwargs):
+        raise AssertionError("Numeric loopback binding must not call getfqdn")
+
+    monkeypatch.setattr(socket, "getfqdn", unexpected_lookup)
+    transport = serving()
+    assert post(transport, request())[0] == 200
+
+
 @pytest.mark.parametrize(
     "raw",
     [

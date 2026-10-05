@@ -192,6 +192,7 @@ def test_memory_scan_does_not_cancel_llm_run(
 
 
 def test_load_command_renders_loaded_transcript(tmp_path: Path, fake_runner: FakeRunner) -> None:
+    from tui_test_helpers import wait_until
     saved = _make_state(tmp_path)
     saved.session_id = "chat-saved00001"
     saved.transcript = [
@@ -208,7 +209,8 @@ def test_load_command_renders_loaded_transcript(tmp_path: Path, fake_runner: Fak
             first_log = app.active_chat_log
             assert not list(first_log.query(UserMessageWidget))
             app._dispatch_command("load", "chat-saved00001")
-            await pilot.pause(0.2)
+            await wait_until(pilot, lambda: app.state.session_id == "chat-saved00001"
+                             and bool(list(app.active_chat_log.query(UserMessageWidget))))
             # The saved session opens in its own chat; the first one stays open.
             assert len(app.conversations) == 2
             assert app.state.session_id == "chat-saved00001"
@@ -216,9 +218,9 @@ def test_load_command_renders_loaded_transcript(tmp_path: Path, fake_runner: Fak
             assert not list(first_log.query(UserMessageWidget))
 
             app._dispatch_command("switch", "1")
-            await pilot.pause()
+            await wait_until(pilot, lambda: app.state.session_id == "chat-test000001")
             app._dispatch_command("load", "saved00001")
-            await pilot.pause()
+            await wait_until(pilot, lambda: app.state.session_id == "chat-saved00001")
             # Loading an open session switches to it instead of opening a copy.
             assert len(app.conversations) == 2
             assert app.state.session_id == "chat-saved00001"
