@@ -38,8 +38,8 @@ revision.
 
 The core implements discovery, ping, tool listing/calling, resource
 listing/reading, and prompt listing/rendering. It advertises resource and prompt
-capabilities only when configured. It does not initiate client requests or
-advertise subscriptions, MRTR input exchanges, progress streaming, or extensions.
+capabilities only when configured. Optional modern features add subscriptions
+and MRTR input exchanges through explicit application callbacks.
 
 Modern tool arguments use JSON Schema 2020-12 validation. Other dialects fail
 clearly. External schema references never trigger network or file reads. Local
@@ -62,10 +62,116 @@ message while blocked. Use `ahandle_request` in async integrations, and
 `run_mcp_stdio` for concurrent modern stdin processing. Legacy clients can still
 initialize and use the same opted-in server under their serial lifecycle.
 
+Cacheable complete results include `cacheScope: private` and `ttlMs: 0`. MRTR
+interim results have no cache hints, and resumed resource results are immediately
+stale. The official Python MCP client validates discovery, listing, tool calls,
+progress, subscriptions, and input-required replies in the interoperability tests.
+
+## Progress and subscriptions
+
+Tool handlers can call `current_mcp_context().progress(1, total=2)` and later
+`progress(2, total=2)`. Import it from `mtp.mcp_features`. Progress requires the
+client's `_meta.progressToken`, increases strictly, and stays on that request's
+response stream. Modern stdio writes these notifications on stdout with the
+other messages. HTTP uses the opt-in SSE option described below. A cancelled
+stdio request suppresses later notifications as well as its final response.
+
+```python
+from mtp.mcp_features import ModernMCPFeatures, configure_modern_mcp
+
+features = ModernMCPFeatures()
+configure_modern_mcp(server, features)
+```
+
+`subscriptions/listen` accepts the standard `notifications` filter. It first
+acknowledges the honored filter, then emits only matching notification types,
+with the originating subscription ID on every notification. Publish changes
+explicitly when your application changes its registry or resources:
+
+```python
+features.publish("notifications/tools/list_changed", auth_token=caller_token)
+features.publish(
+    "notifications/resources/updated",
+    {"uri": "file:///project/config.json"},
+    auth_token=caller_token,
+)
+```
+
+Events belong to the authenticated bearer identity and declared filter. The
+library stores a credential digest, never the credential itself. Anonymous
+listeners receive anonymous public events. It does not use self-reported client
+names as authorization identities. A token rotation establishes a new identity.
+Subscriptions end on disconnect, stdio cancellation, or `features.close()`.
+Server closure sends a completion response when the stream remains writable.
+There is no replay or reconnection state. Re-listen and refetch after a drop.
+
+The defaults allow 128 subscriptions with 64 queued notifications each. Queue
+overflow closes the affected subscription so clients refetch instead of assuming
+they received every invalidation. Transport SSE queues hold 64 frames and the
+transport also bounds simultaneous streams.
+
+## Resumable client input
+
+Register an interaction for a named `tools/call`, `prompts/get`, or
+`resources/read` request. Its preparation callback receives parameters and the
+current request context. Return an `MCPInputRequired` containing the input map
+and a continuation. Other request methods cannot return input-required replies.
+
+```python
+from mtp.mcp_features import MCPInputRequired
+
+def ask_for_roots(params, context):
+    async def resume(responses, resumed_context):
+        roots = responses["project_roots"]["roots"]
+        # Apply application-specific permission checks to roots here.
+        return await resumed_context.execute_tool()
+
+    return MCPInputRequired(
+        {"project_roots": {"method": "roots/list", "params": {}}},
+        resume,
+    )
+
+features.register_interaction("tools/call", "echo", ask_for_roots)
+```
+
+The original tool runs only when the continuation calls `execute_tool()`. That
+helper retains schema validation, registry policy, approval, and execution. It
+accepts an optional replacement argument object. Preparation and continuation
+callbacks are trusted application code. Keep preparation free of side effects;
+perform tool work through the registry helper, and validate any input-specific
+business permissions in the continuation. Resource and prompt callbacks return
+their appropriate MCP result objects.
+
+Supported input requests are roots, sampling, and form or URL elicitation. The
+server checks the corresponding client capability before issuing an input
+request. Missing support yields `-32021` and `requiredCapabilities`. It validates
+received responses, including form content against the requested JSON Schema,
+with external references disabled. Missing responses produce another
+input-required reply containing the missing requests.
+
+Clients retry with a different JSON-RPC ID, the exact `requestState`, and an
+`inputResponses` map. The opaque random token refers to a bounded in-process
+record, tied to the authenticated identity, method, salient parameters, and a
+five-minute deadline. Tampered, expired, cross-user, and cross-request tokens
+fail. Concurrent consumption is rejected, and completed duplicate retries
+return the saved result without executing the continuation again. Different
+responses after consumption fail. Failed or cancelled continuations are not
+automatically retried because their side effects may already have occurred.
+
+On an unauthenticated server, possession of the unguessable state token is the
+resume credential. Configure authentication for private interactions. Client
+information is never treated as proof of identity.
+
+There are at most 256 outstanding or completed state records by default. Input
+maps and saved results have a 256 KiB limit. State is process-local. It does not
+survive restart or synchronize between replicas, and its exactly-once behavior
+applies only while the record remains in this process. Durable applications
+must use their own transactional idempotency boundary.
+
 For HTTP use the separate [Streamable HTTP adapter](MCP_STREAMABLE_HTTP.md).
-Its JSON-only reply option has no disconnect cancellation or progress stream.
-This package does not claim OAuth discovery or complete implementation of every
-optional MCP feature.
+It supports JSON replies by default, optional request-scoped SSE, and explicitly
+configured OAuth discovery metadata. Authorization code issuance, token
+issuance, and token verification remain the configured identity provider's job.
 
 The modern contracts follow the official [base protocol](https://modelcontextprotocol.io/specification/2026-07-28/basic/index),
 [discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover),

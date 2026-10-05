@@ -35,7 +35,7 @@ port `0`. Shutdown closes the listening socket.
 ## Send one request
 
 Each POST to `/mcp` contains one JSON-RPC request, with an integer or string ID.
-The transport returns one JSON response. This example calls the tool without an
+The transport returns one JSON response by default. This example calls the tool without an
 initialization handshake:
 
 ```http
@@ -104,11 +104,68 @@ HTTP `tools/list` results and rejects calls to them before execution.
   `max_body_bytes` and `read_timeout_seconds` when constructing the transport.
   Chunked request bodies are unsupported. Send a single Content-Length header.
 
-This implementation chooses the revision's JSON response option. It does not
-implement request-scoped SSE, progress delivery, subscription streams,
-transport cancellation, MRTR input exchanges, or legacy event polling. A
-disconnected JSON client may leave an already running tool executing. Configure
-tool deadlines independently of the HTTP body-read timeout.
+## Request-scoped SSE
+
+Pass `sse_response=True` to enable SSE for requests carrying a progress token
+and for `subscriptions/listen`. Other requests keep their JSON response. The
+stream contains request-related notifications, then the final JSON-RPC reply,
+and closes. It sends keepalive comments and `X-Accel-Buffering: no`, creates no
+session, and provides no replay cursor.
+
+Closing an SSE connection cancels its async handler and tool task. Concurrent
+streams retain separate progress tokens and queues. Cancellation cannot forcibly
+terminate a synchronous worker thread. Use the isolated toolkit or cooperative
+cancellation for that case. A disconnected JSON client may leave an already
+running tool executing. Configure tool deadlines separately from body reads.
+
+The defaults allow 128 simultaneous streams, 64 queued frames per request, and
+a one-hour stream lifetime. Configure `max_streams` and `max_stream_seconds`
+when constructing the transport. Slow writes retain the socket timeout. Stream
+shutdown cancels work, while subscriptions closed by the feature registry emit
+a completion when the socket remains writable.
+
+Install `ModernMCPFeatures` on the server to enable subscriptions and MRTR
+callbacks, as described in [modern MCP](MCP_MODERN.md). JSON transports support
+input-required replies, while `subscriptions/listen` requires SSE or modern
+stdio. JSON-only HTTP discovery omits stream notification capability claims.
+
+## OAuth metadata
+
+Pass an `MCPOAuthMetadata` from `mtp.mcp_features` as `oauth_metadata`:
+
+```python
+from mtp.mcp_features import MCPOAuthMetadata
+
+metadata = MCPOAuthMetadata(
+    resource="https://mcp.example.com/mcp",
+    authorization_servers=["https://identity.example.com"],
+    scopes_supported=["tools:read"],
+)
+transport = MCPStreamableHTTPTransportServer(
+    "127.0.0.1", 8081, server,
+    sse_response=True, oauth_metadata=metadata,
+)
+```
+
+This requires a configured server token authorizer. The server exposes Protected
+Resource Metadata at `/.well-known/oauth-protected-resource/mcp` and the root
+well-known alias. Unauthorized replies contain a `resource_metadata` challenge.
+Origin checks apply to discovery routes too. It accepts only header credentials,
+never query tokens or body tokens.
+
+Optionally pass an explicitly trusted `authorization_server_metadata` document
+whose issuer matches a configured authorization server. The adapter can expose
+that document at `/.well-known/oauth-authorization-server` for a deployment's
+discovery routing. It never invents an issuer, fetches untrusted metadata, issues
+authorization codes or tokens, or treats a nonempty token as validated. The
+configured auth provider must verify signature or introspection, issuer,
+audience, expiry, and scopes against the actual identity provider. Return
+`MCPAuthDecision(details={"http_status": 403}, ...)` for insufficient permission,
+with the appropriate Bearer challenge. Other authorization failures use `401`.
+
+Deploy the advertised canonical resource and metadata URLs at the proxy that
+serves them. Metadata configuration alone does not establish an OAuth
+authorization server or certify that external endpoints are operational.
 
 Loopback tests exercise real HTTP requests, concurrent clients, asynchronous
 tools and authorization, spoofed body credentials, mirrored headers, malformed

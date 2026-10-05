@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from typing import Any, TextIO
 
 from .mcp_modern import is_modern_request
@@ -12,18 +13,27 @@ from .mcp_modern import is_modern_request
 async def serve_modern_stdio(server: Any, reader: TextIO, writer: TextIO) -> None:
     pending: dict[tuple[type, str | int], asyncio.Task[None]] = {}
     cancelled: set[tuple[type, str | int]] = set()
+    write_lock = threading.Lock()
 
     def reject_constant(value: str) -> None:
         raise ValueError("Non-finite JSON numbers are unsupported.")
 
     def write(response: dict[str, Any] | None) -> None:
         if response is not None:
-            writer.write(json.dumps(response, ensure_ascii=True, default=str) + "\n")
-            writer.flush()
+            with write_lock:
+                writer.write(json.dumps(response, ensure_ascii=True, default=str) + "\n")
+                writer.flush()
 
     async def process(request: dict[str, Any], key: tuple[type, str | int]) -> None:
+        def notify(event: dict[str, Any]) -> None:
+            if key in pending and key not in cancelled:
+                write(event)
+
         try:
-            response = await server.ahandle_request(request)
+            if is_modern_request(request):
+                response = await server._modern_requests.handle(request, notify=notify)
+            else:
+                response = await server.ahandle_request(request)
             if key not in cancelled:
                 write(response)
         except asyncio.CancelledError:

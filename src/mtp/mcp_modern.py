@@ -56,6 +56,7 @@ class ModernMCPRequests:
             raise NoSuchResource(ref=uri)
 
         self.registry = Registry(retrieve=reject_external)
+        self.features = None
 
     def validate(self, request: dict[str, Any]) -> dict[str, Any] | None:
         request_id = request.get("id")
@@ -114,7 +115,13 @@ class ModernMCPRequests:
                     -32602,
                     "clientInfo must include string name and version.",
                 )
-        if request["method"] not in _METHODS:
+        if "progressToken" in meta and type(meta["progressToken"]) not in (str, int):
+            return error(
+                request_id, -32602, "progressToken must be a string or integer."
+            )
+        if request["method"] not in _METHODS and not (
+            self.features is not None and request["method"] == "subscriptions/listen"
+        ):
             return error(request_id, -32601, f"Method not found: {request['method']}")
         return None
 
@@ -207,11 +214,18 @@ class ModernMCPRequests:
         code = response["error"]["code"]
         if -32099 <= code <= -32000:
             response["error"]["code"] = 1001
+        data = response["error"].setdefault("data", {})
+        data["http_status"] = (
+            403
+            if isinstance(decision.details, dict)
+            and decision.details.get("http_status") == 403
+            else 401
+        )
         return response
 
     def _complete(self, result: dict[str, Any]) -> dict[str, Any]:
         result = json.loads(json.dumps(result, default=str, allow_nan=False))
-        result["resultType"] = "complete"
+        result.setdefault("resultType", "complete")
         meta = result.setdefault("_meta", {})
         meta[SERVER_INFO_KEY] = self._info()
         return result
@@ -224,6 +238,14 @@ class ModernMCPRequests:
             capabilities["resources"] = {}
         if self.server.prompts:
             capabilities["prompts"] = {}
+        if self.features is not None:
+            capabilities["tools"]["listChanged"] = True
+            if "resources" in capabilities:
+                capabilities["resources"].update(
+                    {"listChanged": True, "subscribe": True}
+                )
+            if "prompts" in capabilities:
+                capabilities["prompts"]["listChanged"] = True
         return {
             "supportedVersions": [
                 MODERN_PROTOCOL_VERSION,
@@ -233,7 +255,16 @@ class ModernMCPRequests:
             "instructions": self.server.instructions,
         }
 
-    async def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
+    async def handle(
+        self, request: dict[str, Any], *, notify: Any = None, _authorized: bool = False
+    ) -> dict[str, Any] | None:
+        from .mcp_features import (
+            _CONTEXT,
+            MCPRequestContext,
+            MissingClientCapability,
+            _identity,
+        )
+
         if "id" not in request:
             # Neither success nor failure of a notification gets an RPC response.
             return None
@@ -242,7 +273,7 @@ class ModernMCPRequests:
             return issue
         method = request["method"]
         request_id = request["id"]
-        if self.server._requires_auth(method):
+        if not _authorized and self.server._requires_auth(method):
             decision = await self.server._authorized_async(
                 request,
                 method=method,
@@ -252,6 +283,31 @@ class ModernMCPRequests:
             if not decision.allowed:
                 return self._auth_failure(request_id, decision)
         params = self._params(request)
+        metadata = request["params"]["_meta"]
+        context = MCPRequestContext(
+            request_id,
+            _identity(self.server._extract_auth_token(request)),
+            metadata[CLIENT_CAPABILITIES_KEY],
+            metadata.get("progressToken"),
+            notify,
+        )
+        context_token = _CONTEXT.set(context)
+        if method == "tools/call":
+
+            async def execute_tool(
+                arguments: dict[str, Any] | None = None,
+            ) -> dict[str, Any]:
+                resolved = copy.deepcopy(params)
+                if arguments is not None:
+                    resolved["arguments"] = arguments
+                self._validate_arguments(resolved)
+                return await self.server._atools_call(
+                    resolved,
+                    request_id=None,
+                    argument_validator=self._validate_raw_arguments,
+                )
+
+            context._execute_tool = execute_tool
         try:
             if method == "server/discover":
                 result = self._discover()
@@ -259,13 +315,40 @@ class ModernMCPRequests:
                 result = {"tools": self._tools()}
             elif method == "tools/call":
                 self._validate_arguments(params)
-                result = await self.server._atools_call(
-                    params,
-                    request_id=None,
-                    argument_validator=self._validate_raw_arguments,
-                )
+                if self.features is not None and self.features.has_interaction(
+                    method, params
+                ):
+                    result = await self.features.interact(method, params, context)
+                else:
+                    if "requestState" in params or "inputResponses" in params:
+                        raise ValueError(
+                            "This tool has no configured input interaction"
+                        )
+                    result = await self.server._atools_call(
+                        params,
+                        request_id=None,
+                        argument_validator=self._validate_raw_arguments,
+                    )
+            elif method == "subscriptions/listen" and self.features is not None:
+                result = await self.features.listen(params, context)
+            elif self.features is not None and self.features.has_interaction(
+                method, params
+            ):
+                result = await self.features.interact(method, params, context)
             else:
+                if "requestState" in params or "inputResponses" in params:
+                    raise ValueError("This request has no configured input interaction")
                 result = await self.server._adispatch(method, params, request_id=None)
+        except MissingClientCapability as exc:
+            capability, _, child = exc.required.partition(".")
+            return self.server._error_response(
+                request_id,
+                -32021,
+                "Required client capability is missing.",
+                data={
+                    "requiredCapabilities": {capability: {child: {}} if child else {}}
+                },
+            )
         except ValueError as exc:
             return self.server._error_response(request_id, -32602, str(exc))
         except Exception:  # noqa: BLE001
@@ -273,8 +356,28 @@ class ModernMCPRequests:
             return self.server._error_response(
                 request_id, -32603, "Internal MCP request failure."
             )
+        finally:
+            _CONTEXT.reset(context_token)
         try:
             completed = self._complete(result)
+            if (
+                method
+                in {
+                    "server/discover",
+                    "tools/list",
+                    "resources/list",
+                    "prompts/list",
+                    "resources/read",
+                }
+                and completed["resultType"] == "complete"
+            ):
+                completed.setdefault("cacheScope", "private")
+                completed.setdefault("ttlMs", 0)
+                if (
+                    "requestState" in request["params"]
+                    or "inputResponses" in request["params"]
+                ):
+                    completed["ttlMs"] = 0
         except (TypeError, ValueError):
             return self.server._error_response(
                 request_id, -32603, "Result cannot be serialized as valid JSON."

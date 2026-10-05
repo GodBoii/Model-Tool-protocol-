@@ -8,7 +8,12 @@ import binascii
 import json
 import logging
 import math
+import queue
 import re
+import select
+import socket
+import threading
+import time
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
@@ -16,6 +21,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .mcp import MCPJsonRpcServer
+from .mcp_features import MCPOAuthMetadata
 
 PROTOCOL_VERSION = "2026-07-28"
 _VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
@@ -123,6 +129,10 @@ class MCPStreamableHTTPTransportServer:
         allowed_origins: set[str] | None = None,
         max_body_bytes: int = 1_048_576,
         read_timeout_seconds: float = 10.0,
+        sse_response: bool = False,
+        oauth_metadata: MCPOAuthMetadata | None = None,
+        max_streams: int = 128,
+        max_stream_seconds: float = 3600,
     ) -> None:
         if not getattr(server, "modern_enabled", False):
             raise ValueError(
@@ -140,6 +150,25 @@ class MCPStreamableHTTPTransportServer:
         )
         self.max_body_bytes = max_body_bytes
         self.read_timeout_seconds = read_timeout_seconds
+        if (
+            type(sse_response) is not bool
+            or type(max_streams) is not int
+            or max_streams <= 0
+        ):
+            raise ValueError(
+                "SSE flag must be boolean and max_streams positive integer"
+            )
+        if not math.isfinite(max_stream_seconds) or max_stream_seconds <= 0:
+            raise ValueError("max_stream_seconds must be finite and positive")
+        if oauth_metadata is not None and not server._requires_auth("tools/call"):
+            raise ValueError("OAuth metadata requires a configured token authorizer")
+        self.sse_response = sse_response
+        self.oauth_metadata = oauth_metadata
+        self.max_streams = max_streams
+        self.max_stream_seconds = max_stream_seconds
+        self._stream_count = 0
+        self._stream_lock = threading.Lock()
+        self._stopping = threading.Event()
         self._http: ThreadingHTTPServer | None = None
 
     @property
@@ -301,7 +330,18 @@ class MCPStreamableHTTPTransportServer:
                         and "\r" not in challenge
                         and "\n" not in challenge
                     ):
+                        if (
+                            outer.oauth_metadata is not None
+                            and status in {401, 403}
+                            and "resource_metadata=" not in challenge
+                        ):
+                            challenge += f', resource_metadata="{outer.oauth_metadata.metadata_url}"'
                         self.send_header("WWW-Authenticate", challenge)
+                    elif outer.oauth_metadata is not None and status == 401:
+                        self.send_header(
+                            "WWW-Authenticate",
+                            f'Bearer resource_metadata="{outer.oauth_metadata.metadata_url}"',
+                        )
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Connection", "close")
                 self.end_headers()
@@ -334,6 +374,23 @@ class MCPStreamableHTTPTransportServer:
 
             def _unsupported(self) -> None:
                 if self._origin():
+                    if self.command == "GET" and outer.oauth_metadata is not None:
+                        path = urlsplit(self.path).path
+                        if path in {
+                            outer.oauth_metadata.metadata_path,
+                            "/.well-known/oauth-protected-resource",
+                        }:
+                            self._write(200, outer.oauth_metadata.protected_resource())
+                            return
+                        if (
+                            path == "/.well-known/oauth-authorization-server"
+                            and outer.oauth_metadata.authorization_server_metadata
+                            is not None
+                        ):
+                            self._write(
+                                200, outer.oauth_metadata.authorization_server_metadata
+                            )
+                            return
                     self._write(
                         405 if urlsplit(self.path).path == "/mcp" else 404, allow=True
                     )
@@ -344,6 +401,103 @@ class MCPStreamableHTTPTransportServer:
             do_PATCH = _unsupported
             do_OPTIONS = _unsupported
             do_HEAD = _unsupported
+
+            def _disconnected(self) -> bool:
+                try:
+                    readable, _, _ = select.select([self.connection], [], [], 0)
+                    return (
+                        bool(readable)
+                        and self.connection.recv(1, socket.MSG_PEEK) == b""
+                    )
+                except (OSError, ValueError):
+                    return True
+
+            def _sse_frame(self, payload: dict[str, Any] | None = None) -> None:
+                raw = (
+                    b": keepalive\n\n"
+                    if payload is None
+                    else (
+                        "data: " + json.dumps(payload, allow_nan=False) + "\n\n"
+                    ).encode()
+                )
+                self.wfile.write(raw)
+                self.wfile.flush()
+
+            async def _stream(self, request: dict[str, Any]) -> None:
+                modern = outer.server._modern_requests
+                issue = modern.validate(request)
+                if issue is not None:
+                    self._write(404 if issue["error"]["code"] == -32601 else 400, issue)
+                    return
+                if outer.server._requires_auth(request["method"]):
+                    decision = await outer.server._authorized_async(
+                        request,
+                        method=request["method"],
+                        request_id=request["id"],
+                        params=request["params"],
+                    )
+                    if not decision.allowed:
+                        failure = modern._auth_failure(request["id"], decision)
+                        self._write(failure["error"]["data"]["http_status"], failure)
+                        return
+                with outer._stream_lock:
+                    if outer._stream_count >= outer.max_streams:
+                        self._write(
+                            503, _error(request, 1002, "Stream capacity reached")
+                        )
+                        return
+                    outer._stream_count += 1
+                events: queue.Queue[dict[str, Any]] = queue.Queue(64)
+
+                def notify(event: dict[str, Any]) -> None:
+                    try:
+                        events.put_nowait(event)
+                    except queue.Full as exc:
+                        raise ValueError("Request notification queue is full") from exc
+
+                task = None
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("X-Accel-Buffering", "no")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.close_connection = True
+                    self._sse_frame()
+                    task = asyncio.create_task(
+                        modern.handle(request, notify=notify, _authorized=True)
+                    )
+                    started = time.monotonic()
+                    heartbeat = started
+                    while True:
+                        if self._disconnected():
+                            return
+                        if (
+                            outer._stopping.is_set()
+                            and request["method"] != "subscriptions/listen"
+                        ) or time.monotonic() - started > outer.max_stream_seconds:
+                            task.cancel()
+                            return
+                        while not events.empty():
+                            self._sse_frame(events.get_nowait())
+                        if task.done():
+                            response = await task
+                            if response is not None:
+                                self._sse_frame(response)
+                            return
+                        if time.monotonic() - heartbeat >= 1:
+                            self._sse_frame()
+                            heartbeat = time.monotonic()
+                        await asyncio.sleep(0.025)
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                    return
+                finally:
+                    if task is not None and not task.done():
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                    with outer._stream_lock:
+                        outer._stream_count -= 1
 
             def do_POST(self) -> None:
                 if not self._origin():
@@ -526,11 +680,14 @@ class MCPStreamableHTTPTransportServer:
                     )
                     return
                 try:
-                    response = asyncio.run(
-                        outer.server.ahandle_request(
-                            outer._sanitize_auth(request, self.headers)
-                        )
-                    )
+                    sanitized = outer._sanitize_auth(request, self.headers)
+                    if outer.sse_response and (
+                        request["method"] == "subscriptions/listen"
+                        or "progressToken" in request["params"]["_meta"]
+                    ):
+                        asyncio.run(self._stream(sanitized))
+                        return
+                    response = asyncio.run(outer.server.ahandle_request(sanitized))
                     if response is None:
                         self._write(
                             500,
@@ -543,9 +700,24 @@ class MCPStreamableHTTPTransportServer:
                         response.get("result"), dict
                     ):
                         response["result"]["supportedVersions"] = [PROTOCOL_VERSION]
+                        if not outer.sse_response:
+                            for capability in (
+                                response["result"].get("capabilities", {}).values()
+                            ):
+                                if isinstance(capability, dict):
+                                    capability.pop("listChanged", None)
+                                    capability.pop("subscribe", None)
                     code = response.get("error", {}).get("code")
+                    auth_status = response.get("error", {}).get("data", {})
+                    auth_status = (
+                        auth_status.get("http_status")
+                        if isinstance(auth_status, dict)
+                        else None
+                    )
                     status = (
-                        404
+                        auth_status
+                        if auth_status in {401, 403}
+                        else 404
                         if code == -32601
                         else 401
                         if code == 1001
@@ -570,6 +742,10 @@ class MCPStreamableHTTPTransportServer:
             self._http = None
 
     def shutdown(self) -> None:
+        features = self.server._modern_requests.features
+        if features is not None:
+            features.close()
+        self._stopping.set()
         if self._http is not None:
             self._http.shutdown()
 
