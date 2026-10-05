@@ -77,11 +77,17 @@ class DashScopeToolCallingProvider(OpenAICompatibleToolCallingProvider):
         extra_body: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        if region not in {*DASHSCOPE_ENDPOINTS, *DASHSCOPE_WORKSPACE_REGIONS}:
+        if not isinstance(region, str) or region not in {
+            *DASHSCOPE_ENDPOINTS,
+            *DASHSCOPE_WORKSPACE_REGIONS,
+        }:
             raise ValueError("Unsupported DashScope region.")
         if workspace_id is not None:
             if (
-                not re.fullmatch(r"[a-zA-Z0-9-]+", workspace_id)
+                not isinstance(workspace_id, str)
+                or not re.fullmatch(
+                    r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", workspace_id
+                )
                 or region not in DASHSCOPE_WORKSPACE_REGIONS
             ):
                 raise ValueError(
@@ -95,6 +101,8 @@ class DashScopeToolCallingProvider(OpenAICompatibleToolCallingProvider):
         if type(enable_thinking) is not bool:
             raise TypeError("enable_thinking must be a boolean.")
         self.enable_thinking = enable_thinking
+        if extra_body is not None and not isinstance(extra_body, dict):
+            raise TypeError("extra_body must be a dictionary or None.")
         body = dict(extra_body or {})
         if "enable_thinking" in body:
             raise ValueError("Use the enable_thinking constructor option.")

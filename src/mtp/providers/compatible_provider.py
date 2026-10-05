@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import unicodedata
 from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlsplit
@@ -21,14 +22,31 @@ from .openai_provider import OpenAIToolCallingProvider
 
 
 def validate_endpoint(url: str) -> str:
-    parsed = urlsplit(url)
+    if (
+        not isinstance(url, str)
+        or not url
+        or any(
+            char.isspace() or unicodedata.category(char) in {"Cc", "Cf"} for char in url
+        )
+        or "\\" in url
+    ):
+        raise ValueError(
+            "base_url must be a nonempty URL without whitespace or controls."
+        )
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("base_url contains an invalid host or port.") from exc
     if (
         parsed.scheme not in {"https", "http"}
         or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.query
-        or parsed.fragment
+        or "@" in parsed.netloc
+        or "%" in parsed.netloc
+        or "?" in url
+        or "#" in url
+        or parsed.netloc.endswith(":")
+        or port == 0
     ):
         raise ValueError(
             "base_url must be an HTTP(S) endpoint without credentials, query, or fragment."
@@ -69,24 +87,43 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
         client: Any | None = None,
     ) -> None:
         self.base_url = validate_endpoint(base_url)
-        if not model.strip():
+        if not isinstance(model, str) or not model.strip():
             raise ValueError("model cannot be empty.")
         if max_tokens is not None and (type(max_tokens) is not int or max_tokens < 1):
             raise ValueError("max_tokens must be a positive integer or None.")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        if (
+            type(timeout_seconds) not in {int, float}
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
             raise ValueError("timeout_seconds must be finite and positive.")
         self.provider_name = provider_name
-        if temperature is not None and (type(temperature) not in {int, float} or not math.isfinite(temperature)):
+        if temperature is not None and (
+            type(temperature) not in {int, float} or not math.isfinite(temperature)
+        ):
             raise ValueError("temperature must be a finite number or None.")
         if parallel_tool_calls is not None and type(parallel_tool_calls) is not bool:
             raise TypeError("parallel_tool_calls must be a boolean or None.")
+        if type(stream_include_usage) is not bool:
+            raise TypeError("stream_include_usage must be a boolean.")
         self.max_tokens = max_tokens
         self.stream_include_usage = stream_include_usage
+        if not isinstance(input_modalities, (tuple, list)):
+            raise TypeError("input_modalities must be a tuple or list containing text.")
         self.input_modalities = tuple(input_modalities)
-        if not set(self.input_modalities) <= {"text", "image"}:
+        if (
+            "text" not in self.input_modalities
+            or any(
+                not isinstance(value, str) or value not in {"text", "image"}
+                for value in self.input_modalities
+            )
+            or len(self.input_modalities) != len(set(self.input_modalities))
+        ):
             raise ValueError(
                 "This adapter supports text and optional image input only."
             )
+        if extra_body is not None and not isinstance(extra_body, dict):
+            raise TypeError("extra_body must be a dictionary or None.")
         self.extra_body = copy.deepcopy(extra_body or {})
         protected = {
             "model",
@@ -98,6 +135,9 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
             "api_key",
             "parallel_tool_calls",
             "max_tokens",
+            "max_completion_tokens",
+            "temperature",
+            "stream_options",
         }
         if protected.intersection(self.extra_body):
             raise ValueError(
@@ -106,7 +146,7 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
         if client is None:
             from openai import OpenAI
 
-            if not api_key:
+            if not isinstance(api_key, str) or not api_key.strip():
                 raise ValueError(
                     "An explicit API key is required for a custom endpoint."
                 )
@@ -207,15 +247,28 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
             return AgentAction(response_text=content, metadata=metadata)
         call_ids: set[str] = set()
         for call in calls:
-            raw = read_value(read_value(call, "function"), "arguments", "")
+            function = read_value(call, "function")
+            name = read_value(function, "name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Provider tool call is missing a function name.")
+            if read_value(call, "type") not in {None, "function"}:
+                raise ValueError("Provider returned an unsupported tool call type.")
+            raw = read_value(function, "arguments", "")
             try:
                 parsed = json.loads(raw) if isinstance(raw, str) else raw
             except json.JSONDecodeError as exc:
                 raise ValueError("Provider returned malformed tool arguments.") from exc
             if not isinstance(parsed, dict):
                 raise TypeError("Provider tool arguments must be a JSON object.")
+            # Python's JSON decoder accepts NaN/Infinity, which are not JSON values.
+            try:
+                json.dumps(parsed, allow_nan=False)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    "Provider tool arguments contain invalid JSON values."
+                ) from exc
             identifier = read_value(call, "id")
-            if not isinstance(identifier, str) or not identifier:
+            if not isinstance(identifier, str) or not identifier.strip():
                 raise ValueError("Provider tool call is missing its ID.")
             if identifier in call_ids:
                 raise ValueError("Provider returned duplicate tool call IDs.")
@@ -250,10 +303,13 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
         choices = read_value(response, "choices")
         if not choices:
             raise ValueError("Provider returned no response choices.")
-        if read_value(choices[0], "finish_reason") in {"length", "content_filter"}:
+        finish = read_value(choices[0], "finish_reason")
+        if finish in {"length", "content_filter"}:
             raise ValueError(
                 "Provider response was truncated or filtered; no tools executed."
             )
+        if finish is not None and finish not in {"stop", "tool_calls"}:
+            raise ValueError("Provider response returned an unsupported finish marker.")
         message = read_value(choices[0], "message")
         action = self._action(
             read_value(message, "content") or "",
@@ -287,8 +343,19 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
                     raise ValueError(
                         "Provider stream was truncated or filtered; no tools executed."
                     )
-                finished = finished or finish is not None
+                if finish is not None and finish not in {"stop", "tool_calls"}:
+                    raise ValueError(
+                        "Provider stream returned an unsupported finish marker."
+                    )
                 delta = read_value(choices[0], "delta")
+                if finished and any(
+                    read_value(delta, key)
+                    for key in ("content", "reasoning_content", "tool_calls")
+                ):
+                    raise ValueError(
+                        "Provider stream returned output after its finish marker."
+                    )
+                finished = finished or finish is not None
                 part = read_value(delta, "content")
                 if part:
                     text += part
@@ -298,6 +365,10 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
                     reasoning += thought
                     yield {"type": "reasoning_chunk", "chunk": thought}
                 for call in read_value(delta, "tool_calls") or []:
+                    if read_value(call, "type") not in {None, "function"}:
+                        raise ValueError(
+                            "Provider returned an unsupported tool call type."
+                        )
                     index = read_value(call, "index")
                     if type(index) is not int or index < 0:
                         raise ValueError("Tool stream fragment has an invalid index.")
@@ -316,7 +387,10 @@ class OpenAICompatibleToolCallingProvider(OpenAIToolCallingProvider):
                         item["id"] = identifier
                     function = read_value(call, "function")
                     for key in ("name", "arguments"):
-                        item["function"][key] += read_value(function, key) or ""
+                        fragment = read_value(function, key)
+                        if fragment is not None and not isinstance(fragment, str):
+                            raise ValueError("Tool stream fragments must be strings.")
+                        item["function"][key] += fragment or ""
             if not finished:
                 raise ValueError("Provider stream ended without a finish marker.")
             yield self._action(

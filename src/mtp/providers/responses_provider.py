@@ -32,8 +32,34 @@ class OpenAIResponsesToolCallingProvider(OpenAICompatibleToolCallingProvider):
         base_url: str = "https://api.openai.com/v1",
         max_output_tokens: int | None = 1024,
         reasoning_effort: str | None = None,
+        input_modalities: tuple[str, ...] = ("text",),
         **kwargs: Any,
     ) -> None:
+        if "max_tokens" in kwargs:
+            raise ValueError("Responses uses max_output_tokens; remove max_tokens.")
+        if reasoning_effort is not None and (
+            not isinstance(reasoning_effort, str) or not reasoning_effort.strip()
+        ):
+            raise ValueError("reasoning_effort must be a nonempty string or None.")
+        if not isinstance(input_modalities, (tuple, list)) or tuple(
+            input_modalities
+        ) != ("text",):
+            raise ValueError("Responses currently supports text input only.")
+        extra_body = kwargs.get("extra_body")
+        if extra_body is not None and not isinstance(extra_body, dict):
+            raise TypeError("extra_body must be a dictionary or None.")
+        if {
+            "store",
+            "include",
+            "previous_response_id",
+            "max_output_tokens",
+            "reasoning",
+            "conversation",
+            "background",
+        }.intersection(extra_body or {}):
+            raise ValueError(
+                "Responses extra_body cannot override state, reasoning or token settings."
+            )
         key = api_key or (
             require_env("OPENAI_API_KEY") if kwargs.get("client") is None else None
         )
@@ -44,14 +70,39 @@ class OpenAIResponsesToolCallingProvider(OpenAICompatibleToolCallingProvider):
             base_url=base_url,
             provider_name="openai_responses",
             max_tokens=max_output_tokens,
+            input_modalities=("text",),
             **kwargs,
         )
-        if {"store", "include", "previous_response_id", "max_output_tokens", "reasoning"}.intersection(self.extra_body):
-            raise ValueError("Responses extra_body cannot override state, reasoning or token settings.")
 
     def _input(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         items = []
         for message in messages:
+            if any(
+                message.get(field)
+                for field in ("images", "audios", "audio", "videos", "files")
+            ):
+                raise ValueError("Responses currently supports text input only.")
+            content = message.get("content", "")
+            if (
+                message.get("role") != "tool"
+                and isinstance(content, list)
+                and any(
+                    isinstance(part, dict)
+                    and part.get("type")
+                    in {
+                        "image",
+                        "image_url",
+                        "input_image",
+                        "audio",
+                        "input_audio",
+                        "video",
+                        "file",
+                        "input_file",
+                    }
+                    for part in content
+                )
+            ):
+                raise ValueError("Responses currently supports text input only.")
             native = message.get("responses_items")
             if message.get("role") == "assistant" and isinstance(native, list):
                 items.extend(copy.deepcopy(native))
@@ -160,6 +211,8 @@ class OpenAIResponsesToolCallingProvider(OpenAICompatibleToolCallingProvider):
                     }
                 )
             elif kind == "message":
+                if item.get("status") not in {None, "completed"}:
+                    raise ValueError("Responses returned an unfinished message.")
                 for part in item.get("content") or []:
                     if part.get("type") == "output_text":
                         text.append(part.get("text", ""))
@@ -168,7 +221,9 @@ class OpenAIResponsesToolCallingProvider(OpenAICompatibleToolCallingProvider):
             elif kind != "reasoning":
                 raise ValueError(f"Unsupported Responses output item: {kind!r}")
         if not calls and not text:
-            raise ValueError("Responses returned no text, refusal, or executable calls.")
+            raise ValueError(
+                "Responses returned no text, refusal, or executable calls."
+            )
         action = self._action(
             "".join(text), calls, None, extract_usage_metrics(response)
         )
@@ -196,6 +251,17 @@ class OpenAIResponsesToolCallingProvider(OpenAICompatibleToolCallingProvider):
         try:
             for event in stream:
                 kind = read_value(event, "type")
+                if completed is not None and kind in {
+                    "response.completed",
+                    "response.output_text.delta",
+                    "response.reasoning_summary_text.delta",
+                    "response.function_call_arguments.delta",
+                    "response.output_item.added",
+                    "response.output_item.done",
+                }:
+                    raise ValueError(
+                        "Responses stream returned output after completion."
+                    )
                 if kind == "response.output_text.delta":
                     yield {
                         "type": "text_chunk",
