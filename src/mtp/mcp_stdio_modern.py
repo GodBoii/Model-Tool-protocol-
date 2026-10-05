@@ -25,8 +25,10 @@ async def serve_modern_stdio(server: Any, reader: TextIO, writer: TextIO) -> Non
                 writer.flush()
 
     async def process(request: dict[str, Any], key: tuple[type, str | int]) -> None:
+        owner = asyncio.current_task()
+
         def notify(event: dict[str, Any]) -> None:
-            if key in pending and key not in cancelled:
+            if pending.get(key) is owner and key not in cancelled:
                 write(event)
 
         try:

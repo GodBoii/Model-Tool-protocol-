@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import copy
 import http.client
+import io
 import json
+import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -589,7 +591,9 @@ def test_mrtr_registry_helper_retains_approval_denial(serving):
     executions = []
     registry = ToolRegistry(approval_handler=lambda spec, call, arguments: False)
     registry.register_tool(
-        ToolSpec("ask", "Ask", {"type": "object"}, risk_level=ToolRiskLevel.DESTRUCTIVE),
+        ToolSpec(
+            "ask", "Ask", {"type": "object"}, risk_level=ToolRiskLevel.DESTRUCTIVE
+        ),
         lambda: executions.append(1),
     )
     transport = serving(registry=registry)
@@ -692,3 +696,51 @@ def test_mrtr_invalid_form_content_never_calls_continuation(serving):
         post(transport, payload, override={"Authorization": "Bearer alice"})[0] == 400
     )
     assert executions == []
+
+
+def test_stdio_completed_context_cannot_publish_after_id_reuse():
+    from mtp.mcp_stdio_modern import serve_modern_stdio
+
+    class Reader:
+        def __init__(self):
+            self.lines = queue.Queue()
+
+        def readline(self):
+            return self.lines.get(timeout=3)
+
+    async def scenario():
+        contexts = []
+        second_started = asyncio.Event()
+        registry = ToolRegistry()
+
+        async def echo(value):
+            if value == 1:
+                contexts.append(current_mcp_context())
+                return value
+            second_started.set()
+            await asyncio.Event().wait()
+
+        registry.register_tool(ToolSpec("echo", "Echo", {"type": "object"}), echo)
+        server = MCPJsonRpcServer(tools=registry, enable_modern=True)
+        reader, writer = Reader(), io.StringIO()
+        task = asyncio.create_task(serve_modern_stdio(server, reader, writer))
+        try:
+            first = with_progress(
+                request("tools/call", name="echo", arguments={"value": 1}), "old"
+            )
+            reader.lines.put(json.dumps(first) + "\n")
+            while not writer.getvalue():
+                await asyncio.sleep(0.005)
+            assert json.loads(writer.getvalue())["result"]["content"][0]["text"] == "1"
+            second = with_progress(
+                request("tools/call", name="echo", arguments={"value": 2}), "new"
+            )
+            reader.lines.put(json.dumps(second) + "\n")
+            await second_started.wait()
+            contexts[0].progress(1, message="late old request")
+            assert len(writer.getvalue().splitlines()) == 1
+        finally:
+            reader.lines.put("")
+            await task
+
+    asyncio.run(asyncio.wait_for(scenario(), 5))

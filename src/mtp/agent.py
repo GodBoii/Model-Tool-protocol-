@@ -2402,17 +2402,23 @@ class Agent:
                 action = None
                 chunks_streamed = False
                 if hasattr(self.provider, "astream_next_action"):
-                    async for chunk in self.provider.astream_next_action(self.messages, planning_tools):
-                        if hasattr(chunk, "plan") or hasattr(chunk, "response_text"):
-                            action = chunk
-                        elif isinstance(chunk, dict):
-                            ctype = chunk.get("type")
-                            cval = chunk.get("chunk", "")
-                            if ctype == "reasoning_chunk":
-                                yield events.emit("reasoning_chunk", chunk=cval, source="direct")
-                            elif ctype == "text_chunk":
-                                chunks_streamed = True
-                                yield events.emit("text_chunk", chunk=cval, source="direct")
+                    planning_stream = self.provider.astream_next_action(self.messages, planning_tools)
+                    try:
+                        async for chunk in planning_stream:
+                            if hasattr(chunk, "plan") or hasattr(chunk, "response_text"):
+                                action = chunk
+                            elif isinstance(chunk, dict):
+                                ctype = chunk.get("type")
+                                cval = chunk.get("chunk", "")
+                                if ctype == "reasoning_chunk":
+                                    yield events.emit("reasoning_chunk", chunk=cval, source="direct")
+                                elif ctype == "text_chunk":
+                                    chunks_streamed = True
+                                    yield events.emit("text_chunk", chunk=cval, source="direct")
+                    finally:
+                        close_stream = getattr(planning_stream, "aclose", None)
+                        if callable(close_stream):
+                            await close_stream()
                 if action is None:
                     action = await self._anext_action(planning_tools)
                 self._normalize_plan_reasoning(action.plan, tools)
