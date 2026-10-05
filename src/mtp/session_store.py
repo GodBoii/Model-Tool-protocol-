@@ -1,18 +1,28 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field, is_dataclass
-from datetime import UTC, datetime
+import base64
 import json
 import os
-from pathlib import Path
 import re
 import threading
 import time
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-from .media import coerce_audios, coerce_files, coerce_images, coerce_videos
+from .media import (
+    Audio,
+    File,
+    Image,
+    Video,
+    coerce_audios,
+    coerce_files,
+    coerce_images,
+    coerce_videos,
+)
 
 
 def _utc_now_iso() -> str:
@@ -30,6 +40,12 @@ def _json_safe(value: Any) -> Any:
         return {str(k): _json_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_json_safe(item) for item in value]
+    if isinstance(value, (Image, Audio, Video, File)):
+        payload = value.to_dict()
+        # File.to_dict keeps text content plain; the session reader expects base64.
+        if isinstance(value, File) and isinstance(value.content, str):
+            payload["content"] = base64.b64encode(value.content.encode("utf-8")).decode("ascii")
+        return _json_safe(payload)
     if is_dataclass(value):
         return _json_safe(asdict(value))
     to_dict = getattr(value, "to_dict", None)

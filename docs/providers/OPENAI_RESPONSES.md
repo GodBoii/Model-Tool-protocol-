@@ -43,10 +43,13 @@ Use `mtp tui --backend openai_responses` or `/backend openai_responses`. Setup
 accepts model, endpoint, key, and maximum output tokens. SDK calls can provide
 reasoning effort; no new model-specific effort dialog is added here.
 
-This first Responses implementation advertises text input only, custom function
-tools, and manually replayed history. Images/files, hosted tools, automatic
-conversation IDs, native async SDK clients, and provider-enforced structured
-outputs are outside this phase. Unknown native output-item types fail clearly.
+Responses defaults to text input, custom function tools, and manually replayed
+history. Phase 7 adds native async through `native_async=True` or an injected
+`async_client`, opt-in images/files through `enable_multimodal=True` and explicit
+`input_modalities`, and native JSON schemas through `output_schema`.
+See [SDK capabilities](../SDK_CAPABILITIES.md) for configuration, ownership,
+validation, and model limits. Hosted tools and automatic conversation IDs remain
+outside this implementation. Unknown native output-item types fail clearly.
 Installed SDK JSON/SSE behavior passed local round-trip tests. No live OpenAI
 key was used.
 

@@ -32,12 +32,18 @@ provider = OpenAICompatible(
 | `input_modalities` | `text` | Tuple containing text and optionally image; selected model must support it |
 | `stream_include_usage` | `True` | Requests final usage chunks; false omits the stream option |
 | `client` | `None` | Inject a configured OpenAI client for tests or service-specific settings |
+| `async_client` | `None` | Inject AsyncOpenAI for native async requests and streaming |
+| `native_async` | `False` | Create an owned AsyncOpenAI client with the configured key and endpoint |
+| `output_schema` | `None` | Request strict native JSON Schema output and validate final JSON locally |
 
 Native streaming assembles fragments by tool-call index, including interleaved
 calls and split names/arguments. Only complete JSON objects with unique nonempty
 IDs become executable plans. Truncated/filtered streams and missing terminal
-markers fail. Streams close on completion or error. Async APIs bridge blocking
-SDK iterators to workers; they do not advertise native async SDK support.
+markers fail. Streams close on completion, error, and early consumer exit.
+Async APIs use native SDK requests when `async_client` or `native_async=True`
+is configured. Otherwise they retain the blocking SDK thread bridge.
+See [SDK capabilities](SDK_CAPABILITIES.md) for schema validation and async
+client ownership.
 
 The selected provider's errors propagate without broad compatibility retries.
 Text-only capabilities are conservative defaults, not universal model claims.

@@ -136,3 +136,8 @@ for event in agent.run_loop_events(
 `max_completion_tokens` defaults to 512 and accepts a positive integer or `None`. It applies to planning and final streaming. GPT-OSS reports no parallel support; image input is enabled only for recognized vision models.
 
 These tables describe adapter behavior. Model-specific modality support and native streaming vary; SDK serialization tests do not establish live account access.
+
+Phase 7 adds optional `native_async=True` or an injected `async_client` for
+AsyncGroq planning, tool streaming, and finalization. Shared stream validation
+rejects incomplete calls before execution and closes streams on cancellation.
+Existing sync usage keeps its behavior. See [SDK capabilities](../SDK_CAPABILITIES.md).

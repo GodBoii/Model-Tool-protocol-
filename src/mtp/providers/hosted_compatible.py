@@ -32,7 +32,9 @@ class HuggingFaceToolCallingProvider(OpenAICompatibleToolCallingProvider):
         **kwargs: Any,
     ) -> None:
         key = api_key or (
-            require_env("HF_TOKEN") if kwargs.get("client") is None else None
+            require_env("HF_TOKEN")
+            if kwargs.get("client") is None and kwargs.get("async_client") is None
+            else None
         )
         super().__init__(
             model=model,
@@ -53,7 +55,9 @@ class DeepInfraToolCallingProvider(OpenAICompatibleToolCallingProvider):
         **kwargs: Any,
     ) -> None:
         key = api_key or (
-            require_env("DEEPINFRA_API_KEY") if kwargs.get("client") is None else None
+            require_env("DEEPINFRA_API_KEY")
+            if kwargs.get("client") is None and kwargs.get("async_client") is None
+            else None
         )
         super().__init__(
             model=model,
@@ -108,7 +112,9 @@ class DashScopeToolCallingProvider(OpenAICompatibleToolCallingProvider):
             raise ValueError("Use the enable_thinking constructor option.")
         body["enable_thinking"] = enable_thinking
         key = api_key or (
-            require_env("DASHSCOPE_API_KEY") if kwargs.get("client") is None else None
+            require_env("DASHSCOPE_API_KEY")
+            if kwargs.get("client") is None and kwargs.get("async_client") is None
+            else None
         )
         kwargs.setdefault("parallel_tool_calls", True)
         super().__init__(

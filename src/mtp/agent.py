@@ -2600,17 +2600,28 @@ class Agent:
                 self._append_tool_messages_and_media(last_results)
 
             finalize_stream = getattr(self.provider, "finalize_stream", None)
-            if stream_final and callable(finalize_stream):
+            async_finalize_stream = getattr(self.provider, "afinalize_stream", None)
+            if stream_final and (callable(async_finalize_stream) or callable(finalize_stream)):
                 chunks: list[str] = []
                 finalize_started = perf_counter()
-                async for chunk in async_from_sync(lambda: finalize_stream(self.messages, last_results)):
-                    if self._is_cancelled(resolved_run_id):
-                        yield events.emit("run_cancelled", round=max_rounds)
-                        self._append_message({"role": "assistant", "content": "Run cancelled."})
-                        return
-                    if chunk:
-                        chunks.append(chunk)
-                        yield events.emit("text_chunk", chunk=chunk, source="finalize_stream")
+                final_stream = (
+                    async_finalize_stream(self.messages, last_results)
+                    if callable(async_finalize_stream)
+                    else async_from_sync(lambda: finalize_stream(self.messages, last_results))
+                )
+                try:
+                    async for chunk in final_stream:
+                        if self._is_cancelled(resolved_run_id):
+                            yield events.emit("run_cancelled", round=max_rounds)
+                            self._append_message({"role": "assistant", "content": "Run cancelled."})
+                            return
+                        if chunk:
+                            chunks.append(chunk)
+                            yield events.emit("text_chunk", chunk=chunk, source="finalize_stream")
+                finally:
+                    close_stream = getattr(final_stream, "aclose", None)
+                    if callable(close_stream):
+                        await close_stream()
                 final_text = "".join(chunks)
             else:
                 finalize_started = perf_counter()
@@ -2619,7 +2630,7 @@ class Agent:
                 if stream_final:
                     for chunk in self._chunk_text(final_text):
                         yield events.emit("text_chunk", chunk=chunk, source="finalize_fallback")
-            if stream_final and callable(finalize_stream):
+            if stream_final and (callable(async_finalize_stream) or callable(finalize_stream)):
                 finalize_duration = perf_counter() - finalize_started
 
             finalize_usage = getattr(self.provider, "_last_stream_usage", None)
