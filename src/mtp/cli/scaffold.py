@@ -7,7 +7,7 @@ import re
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent / "templates"
 
-VALID_TEMPLATES = {"minimal", "mcp-http", "session-json"}
+VALID_TEMPLATES = {"minimal", "mcp-http", "mcp-streamable-http", "session-json"}
 
 
 @dataclass(frozen=True, slots=True)

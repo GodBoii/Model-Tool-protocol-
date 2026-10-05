@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.1.39"
+__version__ = "0.1.40"
 
 # Public name -> submodule that defines it.
 _EXPORTS: dict[str, str] = {
@@ -218,6 +218,7 @@ if TYPE_CHECKING:  # pragma: no cover - static analysis only
         run_mcp_stdio,
     )
     from .mcp_transport import MCPHTTPTransportServer, MCPWebSocketTransportServer, run_mcp_http, run_mcp_ws
+    from .mcp_streamable_http import MCPStreamableHTTPTransportServer, run_mcp_streamable_http
     from .media import Audio, File, Image, Video
     from .policy import PolicyDecision, RiskPolicy
     from .protocol import ExecutionPlan, ToolBatch, ToolCall, ToolOutput, ToolResult, ToolRiskLevel, ToolSpec
@@ -247,6 +248,7 @@ if TYPE_CHECKING:  # pragma: no cover - static analysis only
         Newspaper4kToolkit,
         NewspaperToolkit,
         PythonToolkit,
+        DockerPythonToolkit,
         ShellToolkit,
         WebsiteToolkit,
         WikipediaToolkit,

@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-from textual.pilot import Pilot
 from textual.css.query import NoMatches
+from textual.pilot import Pilot
 
 
 async def wait_until(pilot: Pilot, ready: Callable[[], bool], timeout: float = 3) -> None:

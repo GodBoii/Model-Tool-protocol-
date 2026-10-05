@@ -15,11 +15,12 @@ Create a new project scaffold.
 ```bash
 mtp new my_agent
 mtp new my_server --template mcp-http
+mtp new my_modern_server --template mcp-streamable-http
 mtp new my_memory_agent --template session-json
 ```
 
 Options:
-- `--template {minimal,mcp-http,session-json}`
+- `--template {minimal,mcp-http,mcp-streamable-http,session-json}`
 - `--dir <base_dir>`
 - `--force`
 

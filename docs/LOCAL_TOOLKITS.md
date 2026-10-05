@@ -4,6 +4,11 @@ PythonToolkit now restricts code by default. Imports, attributes, and unrestrict
 builtins require explicit `allow_unsafe_exec=True`; subprocesses are not an OS
 sandbox. See [audit fixes](AUDIT_FIXES.md) for the permission changes.
 
+Version 0.1.40 adds opt-in `DockerPythonToolkit` for full Python in a trusted
+local Linux image. It is separate from the default local toolkit registration.
+See [execution isolation](EXECUTION_ISOLATION.md) for container restrictions,
+resource limits, cleanup behavior, and verification.
+
 MTP includes local/no-key toolkits inspired by common agent toolkit patterns:
 - calculator
 - file

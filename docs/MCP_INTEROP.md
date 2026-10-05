@@ -2,6 +2,21 @@
 
 This document explains MCP support in MTP, including sync and async server modes, dedicated MCP HTTP/WebSocket transport adapters, cancellation semantics, and compatibility coverage.
 
+Version 0.1.40 adds opt-in modern MCP `2026-07-28` support. Install
+`mtpx[mcp-modern]` and create `MCPJsonRpcServer(enable_modern=True, tools=tools)`.
+Modern calls include their own revision and capabilities in `params._meta`,
+return `resultType: complete`, and use `server/discover` without initialization.
+The default server and transports below retain the legacy handshake.
+
+The separate [Streamable HTTP transport](MCP_STREAMABLE_HTTP.md) serves stateless
+JSON replies at `/mcp`. Modern stdio supports concurrent requests, cancellation
+by in-flight request ID, and shutdown on EOF. Cancellation stops async work and
+suppresses further replies; synchronous worker functions must cooperate to stop
+their underlying work. Modern input arguments use JSON Schema 2020-12 without
+MTP coercion or result-reference substitution. External schema fetches are
+disabled. MRTR, subscriptions, modern progress streaming, and SSE are not
+implemented or advertised.
+
 ## Overview
 
 MTP keeps orchestration/runtime logic in core modules.

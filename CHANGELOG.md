@@ -1,5 +1,19 @@
 # MTP CLI and TUI improvement program
 
+## Release 0.1.40, pending publication
+
+- Add opt-in MCP 2026-07-28 discovery and per-request metadata alongside the
+  legacy handshake, with JSON Schema 2020-12 validation and no external fetches.
+- Add stateless JSON Streamable HTTP, strict mirrored headers, bearer-only HTTP
+  credentials, body deadlines, and concurrent stdio cancellation. Add the
+  `mcp-streamable-http` CLI scaffold and `mcp-modern` installation extra.
+- Add opt-in Docker Python execution with no host mounts, disabled networking,
+  restricted privileges, bounded resources/output, and timeout cleanup.
+- Harden compatible-provider endpoints, option ownership, Responses media
+  rejection, and malformed native call/stream handling.
+- Avoid reverse DNS during modern HTTP startup and wait for observable TUI
+  conversation readiness in tests on slower runners.
+
 ## Release 0.1.39, 2026-10-05
 
 - Add Hugging Face Inference Providers, DeepInfra, DashScope, and a configurable
