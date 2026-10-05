@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from textual.widgets import Input, OptionList, RichLog
+from tui_test_helpers import wait_until
 
 from mtp.cli import tui_app, tui_harness_agent, tui_provider_factory, tui_settings
 from mtp.cli.tui_app import MTPApp
@@ -73,7 +74,8 @@ def test_missing_provider_save_retry_switch_and_restart(tmp_path, monkeypatch):
         app = MTPApp(state=state)
         async with app.run_test(size=(100, 32)) as pilot:
             app._dispatch_command("backend", "groq")
-            await pilot.pause(.2)
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             assert isinstance(app.screen, ProviderSetup)
             dialog = app.screen
             key = dialog.query_one("#setup-key", Input)

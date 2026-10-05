@@ -345,10 +345,11 @@ def test_backend_switch_runs_off_the_ui_thread(
 def test_input_is_focused_on_first_frame(tmp_path: Path, fake_runner: FakeRunner) -> None:
     async def scenario() -> None:
         from mtp.cli.tui_widgets.input_area import InputArea
+        from tui_test_helpers import wait_until
 
         app = MTPApp(state=_make_state(tmp_path))
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            await wait_until(pilot, lambda: isinstance(app.focused, InputArea))
             assert isinstance(app.focused, InputArea)
 
     asyncio.run(scenario())

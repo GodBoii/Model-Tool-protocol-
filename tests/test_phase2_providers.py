@@ -488,6 +488,7 @@ def test_tui_endpoint_budget_setup_keeps_models_and_credentials_local(
 ):
     from test_tui_app_lifecycle import _make_state
     from textual.widgets import Input
+    from tui_test_helpers import wait_until
 
     from mtp.cli.tui_app import MTPApp
     from mtp.cli.tui_settings import (
@@ -504,7 +505,8 @@ def test_tui_endpoint_budget_setup_keeps_models_and_credentials_local(
         state.backend = provider
         app = MTPApp(state=state)
         async with app.run_test(size=terminal_size) as pilot:
-            await pilot.pause()
+            await wait_until(pilot, lambda: isinstance(app.screen, ProviderSetup)
+                             and isinstance(app.screen.focused, Input))
             dialog = app.screen
             assert isinstance(dialog, ProviderSetup)
             dialog.query_one("#setup-key", Input).value = "synthetic-key"

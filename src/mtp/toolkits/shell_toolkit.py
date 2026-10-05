@@ -40,6 +40,13 @@ class ShellToolkit(ToolkitLoader):
 
     def load_tools(self) -> list[RegisteredTool]:
         def run_command(command: str) -> dict[str, Any]:
+            # Check the original executable before POSIX parsing consumes Windows
+            # path separators as escapes. Only bare names belong in the allowlist.
+            original_parts = shlex.split(command, posix=False)
+            if not original_parts:
+                raise ValueError("Empty command.")
+            if any(character in original_parts[0] for character in ("/", "\\", ":")):
+                raise ValueError("Command must be a bare allowlisted executable name.")
             command_parts = shlex.split(command, posix=(os.name != "nt"))
             if not command_parts:
                 raise ValueError("Empty command.")
@@ -59,6 +66,7 @@ class ShellToolkit(ToolkitLoader):
             completed = subprocess.run(
                 command_parts,
                 shell=False,
+                check=False,
                 cwd=str(self.base_dir),
                 capture_output=True,
                 text=True,

@@ -195,11 +195,15 @@ class TestShellToolkit:
         with pytest.raises(ValueError, match="not allowed"):
             tools["shell.run_command"].handler("rm -rf /")
 
-    def test_absolute_path_blocked(self, tmp_path):
+    @pytest.mark.parametrize("executable", [
+        "C:\\Windows\\System32\\whoami.exe", "/usr/bin/python",
+        "../python", ".\\python", "C:python", "\\\\server\\share\\python.exe",
+    ])
+    def test_absolute_path_blocked(self, tmp_path, executable):
         toolkit = ShellToolkit(base_dir=tmp_path, allowed_commands={"python"})
         tools = {t.spec.name: t for t in toolkit.load_tools()}
         with pytest.raises(ValueError, match="bare allowlisted"):
-            tools["shell.run_command"].handler("C:\\Windows\\System32\\whoami.exe")
+            tools["shell.run_command"].handler(executable)
 
     def test_empty_command_raises(self, tmp_path):
         toolkit = ShellToolkit(base_dir=tmp_path)
