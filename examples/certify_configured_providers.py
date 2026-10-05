@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 from mtp import Agent, ToolRegistry, ToolSpec, load_dotenv_if_available
 from mtp.providers.defaults import DEFAULT_PROVIDER_MODELS
@@ -34,6 +35,27 @@ def certify(name: str) -> dict[str, Any]:
         return {**result, "status": "blocked", "reason": "credential_not_configured"}
     provider = None
     try:
+        if name == "openrouter":
+            with urlopen("https://openrouter.ai/api/v1/models", timeout=15) as response:
+                payload = json.loads(response.read(10_000_001))
+            free = [
+                model["id"]
+                for model in payload.get("data", [])
+                if isinstance(model.get("id"), str)
+                and model["id"].endswith(":free")
+                and "tools" in model.get("supported_parameters", [])
+                and float(model.get("pricing", {}).get("prompt", -1)) == 0
+                and float(model.get("pricing", {}).get("completion", -1)) == 0
+            ]
+            if not free:
+                return {
+                    **result,
+                    "status": "blocked",
+                    "reason": "no_free_tool_model_in_catalog",
+                }
+            preferred = "qwen/qwen3.8-27b:free"
+            result["model"] = preferred if preferred in free else free[0]
+            result["free_catalog_entry"] = True
         if name == "groq":
             from groq import Groq
 
@@ -128,7 +150,7 @@ def main() -> None:
         "--providers",
         nargs="+",
         choices=["groq", "openai_responses", "gemini", "openrouter", "xiaomi"],
-        default=["groq", "openai_responses", "gemini", "openrouter", "xiaomi"],
+        default=["groq", "gemini", "openrouter"],
     )
     args = parser.parse_args()
     load_dotenv_if_available()
